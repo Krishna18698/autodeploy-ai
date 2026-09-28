@@ -1,0 +1,51 @@
+# Local development stack. Production uses the same images on the Oracle A1 VM
+# (see infra/deploy), minus the local S3 store — production object storage is Backblaze B2.
+name: autodeploy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--appendonly", "yes", "--requirepass", "${VALKEY_PASSWORD}"]
+    ports:
+      - "127.0.0.1:${VALKEY_PORT:-6379}:6379"
+    volumes:
+      - valkeydata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$$VALKEY_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD}
+
+  # S3-compatible store for local dev (MinIO stopped publishing community images).
+  # Credentials live in seaweedfs/s3.json and are local-only.
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
+    ports:
+      - "127.0.0.1:${S3_PORT:-8333}:8333"
+    volumes:
+      - s3data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+
+volumes:
+  pgdata:
+  valkeydata:
+  s3data:

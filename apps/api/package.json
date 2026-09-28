@@ -1,0 +1,23 @@
+{
+  "name": "@autodeploy/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "fastify": "5.12.5",
+    "iovalkey": "0.4.0",
+    "postgres": "3.4.9",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "pino-pretty": "13.1.3",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

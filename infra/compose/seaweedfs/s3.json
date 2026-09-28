@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "autodeploy-local",
+      "credentials": [{ "accessKey": "autodeploy", "secretKey": "change-me-local-s3" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
