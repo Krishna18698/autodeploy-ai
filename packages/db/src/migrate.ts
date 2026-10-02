@@ -6,7 +6,8 @@ import { transitionPairs } from '@autodeploy/core';
 import type { Sql } from './client.js';
 
 // Overridable because bundled builds no longer sit next to the SQL files.
-const MIGRATIONS_DIR = process.env.MIGRATIONS_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
+const MIGRATIONS_DIR =
+  process.env.MIGRATIONS_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 const LOCK_ID = 727_001; // arbitrary, constant: one migrator at a time
 
 export type MigrationResult = { applied: string[]; skipped: number };
