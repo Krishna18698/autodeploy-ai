@@ -27,7 +27,8 @@ const EDGES: Array<[string, string]> = [
   ['pg', 'kafka'],
   ['sandbox', 'edge'],
 ];
-const pos = (id: string) => NODES.find((n) => n.id === id) ?? NODES[0]!;
+const FALLBACK: Node = { id: '?', x: 0, y: 0, label: '', sub: '' };
+const pos = (id: string): Node => NODES.find((n) => n.id === id) ?? FALLBACK;
 
 export function Architecture() {
   const root = useRef<HTMLElement>(null);
