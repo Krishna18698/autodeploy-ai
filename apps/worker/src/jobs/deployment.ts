@@ -386,6 +386,9 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
           );
           const rule = await tx<{ id: string }[]>`update repair_attempts set status = 'validated'
           where deployment_id = ${deploymentId} and strategy = 'rule' and status = 'applied' returning id`;
+          // A validated rule fix becomes the project's setting, so the next
+          // deploy doesn't have to fail first (only where the user hasn't set one).
+          if (rule.length > 0 && !config.patch) await learnSettings(tx as never, d, config);
           if (config.requiresApproval) {
             await tx`update repair_attempts set status = 'awaiting_approval' where id = ${payload.repairId ?? null}`;
             await transition(tx, {
@@ -498,4 +501,35 @@ async function sumBuildMs(tx: Deps['sql'], deploymentId: string): Promise<number
     { ms: number | null }[]
   >`select sum(duration_ms)::int as ms from deployment_attempts where deployment_id = ${deploymentId}`;
   return r?.ms ?? 0;
+}
+
+async function learnSettings(tx: Deps['sql'], d: DepRow, config: BuildConfig) {
+  const learned: Record<string, unknown> = {};
+  if (d.node_version === null) learned.node_version = config.nodeVersion;
+  if (d.output_dir === null) learned.output_dir = config.outputDir;
+  if (d.install_command === null && config.installCommand)
+    learned.install_command = config.installCommand;
+  if (d.build_command === null && config.buildCommand) learned.build_command = config.buildCommand;
+  const [orig] = await tx<
+    { build_config: BuildConfig | null }[]
+  >`select build_config from deployments where id = ${d.id}`;
+  const base = orig?.build_config;
+  // Only persist what the repair actually changed.
+  for (const k of Object.keys(learned)) {
+    const field = {
+      node_version: 'nodeVersion',
+      output_dir: 'outputDir',
+      install_command: 'installCommand',
+      build_command: 'buildCommand',
+    }[k] as keyof BuildConfig;
+    if (base && base[field] === config[field]) delete learned[k];
+  }
+  if (Object.keys(learned).length === 0) return;
+  await tx`update projects set ${tx(learned)}, version = version + 1, updated_at = now() where id = ${d.project_id}`;
+  await recordEvent(
+    tx,
+    { id: d.id, org_id: d.org_id, project_id: d.project_id },
+    'settings_learned',
+    learned,
+  );
 }

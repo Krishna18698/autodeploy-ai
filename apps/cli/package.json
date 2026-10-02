@@ -1,0 +1,22 @@
+{
+  "name": "@autodeploy/cli",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "autodeploy": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsup src/index.ts --format esm --target node22 --clean --banner.js '#!/usr/bin/env node'",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "commander": "15.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "tsup": "8.5.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}
