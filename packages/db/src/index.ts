@@ -1,4 +1,7 @@
+export * from './activation.js';
 export * from './client.js';
+export * from './deployments.js';
 export * from './migrate.js';
 export * from './outbox.js';
+export * from './routes.js';
 export * from './with-org.js';

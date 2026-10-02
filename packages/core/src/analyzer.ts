@@ -1,4 +1,4 @@
-import { parseVersion, pickMajor } from './semver.js';
+import { parseVersion, pickMajor as pickHighest, satisfies } from './semver.js';
 
 // Deterministic repository analysis. Every conclusion carries the evidence
 // that produced it, so the UI can show "why" and nothing here needs an LLM.
@@ -103,6 +103,17 @@ const ENV_PATTERNS: Array<{ re: RegExp; framework: Framework }> = [
 
 const SOURCE_FILE = /\.(m?[jt]sx?|vue|svelte|astro)$/;
 const MAX_ENV_SCAN_FILES = 400;
+
+/** Prefer the platform default when the range allows it; otherwise the highest supported match. */
+function pickMajor(range: string, supported: readonly number[]): number | undefined {
+  if (
+    satisfies([DEFAULT_NODE_MAJOR, 99, 99], range) ||
+    satisfies([DEFAULT_NODE_MAJOR, 0, 0], range)
+  ) {
+    return DEFAULT_NODE_MAJOR;
+  }
+  return pickHighest(range, supported);
+}
 
 export function analyze(tree: FileTree, rootDir = '.'): Analysis {
   const warnings: string[] = [];

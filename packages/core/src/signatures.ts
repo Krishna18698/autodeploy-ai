@@ -91,6 +91,7 @@ const MATCHERS: Matcher[] = [
   { code: 'SYNTAX_ERROR', re: /(SyntaxError:|Unexpected token|Transform failed with \d+ error)/ },
 ];
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI escape sequences is the point
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
 /** Strip everything that changes between runs but not between causes. */

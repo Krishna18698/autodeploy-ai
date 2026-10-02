@@ -45,11 +45,10 @@ export function buildFailureContext(
   extraPaths: readonly string[] = [],
 ): { text: string; filesIncluded: string[] } {
   const wanted = [...new Set([...filesMentioned(sig.excerpt), ...extraPaths, 'package.json'])];
-  const blocks: UntrustedBlock[] = [
-    { label: 'build-log-excerpt', content: sig.excerpt.join('\n') },
-  ];
+  const excerpt = sig.excerpt.join('\n');
+  const blocks: UntrustedBlock[] = [{ label: 'build-log-excerpt', content: excerpt }];
   const included: string[] = [];
-  let budget = MAX_CONTEXT_CHARS - blocks[0]!.content.length;
+  let budget = MAX_CONTEXT_CHARS - excerpt.length;
   for (const path of wanted) {
     const content = tree.read(path);
     if (content === undefined) continue;
