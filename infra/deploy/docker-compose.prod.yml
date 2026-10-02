@@ -1,0 +1,162 @@
+# Production stack on the Oracle A1 VM (2 OCPU / 12 GB, arm64).
+# Memory budget: Postgres ~2 GB · Kafka ≤1.5 GB · Valkey ~0.5 GB · API 2×0.4 GB
+# · worker ~0.5 GB · one build sandbox 3 GB · validator 1 GB → ~9 GB, leaving headroom.
+# No ports are published: Cloudflare Tunnel is the only way in.
+name: autodeploy
+
+x-app-env: &app-env
+  NODE_ENV: production
+  PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+  APP_URL: https://app.${PLATFORM_DOMAIN}
+  API_PUBLIC_URL: https://api.${PLATFORM_DOMAIN}
+  SESSION_COOKIE_DOMAIN: .${PLATFORM_DOMAIN}
+  DATABASE_URL: postgres://autodeploy:${POSTGRES_PASSWORD}@postgres:5432/autodeploy
+  VALKEY_URL: redis://:${VALKEY_PASSWORD}@valkey:6379
+  KAFKA_BROKERS: kafka:29092
+  S3_ENDPOINT: ${S3_ENDPOINT}
+  S3_REGION: ${S3_REGION}
+  S3_BUCKET: ${S3_BUCKET}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+  ENCRYPTION_KEYS: ${ENCRYPTION_KEYS}
+  INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+  WORK_DIR: /var/lib/autodeploy/work
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+  GIT_SHA: ${IMAGE_TAG}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: autodeploy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: autodeploy
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "max_connections=120", "-c", "effective_cache_size=1536MB"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U autodeploy"], interval: 5s, retries: 20 }
+    restart: unless-stopped
+    mem_limit: 2g
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--appendonly", "yes", "--requirepass", "${VALKEY_PASSWORD}", "--maxmemory", "384mb", "--maxmemory-policy", "volatile-lru"]
+    volumes: [valkeydata:/data]
+    healthcheck: { test: ["CMD-SHELL", "valkey-cli -a \"$$VALKEY_PASSWORD\" --no-auth-warning ping | grep PONG"], interval: 5s, retries: 20 }
+    environment: { VALKEY_PASSWORD: "${VALKEY_PASSWORD}" }
+    restart: unless-stopped
+    mem_limit: 512m
+
+  kafka:
+    image: apache/kafka:4.2.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx1g
+    volumes: [kafkadata:/var/lib/kafka/data]
+    healthcheck: { test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 >/dev/null 2>&1"], interval: 10s, retries: 15 }
+    restart: unless-stopped
+    mem_limit: 1536m
+
+  egress:
+    image: ghcr.io/${GHCR_OWNER}/autodeploy-egress:${IMAGE_TAG}
+    networks: { default: {}, sandbox: { aliases: [egress] } }
+    restart: unless-stopped
+    mem_limit: 128m
+
+  # Two replicas so a rolling deploy never drops traffic (see deploy.sh).
+  api-1: &api
+    image: ghcr.io/${GHCR_OWNER}/autodeploy-api:${IMAGE_TAG}
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: autodeploy-api
+      ALLOWED_GITHUB_LOGINS: ${ALLOWED_GITHUB_LOGINS}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+    depends_on: { postgres: { condition: service_healthy }, valkey: { condition: service_healthy } }
+    restart: unless-stopped
+    mem_limit: 512m
+  api-2:
+    <<: *api
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: autodeploy-api
+      MIGRATE_ON_START: "false"
+      ALLOWED_GITHUB_LOGINS: ${ALLOWED_GITHUB_LOGINS}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+
+  worker:
+    image: ghcr.io/${GHCR_OWNER}/autodeploy-worker:${IMAGE_TAG}
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: autodeploy-worker
+      SANDBOX_RUNTIME: runsc
+      SANDBOX_NETWORK: autodeploy_sandbox
+      BUILD_CONCURRENCY: 1
+      AI_PROVIDERS: ${AI_PROVIDERS:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      CF_ACCOUNT_ID: ${CF_ACCOUNT_ID:-}
+      CF_AI_TOKEN: ${CF_AI_TOKEN:-}
+      CF_KV_NAMESPACE_ID: ${CF_KV_NAMESPACE_ID:-}
+      CF_KV_API_TOKEN: ${CF_KV_API_TOKEN:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: AutoDeploy <deploys@${PLATFORM_DOMAIN}>
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+    # The worker starts sibling build containers. The socket is root-equivalent,
+    # which is why the worker runs no user code itself: user code only ever runs
+    # inside gVisor sandboxes it launches. The work dir is mounted at the same
+    # path inside and out so bind mounts given to `docker run` resolve on the host.
+    group_add: ["${DOCKER_GID}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/autodeploy/work:/var/lib/autodeploy/work
+    stop_grace_period: 40s
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    restart: unless-stopped
+    mem_limit: 768m
+
+  caddy:
+    image: caddy:2-alpine
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro]
+    depends_on: [api-1, api-2]
+    restart: unless-stopped
+    mem_limit: 128m
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment: { TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN}" }
+    depends_on: [caddy]
+    restart: unless-stopped
+    mem_limit: 128m
+
+networks:
+  default: {}
+  sandbox: { internal: true }
+
+volumes:
+  pgdata:
+  valkeydata:
+  kafkadata:

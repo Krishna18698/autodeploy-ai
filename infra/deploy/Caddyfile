@@ -1,0 +1,13 @@
+# Internal reverse proxy: Cloudflare Tunnel → Caddy → two API replicas.
+# Active health checks take a replica out of rotation while it restarts.
+:8080 {
+	reverse_proxy api-1:4000 api-2:4000 {
+		lb_policy round_robin
+		lb_retries 2
+		health_uri /readyz
+		health_interval 3s
+		health_timeout 2s
+		# Server-Sent Events: stream immediately, never buffer.
+		flush_interval -1
+	}
+}

@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsup src/index.ts --format esm --target node22 --clean --banner.js '#!/usr/bin/env node'",
+    "build": "tsup",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

@@ -1,0 +1,42 @@
+# Grafana-managed alert rules (import via the Grafana Cloud UI or API).
+groups:
+  - name: autodeploy
+    interval: 1m
+    rules:
+      - alert: QueueBacklog
+        expr: max(autodeploy_queue_oldest_ms{type="deployment.build"}) > 600000
+        for: 5m
+        annotations:
+          summary: Builds have waited over 10 minutes to start
+          runbook: docs/runbooks/queue-backlog.md
+      - alert: DeadLetteredJobs
+        expr: sum(autodeploy_queue_depth{status="dead"}) > 0
+        for: 1m
+        annotations:
+          summary: Jobs exhausted their retries and are in the dead-letter state
+      - alert: LeasesBeingReaped
+        expr: increase(autodeploy_leases_reaped_total[15m]) > 3
+        annotations:
+          summary: Workers are losing job leases (crashes, OOM kills or hung builds)
+      - alert: ConsumerLag
+        expr: max(autodeploy_consumer_lag) > 500
+        for: 10m
+        annotations:
+          summary: A Kafka consumer group is falling behind
+      - alert: OutboxBacklog
+        expr: autodeploy_outbox_backlog > 200
+        for: 5m
+        annotations:
+          summary: Events are not reaching Kafka (relay stuck or broker down)
+      - alert: AiProviderCircuitOpen
+        expr: max by (provider) (autodeploy_ai_breaker_open) == 1
+        for: 15m
+        annotations:
+          summary: An AI provider has been failing; recovery is falling back
+      - alert: BuildSuccessRateLow
+        expr: |
+          sum(increase(autodeploy_build_duration_seconds_count{outcome="ok"}[1h]))
+            / clamp_min(sum(increase(autodeploy_build_duration_seconds_count[1h])), 1) < 0.5
+        for: 30m
+        annotations:
+          summary: Fewer than half of build attempts are succeeding
