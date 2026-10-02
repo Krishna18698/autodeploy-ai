@@ -3,6 +3,13 @@ import { Hero } from '@/components/landing/Hero';
 import { Nav } from '@/components/landing/Nav';
 import { RibbonCanvas } from '@/components/landing/RibbonCanvas';
 import { SmoothScroll } from '@/components/landing/SmoothScroll';
+import { Architecture } from '@/components/landing/sections/Architecture';
+import { Closing } from '@/components/landing/sections/Closing';
+import { Numbers } from '@/components/landing/sections/Numbers';
+import { Record } from '@/components/landing/sections/Record';
+import { Recovery } from '@/components/landing/sections/Recovery';
+import { Waiting } from '@/components/landing/sections/Waiting';
+import { Wipe } from '@/components/landing/sections/Wipe';
 
 export default function Landing() {
   return (
@@ -13,12 +20,13 @@ export default function Landing() {
       <Nav />
       <main>
         <Hero />
-        {/* Placeholder so scroll-linked ribbon drift is visible in the prototype. */}
-        <section id="how" className="mx-auto flex min-h-[80vh] max-w-7xl items-center px-4 sm:px-6">
-          <h2 className="text-[clamp(2rem,4.5vw,3.5rem)] font-semibold tracking-[-0.03em]">
-            Most of a deploy is <span className="font-serif font-normal italic">waiting.</span>
-          </h2>
-        </section>
+        <Waiting />
+        <Recovery />
+        <Record />
+        <Wipe />
+        <Numbers />
+        <Architecture />
+        <Closing />
       </main>
     </>
   );
