@@ -21,3 +21,6 @@ coverage/
 # the original blueprint stays local
 *.docx
 .playwright-mcp/
+.next/
+next-env.d.ts
+*.tsbuildinfo

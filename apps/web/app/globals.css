@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/* Control Room tokens. Dark only. Status colour is always paired with a dot + label. */
+@theme {
+  --color-bg: #0a0c0f;
+  --color-panel: #12151a;
+  --color-raised: #1a1e25;
+  --color-line: #252a33;
+  --color-fg: #e8ebf0;
+  --color-muted: #8a93a3;
+  --color-run: #22d3ee;
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-fail: #f43f5e;
+  --color-ai: #a78bfa;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-instrument-serif), ui-serif, Georgia, serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  html {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-run) 35%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-run);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* Lenis */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+@utility glass {
+  background: color-mix(in oklab, var(--color-panel) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid color-mix(in oklab, var(--color-line) 90%, white 6%);
+}
+
+@utility hairline {
+  border: 1px solid var(--color-line);
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
