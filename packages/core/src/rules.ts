@@ -1,6 +1,6 @@
 import { SUPPORTED_NODE_MAJORS } from './analyzer.js';
 import type { BuildConfig } from './build-config.js';
-import { pickMajor } from './semver.js';
+import { satisfies } from './semver.js';
 import type { ErrorCode, ErrorSignature } from './signatures.js';
 
 // Deterministic, reversible repairs. A rule only ever changes build
@@ -98,7 +98,13 @@ export const RULES: readonly Rule[] = [
         /(>=?\s*\d[\d.]*|\^\d[\d.]*|~\d[\d.]*|\d+\.x)/.exec(signature.keyLine)?.[1] ??
         '';
       const candidates = SUPPORTED_NODE_MAJORS.filter((m) => m !== config.nodeVersion);
-      let next = range ? pickMajor(range.replace(/\+$/, ''), candidates) : undefined;
+      // The closest supported version that satisfies the range: the smallest jump from what the repo had.
+      const wanted = range.replace(/\+$/, '');
+      let next = wanted
+        ? [...candidates]
+            .sort((a, b) => a - b)
+            .find((m) => satisfies([m, 99, 99], wanted) || satisfies([m, 0, 0], wanted))
+        : undefined;
       // No parsable range: step up one supported major.
       if (next === undefined) next = candidates.find((m) => m > config.nodeVersion);
       if (next === undefined) return undefined;

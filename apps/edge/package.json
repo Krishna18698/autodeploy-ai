@@ -1,0 +1,19 @@
+{
+  "name": "@autodeploy/edge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@autodeploy/core": "workspace:*",
+    "aws4fetch": "1.0.20"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261002.1",
+    "typescript": "6.0.3",
+    "wrangler": "4.147.0"
+  }
+}

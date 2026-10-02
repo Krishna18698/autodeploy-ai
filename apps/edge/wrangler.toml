@@ -1,0 +1,22 @@
+# One Worker serves every user site: *.<PLATFORM_DOMAIN>/*
+name = "autodeploy-edge"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = false
+
+[vars]
+PLATFORM_DOMAIN = "autodeploy.localhost"
+# "kv" in production (routes mirrored to Workers KV); "api" locally (ask the origin).
+ROUTE_MODE = "api"
+API_URL = "http://127.0.0.1:4000"
+S3_ENDPOINT = "http://127.0.0.1:8333"
+S3_BUCKET = "autodeploy"
+S3_REGION = "us-east-1"
+# Secrets (set with `wrangler secret put` in production; .dev.vars locally):
+#   INTERNAL_TOKEN, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+
+# Production only — uncomment after `wrangler kv namespace create ROUTES`:
+# routes = [{ pattern = "*.example.eu.org/*", zone_name = "example.eu.org" }]
+# [[kv_namespaces]]
+# binding = "ROUTES"
+# id = "<namespace id>"
