@@ -113,8 +113,7 @@ async function follow(cfg: Config, id: string): Promise<Deployment> {
   let kind = 'production';
   for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
     buf += decoder.decode(chunk, { stream: true });
-    let idx: number;
-    while ((idx = buf.indexOf('\n\n')) !== -1) {
+    for (let idx = buf.indexOf('\n\n'); idx !== -1; idx = buf.indexOf('\n\n')) {
       const frame = buf.slice(0, idx);
       buf = buf.slice(idx + 2);
       const event = /^event: (.*)$/m.exec(frame)?.[1];
