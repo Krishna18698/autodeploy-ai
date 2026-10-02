@@ -14,7 +14,7 @@ import { decrypt } from '@autodeploy/crypto';
 import { activate, recordEvent, transition } from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
 import { enqueue } from '@autodeploy/queue';
-import { withSpan } from '@autodeploy/telemetry';
+import { currentTraceparent, withSpan } from '@autodeploy/telemetry';
 import type { Deps } from '../deps.js';
 import { GitHubActionsExecutor } from '../executors/github-actions.js';
 import { applyPatch, SandboxExecutor } from '../executors/sandbox.js';
@@ -331,7 +331,7 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
             await enqueue(
               tx,
               'deployment.recover',
-              { deploymentId, attemptId: attempt.id },
+              { deploymentId, attemptId: attempt.id, traceparent: currentTraceparent() },
               { orgId: d.org_id, idempotencyKey: `recover:${attempt.id}` },
             );
           });
@@ -417,7 +417,7 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
             await enqueue(
               tx,
               'deployment.activate',
-              { deploymentId },
+              { deploymentId, traceparent: currentTraceparent() },
               { orgId: d.org_id, idempotencyKey: `activate:${deploymentId}` },
             );
           }
@@ -455,7 +455,7 @@ async function finishFailed(
     await enqueue(
       tx,
       'deployment.recover',
-      { deploymentId: d.id, attemptId: attempt.id },
+      { deploymentId: d.id, attemptId: attempt.id, traceparent: currentTraceparent() },
       { orgId: d.org_id, idempotencyKey: `recover:${attempt.id}` },
     );
   });
@@ -480,7 +480,16 @@ async function loadSecrets(deps: Deps, projectId: string): Promise<Record<string
 // ----------------------------------------------------------------- activate
 
 export async function activateDeployment(deps: Deps, ctx: JobContext): Promise<void> {
-  const { deploymentId } = ctx.job.payload as { deploymentId: string };
+  const { deploymentId, traceparent } = ctx.job.payload as {
+    deploymentId: string;
+    traceparent?: string;
+  };
+  await withSpan('deployment.activate', traceparent, { 'deployment.id': deploymentId }, () =>
+    activateInner(deps, deploymentId),
+  );
+}
+
+async function activateInner(deps: Deps, deploymentId: string): Promise<void> {
   const d = await loadDeployment(deps, deploymentId);
   if (d?.status !== 'READY' || d.kind !== 'production') return;
   const r = await activate(deps.sql, deps.routes, deploymentId, 'promote', 'autodeploy');

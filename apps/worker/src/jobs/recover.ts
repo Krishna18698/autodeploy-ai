@@ -13,6 +13,7 @@ import {
 import { recordEvent, transition } from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
 import { enqueue } from '@autodeploy/queue';
+import { currentTraceparent, withSpan } from '@autodeploy/telemetry';
 import type { Deps } from '../deps.js';
 import { metrics } from '../metrics.js';
 import { fetchSource } from '../pipeline/source.js';
@@ -52,10 +53,17 @@ export async function recordAiUsage(deps: Deps, u: UsageRecord) {
 }
 
 export async function recoverDeployment(deps: Deps, ctx: JobContext): Promise<void> {
-  const { deploymentId, attemptId } = ctx.job.payload as {
+  const { deploymentId, attemptId, traceparent } = ctx.job.payload as {
     deploymentId: string;
     attemptId: string;
+    traceparent?: string;
   };
+  await withSpan('deployment.recover', traceparent, { 'deployment.id': deploymentId }, () =>
+    recoverInner(deps, deploymentId, attemptId),
+  );
+}
+
+async function recoverInner(deps: Deps, deploymentId: string, attemptId: string): Promise<void> {
   const d = await loadDeployment(deps, deploymentId);
   if (!d) return;
   if (d.status === 'BUILD_FAILED') {
@@ -149,7 +157,7 @@ export async function recoverDeployment(deps: Deps, ctx: JobContext): Promise<vo
       await enqueue(
         tx,
         'deployment.build',
-        { deploymentId, config: r.config, repairId: repair?.id },
+        { deploymentId, config: r.config, repairId: repair?.id, traceparent: currentTraceparent() },
         {
           orgId: d.org_id,
           idempotencyKey: `build:${deploymentId}:${failed.attempt_no + 1}`,
@@ -248,7 +256,7 @@ export async function recoverDeployment(deps: Deps, ctx: JobContext): Promise<vo
         await enqueue(
           tx,
           'deployment.build',
-          { deploymentId, config, repairId: repair.id },
+          { deploymentId, config, repairId: repair.id, traceparent: currentTraceparent() },
           { orgId: d.org_id, idempotencyKey: `build:${deploymentId}:${failed.attempt_no + 1}` },
         );
       });

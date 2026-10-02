@@ -10,8 +10,8 @@ services=(api worker web edge)
 
 cmd_for() {
   case "$1" in
-    api) echo "cd '$root/apps/api' && exec node --env-file=../../.env --import tsx src/main.ts" ;;
-    worker) echo "cd '$root/apps/worker' && exec node --env-file=../../.env --import tsx src/main.ts" ;;
+    api) echo "cd '$root/apps/api' && OTEL_SERVICE_NAME=autodeploy-api exec node --env-file=../../.env --import tsx --import @autodeploy/telemetry/register src/main.ts" ;;
+    worker) echo "cd '$root/apps/worker' && OTEL_SERVICE_NAME=autodeploy-worker exec node --env-file=../../.env --import tsx --import @autodeploy/telemetry/register src/main.ts" ;;
     web) echo "cd '$root/apps/web' && exec pnpm next dev --port 3000" ;;
     edge) echo "cd '$root/apps/edge' && WRANGLER_SEND_METRICS=false exec npx wrangler dev --local --port 8787" ;;
   esac
