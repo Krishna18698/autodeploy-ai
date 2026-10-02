@@ -1,0 +1,20 @@
+{
+  "name": "@autodeploy/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "migrate": "tsx --env-file=../../.env src/cli.ts"
+  },
+  "dependencies": {
+    "postgres": "3.4.9",
+    "@autodeploy/core": "workspace:*",
+    "ulid": "3.0.2"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
+}

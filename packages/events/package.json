@@ -1,0 +1,17 @@
+{
+  "name": "@autodeploy/events",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@platformatic/kafka": "2.13.0",
+    "@autodeploy/contracts": "workspace:*",
+    "ulid": "3.0.2",
+    "postgres": "3.4.9"
+  }
+}

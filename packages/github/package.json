@@ -1,0 +1,15 @@
+{
+  "name": "@autodeploy/github",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@autodeploy/resilience": "workspace:*",
+    "tar": "7.5.22"
+  }
+}
