@@ -446,7 +446,23 @@ export const deploymentRoutes =
           const dep = await transition(tx, {
             deploymentId: r.deployment_id,
             to: 'READY',
-            payload: { approvedBy: a.login, repairId: r.id },
+            payload: {
+              approvedBy: a.login,
+              repairId: r.id,
+              recoveredBy: 'ai',
+              attempts:
+                (
+                  await tx<
+                    { n: number }[]
+                  >`select count(*)::int as n from deployment_attempts where deployment_id = ${r.deployment_id}`
+                )[0]?.n ?? 1,
+              buildMs:
+                (
+                  await tx<
+                    { ms: number | null }[]
+                  >`select sum(duration_ms)::int as ms from deployment_attempts where deployment_id = ${r.deployment_id}`
+                )[0]?.ms ?? null,
+            },
             expectFrom: ['AWAITING_APPROVAL'],
             set: { recovered_by: 'ai' },
           });

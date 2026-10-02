@@ -497,6 +497,7 @@ export const orgRoutes =
               percentile_cont(0.5) within group (order by queue_wait_ms) as q50,
               percentile_cont(0.95) within group (order by queue_wait_ms) as q95
             from analytics_builds where finished_at > ${since}`;
+          // One row per day in the range, zero-filled, so charts show quiet days too.
           const daily = await tx<
             {
               day: Date;
@@ -506,11 +507,13 @@ export const orgRoutes =
               p95: number | null;
             }[]
           >`
-            select date_trunc('day', finished_at) as day, count(*)::int as deployments,
-              count(*) filter (where outcome = 'succeeded')::int as succeeded,
-              count(*) filter (where outcome = 'failed')::int as failed,
-              percentile_cont(0.95) within group (order by build_ms) as p95
-            from analytics_builds where finished_at > ${since} group by 1 order by 1`;
+            select g.day, count(b.deployment_id)::int as deployments,
+              count(*) filter (where b.outcome = 'succeeded')::int as succeeded,
+              count(*) filter (where b.outcome = 'failed')::int as failed,
+              percentile_cont(0.95) within group (order by b.build_ms) as p95
+            from generate_series(date_trunc('day', now() - ${`${days - 1} days`}::interval), date_trunc('day', now()), interval '1 day') as g(day)
+            left join analytics_builds b on date_trunc('day', b.finished_at) = g.day
+            group by g.day order by g.day`;
           const top = await tx<{ code: string; count: number }[]>`
             select error_code as code, count(*)::int as count from deployment_attempts
             where status = 'failed' and error_code is not null and started_at > ${since}

@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { resetGroup } from '@autodeploy/events';
 import type { RunningConsumer } from './consumers/index.js';
 import type { Deps } from './deps.js';
@@ -32,7 +34,9 @@ export async function replayAnalytics(deps: Deps) {
 }
 
 // CLI: ask the running worker to replay and print the measured result.
-if (import.meta.url === `file://${process.argv[1]}` && process.argv[2] === 'analytics') {
+const isMain =
+  process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (isMain && process.argv[2] === 'analytics') {
   const { Valkey } = await import('iovalkey');
   const url = process.env.VALKEY_URL;
   if (!url) throw new Error('VALKEY_URL is required');

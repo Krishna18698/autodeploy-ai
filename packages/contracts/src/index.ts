@@ -1,4 +1,4 @@
-import { DEPLOYMENT_STATUSES } from '@autodeploy/core';
+import { DEPLOYMENT_STATUSES } from '@autodeploy/core/state-machine';
 import { z } from 'zod';
 
 // Wire contracts shared by the API, the dashboard and the CLI. The API derives

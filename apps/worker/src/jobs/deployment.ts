@@ -404,7 +404,11 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
               screenshot_key: screenshotKey,
               ...(rule.length > 0 && { recovered_by: 'rule' as const }),
             },
-            payload: { attempts: attempt.attempt_no, recoveredBy: rule.length > 0 ? 'rule' : null },
+            payload: {
+              attempts: attempt.attempt_no,
+              recoveredBy: rule.length > 0 ? 'rule' : null,
+              buildMs: await sumBuildMs(tx as never, deploymentId),
+            },
           });
           if (d.kind === 'production') {
             await enqueue(
@@ -486,4 +490,12 @@ export async function activateDeployment(deps: Deps, ctx: JobContext): Promise<v
 export async function removeRoute(deps: Deps, ctx: JobContext): Promise<void> {
   const { key } = ctx.job.payload as { key: string };
   await deps.routes.delete(key);
+}
+
+/** Time actually spent building (all attempts), excluding queueing and approval waits. */
+async function sumBuildMs(tx: Deps['sql'], deploymentId: string): Promise<number> {
+  const [r] = await tx<
+    { ms: number | null }[]
+  >`select sum(duration_ms)::int as ms from deployment_attempts where deployment_id = ${deploymentId}`;
+  return r?.ms ?? 0;
 }

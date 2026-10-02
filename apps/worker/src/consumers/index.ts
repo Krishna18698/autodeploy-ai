@@ -133,6 +133,7 @@ async function analytics(_deps: Deps, e: DomainEvent, tx: postgres.TransactionSq
     errorCode?: string | null;
     attempts?: number;
     attemptNo?: number;
+    buildMs?: number | null;
   };
   const finished = new Date(d.finishedAt ?? e.occurredAt);
   const started = d.startedAt ? new Date(d.startedAt) : null;
@@ -140,7 +141,7 @@ async function analytics(_deps: Deps, e: DomainEvent, tx: postgres.TransactionSq
   await tx`
     insert into analytics_builds (deployment_id, org_id, project_id, outcome, recovered_by, error_code, attempts, build_ms, queue_wait_ms, finished_at, source_event_id)
     values (${e.deploymentId}, ${e.orgId}, ${e.projectId}, ${outcome}, ${d.recoveredBy ?? null}, ${d.errorCode ?? null},
-            ${d.attempts ?? d.attemptNo ?? 1}, ${started ? finished.getTime() - started.getTime() : null},
+            ${d.attempts ?? d.attemptNo ?? 1}, ${d.buildMs ?? (started ? finished.getTime() - started.getTime() : null)},
             ${started && queued ? Math.max(0, started.getTime() - queued.getTime()) : null}, ${finished}, ${e.id})
     on conflict (deployment_id) do update set outcome = excluded.outcome, recovered_by = excluded.recovered_by,
       error_code = excluded.error_code, attempts = excluded.attempts, build_ms = excluded.build_ms,
