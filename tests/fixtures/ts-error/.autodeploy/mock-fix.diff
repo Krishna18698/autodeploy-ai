@@ -1,0 +1,12 @@
+diff --git a/src/main.ts b/src/main.ts
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,7 +1,7 @@
+ type Props = { account: string };
+ 
+ function greet(props: Props): string {
+-  return `Hello, ${props.user}`;
++  return `Hello, ${props.account}`;
+ }
+ 
+ document.querySelector('#app')!.textContent = greet({ account: 'AutoDeploy' });

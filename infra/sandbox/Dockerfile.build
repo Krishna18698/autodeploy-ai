@@ -1,0 +1,15 @@
+# Build image for untrusted user builds, one per supported Node major.
+# Package managers are baked in so builds never download them at run time.
+ARG NODE_MAJOR=22
+FROM node:${NODE_MAJOR}-bookworm-slim
+ENV COREPACK_HOME=/opt/corepack \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable \
+ && corepack prepare pnpm@10 --activate \
+ && corepack prepare yarn@4 --activate \
+ && corepack prepare yarn@1.22.22 \
+ && chmod -R a+rX /opt/corepack \
+ && apt-get update && apt-get install -y --no-install-recommends ca-certificates git python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
+USER node
+WORKDIR /workspace

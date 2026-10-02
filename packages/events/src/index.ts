@@ -51,12 +51,22 @@ export async function ensureTopics(cfg: KafkaConfig, extra: string[] = []): Prom
         await admin.createTopics({ topics: [t.name], partitions: t.partitions, replicas: 1 });
       } catch (err) {
         // Another process created it between our check and create.
-        if (!String((err as Error).message).includes('already exists')) throw err;
+        if (!isAlreadyExists(err)) throw err;
       }
     }
   } finally {
     await admin.close();
   }
+}
+
+/** Kafka wraps broker errors; TOPIC_ALREADY_EXISTS (code 36) can be nested. */
+function isAlreadyExists(err: unknown): boolean {
+  const seen =
+    JSON.stringify(err, Object.getOwnPropertyNames(err ?? {})) + String((err as Error)?.message);
+  const nested = (err as AggregateError)?.errors ?? [];
+  return (
+    /already exists|TOPIC_ALREADY_EXISTS|"code":36\b/i.test(seen) || nested.some(isAlreadyExists)
+  );
 }
 
 export type PublishMessage = {
@@ -79,13 +89,16 @@ export async function publish(producer: KafkaProducer, messages: PublishMessage[
 }
 
 export type Handler = (event: DomainEvent, tx: postgres.TransactionSql) => Promise<void>;
+export type LooseHandler = (event: DomainEvent) => Promise<void>;
 
 export type ConsumerOptions = {
   kafka: KafkaConfig;
   groupId: string;
   topics: string[];
   sql: postgres.Sql;
-  handler: Handler;
+  handler: Handler | LooseHandler;
+  /** Record event ids in processed_events (default true). Off only for loss-tolerant, idempotent sinks. */
+  dedupe?: boolean;
   producer: KafkaProducer;
   maxAttempts?: number;
   log: {
@@ -142,14 +155,16 @@ export async function runConsumer(
       for (;;) {
         attempt++;
         try {
-          const processed = await o.sql.begin(async (tx) => {
-            const ins =
-              await tx`insert into processed_events (consumer, event_id) values (${o.groupId}, ${event.id})
-              on conflict do nothing returning event_id`;
-            if (ins.length === 0) return false; // already handled: duplicate delivery
-            await o.handler(event, tx);
-            return true;
-          });
+          const processed =
+            o.dedupe === false
+              ? await (o.handler as LooseHandler)(event).then(() => true)
+              : await o.sql.begin(async (tx) => {
+                  const ins = await tx`insert into processed_events (consumer, event_id)
+                    values (${o.groupId}, ${event.id}) on conflict do nothing returning event_id`;
+                  if (ins.length === 0) return false; // already handled: duplicate delivery
+                  await (o.handler as Handler)(event, tx);
+                  return true;
+                });
           if (processed) o.onProcessed?.(event);
           break;
         } catch (err) {

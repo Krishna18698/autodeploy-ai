@@ -1,0 +1,7 @@
+{
+  "name": "output-dir",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

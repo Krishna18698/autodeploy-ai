@@ -7,7 +7,8 @@
       "!**/node_modules",
       "!**/.turbo",
       "!**/.next",
-      "!**/next-env.d.ts"
+      "!**/next-env.d.ts",
+      "!tests/fixtures"
     ]
   },
   "formatter": {
@@ -17,7 +18,10 @@
   },
   "linter": {
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "suspicious": {
+        "noUndeclaredEnvVars": "off"
+      }
     }
   },
   "javascript": {
@@ -28,7 +32,9 @@
   },
   "overrides": [
     {
-      "includes": ["**/*.css"],
+      "includes": [
+        "**/*.css"
+      ],
       "linter": {
         "rules": {
           "complexity": {

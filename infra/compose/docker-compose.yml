@@ -75,6 +75,23 @@ services:
       timeout: 10s
       retries: 12
 
+  # The build sandbox's only way out: an allowlisting HTTP(S) proxy. Build
+  # containers join the internal "sandbox" network, which has no route to the
+  # internet; this service sits on both networks.
+  egress:
+    build: ../sandbox/egress
+    image: autodeploy-egress:latest
+    networks:
+      default: {}
+      sandbox:
+        aliases: [egress]
+    restart: unless-stopped
+
+networks:
+  default: {}
+  sandbox:
+    internal: true
+
 volumes:
   pgdata:
   valkeydata:

@@ -1,0 +1,489 @@
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import {
+  type Analysis,
+  analyze,
+  type BuildConfig,
+  buildConfigFrom,
+  classify,
+  createRedactor,
+  type DeploymentStatus,
+  routeKey,
+} from '@autodeploy/core';
+import { decrypt } from '@autodeploy/crypto';
+import { activate, recordEvent, transition } from '@autodeploy/db';
+import { readTree } from '@autodeploy/github';
+import { enqueue } from '@autodeploy/queue';
+import { withSpan } from '@autodeploy/telemetry';
+import type { Deps } from '../deps.js';
+import { GitHubActionsExecutor } from '../executors/github-actions.js';
+import { applyPatch, SandboxExecutor } from '../executors/sandbox.js';
+import type { Executor } from '../executors/types.js';
+import { metrics } from '../metrics.js';
+import { storeArtifact } from '../pipeline/artifact.js';
+import { LogSink } from '../pipeline/logs.js';
+import { cleanupWorkspace, fetchSource, workspaceFor } from '../pipeline/source.js';
+import { validateSite } from '../pipeline/validate.js';
+import type { JobContext } from '../runner.js';
+
+type DepRow = {
+  id: string;
+  org_id: string;
+  project_id: string;
+  number: number;
+  status: DeploymentStatus;
+  kind: 'production' | 'preview';
+  commit_sha: string | null;
+  pr_number: number | null;
+  build_config: BuildConfig | null;
+  started_at: Date | null;
+  slug: string;
+  repo_url: string;
+  repo_full_name: string;
+  root_dir: string;
+  executor: 'sandbox' | 'github_actions';
+  installation_id: number | null;
+  node_version: number | null;
+  install_command: string | null;
+  build_command: string | null;
+  output_dir: string | null;
+};
+
+export async function loadDeployment(deps: Deps, id: string): Promise<DepRow | undefined> {
+  const [row] = await deps.sql<DepRow[]>`
+    select d.id, d.org_id, d.project_id, d.number, d.status, d.kind, d.commit_sha, d.pr_number, d.build_config, d.started_at,
+           p.slug, p.repo_url, p.repo_full_name, p.root_dir, p.executor, p.installation_id,
+           p.node_version, p.install_command, p.build_command, p.output_dir
+    from deployments d join projects p on p.id = d.project_id where d.id = ${id}`;
+  return row;
+}
+
+// ------------------------------------------------------------------ prepare
+
+/** CREATED → ANALYZING → QUEUED: resolve how to build this commit. */
+export async function prepareDeployment(deps: Deps, ctx: JobContext): Promise<void> {
+  const { deploymentId, traceparent } = ctx.job.payload as {
+    deploymentId: string;
+    traceparent?: string;
+  };
+  await withSpan('deployment.prepare', traceparent, { 'deployment.id': deploymentId }, async () => {
+    const d = await loadDeployment(deps, deploymentId);
+    if (!d || d.status === 'CANCELED' || d.status === 'FAILED') return;
+    if (d.status === 'CREATED') {
+      await deps.sql.begin((tx) =>
+        transition(tx, { deploymentId, to: 'ANALYZING', expectFrom: ['CREATED'] }),
+      );
+    } else if (d.status !== 'ANALYZING') {
+      return; // already past this stage (duplicate delivery)
+    }
+
+    const dir = await mkdtemp(join(await ensureDir(join(deps.env.WORK_DIR, 'analyze')), 'a-'));
+    let analysis: Analysis;
+    try {
+      const cacheKey = `analysis:v1:${d.repo_full_name}:${d.commit_sha}:${d.root_dir}`;
+      const cached = d.repo_url.startsWith('file://') ? null : await deps.valkey.get(cacheKey);
+      if (cached) {
+        analysis = JSON.parse(cached) as Analysis;
+      } else {
+        await fetchSource(deps, d.repo_url, d.commit_sha ?? 'HEAD', dir, d.installation_id);
+        analysis = analyze(await readTree(dir), d.root_dir);
+        if (!d.repo_url.startsWith('file://'))
+          await deps.valkey.set(cacheKey, JSON.stringify(analysis), 'EX', 7 * 86400);
+      }
+    } catch (err) {
+      await deps.sql.begin((tx) =>
+        transition(tx, {
+          deploymentId,
+          to: 'FAILED',
+          set: {
+            error_summary: `Could not fetch the source: ${(err as Error).message}`.slice(0, 500),
+          },
+        }),
+      );
+      return;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+
+    const config = buildConfigFrom(analysis, {
+      ...(d.node_version !== null && { nodeVersion: d.node_version }),
+      ...(d.install_command !== null && { installCommand: d.install_command }),
+      ...(d.build_command !== null && { buildCommand: d.build_command }),
+      ...(d.output_dir !== null && { outputDir: d.output_dir }),
+      rootDir: d.root_dir,
+    });
+
+    await deps.sql.begin(async (tx) => {
+      await tx`update projects set analysis = ${tx.json(analysis as never)}, framework = ${analysis.framework.value} where id = ${d.project_id}`;
+      await recordEvent(tx, { id: d.id, org_id: d.org_id, project_id: d.project_id }, 'analyzed', {
+        framework: analysis.framework.value,
+        packageManager: analysis.packageManager.value,
+        node: config.nodeVersion,
+        buildCommand: config.buildCommand,
+        outputDir: config.outputDir,
+        warnings: analysis.warnings,
+      });
+      if (!analysis.supported) {
+        await transition(tx, {
+          deploymentId,
+          to: 'FAILED',
+          set: { error_summary: analysis.unsupportedReason ?? 'Unsupported project' },
+        });
+        return;
+      }
+      const missing = await missingEnv(tx as never, d.project_id, analysis.envVars.value);
+      if (missing.length > 0) {
+        await recordEvent(
+          tx,
+          { id: d.id, org_id: d.org_id, project_id: d.project_id },
+          'env_warning',
+          {
+            missing,
+            note: 'Referenced in source but not set. The build continues; set them if the site needs them.',
+          },
+        );
+      }
+      await transition(tx, { deploymentId, to: 'QUEUED', set: { build_config: config as never } });
+      await enqueue(
+        tx,
+        'deployment.build',
+        { deploymentId, config, traceparent },
+        { orgId: d.org_id, idempotencyKey: `build:${deploymentId}:1` },
+      );
+    });
+  });
+}
+
+async function missingEnv(
+  tx: Deps['sql'],
+  projectId: string,
+  names: readonly string[],
+): Promise<string[]> {
+  if (names.length === 0) return [];
+  const rows = await tx<
+    { key: string }[]
+  >`select key from env_vars where project_id = ${projectId} and key = any(${names as string[]})`;
+  const have = new Set(rows.map((r) => r.key));
+  return names.filter((n) => !have.has(n));
+}
+
+async function ensureDir(p: string) {
+  await mkdir(p, { recursive: true });
+  return p;
+}
+
+// -------------------------------------------------------------------- build
+
+export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void> {
+  const payload = ctx.job.payload as {
+    deploymentId: string;
+    config?: BuildConfig;
+    traceparent?: string;
+    repairId?: string;
+  };
+  const { deploymentId } = payload;
+  await withSpan(
+    'deployment.build',
+    payload.traceparent,
+    { 'deployment.id': deploymentId },
+    async (span) => {
+      const d = await loadDeployment(deps, deploymentId);
+      if (!d) return;
+      if (d.status === 'QUEUED') {
+        await deps.sql.begin((tx) =>
+          transition(tx, {
+            deploymentId,
+            to: 'BUILDING',
+            expectFrom: ['QUEUED'],
+            ...(d.started_at ? {} : { set: { started_at: new Date() } }),
+          }),
+        );
+      } else if (d.status !== 'BUILDING') {
+        return; // canceled or already handled
+      }
+      // A previous holder of this job died mid-build: close its attempt out.
+      await deps.sql`update deployment_attempts set status = 'canceled', finished_at = now(), error_code = 'WORKER_LOST'
+      where deployment_id = ${deploymentId} and status = 'running'`;
+
+      const config = payload.config ?? d.build_config;
+      if (!config) throw new Error('deployment has no build config');
+      const [attempt] = await deps.sql<{ id: string; attempt_no: number }[]>`
+      insert into deployment_attempts (deployment_id, org_id, attempt_no, executor, worker_id, build_config)
+      select ${deploymentId}, ${d.org_id}, coalesce(max(attempt_no), 0) + 1, ${d.executor}, ${ctx.workerId}, ${deps.sql.json(config as never)}
+      from deployment_attempts where deployment_id = ${deploymentId}
+      returning id, attempt_no`;
+      if (!attempt) throw new Error('attempt insert failed');
+      span.setAttribute('attempt.no', attempt.attempt_no);
+
+      const ws = workspaceFor(deps, attempt.id);
+      const secrets = await loadSecrets(deps, d.project_id);
+      const log = new LogSink(
+        deps,
+        {
+          orgId: d.org_id,
+          projectId: d.project_id,
+          deploymentId,
+          attemptId: attempt.id,
+          attemptNo: attempt.attempt_no,
+        },
+        createRedactor(Object.values(secrets)),
+      );
+      const executor: Executor =
+        d.executor === 'github_actions'
+          ? new GitHubActionsExecutor(Boolean(deps.installations))
+          : new SandboxExecutor(deps.env);
+
+      try {
+        log.stage(`attempt ${attempt.attempt_no} · ${executor.name} · node ${config.nodeVersion}`);
+        await fetchSource(deps, d.repo_url, d.commit_sha ?? 'HEAD', ws.src, d.installation_id);
+        if (config.patch) {
+          log.stage('applying proposed repair');
+          const applied = await applyPatch(ws.src, config.patch);
+          if (!applied.ok) {
+            log.write(`autodeploy: the proposed patch did not apply cleanly: ${applied.output}`);
+            await finishFailed(deps, d, attempt, log, null, [], 'patch did not apply');
+            return;
+          }
+        }
+        const result = await executor.execute({
+          attemptId: attempt.id,
+          srcDir: ws.src,
+          config,
+          secrets,
+          log,
+          signal: ctx.signal,
+        });
+        metrics.buildSeconds.observe(
+          { outcome: result.ok ? 'ok' : result.reason },
+          result.durationMs / 1000,
+        );
+
+        if (!result.ok) {
+          if (result.reason === 'canceled') {
+            await log.close();
+            await deps.sql`update deployment_attempts set status = 'canceled', finished_at = now(), log_lines = ${log.lineCount}, duration_ms = ${result.durationMs} where id = ${attempt.id}`;
+            if (ctx.abortReason() === 'canceled') {
+              await deps.sql.begin((tx) =>
+                transition(tx, { deploymentId, to: 'CANCELED', payload: { during: 'build' } }),
+              );
+            }
+            return;
+          }
+          await finishFailed(
+            deps,
+            d,
+            attempt,
+            log,
+            result.exitCode,
+            result.indexDirs,
+            result.reason,
+            result.durationMs,
+          );
+          return;
+        }
+
+        // ---- validate, store, publish ----
+        log.stage('validating in headless Chromium');
+        await log.close();
+        await deps.sql.begin(async (tx) => {
+          await tx`update deployment_attempts set status = 'succeeded', finished_at = now(), log_lines = ${log.lineCount}, duration_ms = ${result.durationMs}, exit_code = 0 where id = ${attempt.id}`;
+          await transition(tx, {
+            deploymentId,
+            to: 'VALIDATING',
+            payload: { attemptNo: attempt.attempt_no, buildMs: result.durationMs },
+          });
+        });
+
+        const validation = await validateSite(deps, result.outputDir, ws.out, ctx.signal);
+        if (!validation.ok) {
+          for (const e of [
+            ...validation.pageErrors,
+            ...validation.failedRequests.map((f) => `failed request ${f}`),
+          ]) {
+            log.write(`autodeploy: validation: ${e}`);
+          }
+          await log.close();
+          await deps.sql`update deployment_attempts set log_lines = ${log.lineCount} where id = ${attempt.id}`;
+          const sig = classify([
+            ...validation.pageErrors,
+            ...validation.failedRequests.map((f) => `Failed to load ${f}`),
+          ]);
+          await deps.sql.begin(async (tx) => {
+            await tx`update deployment_attempts set status = 'failed', error_code = ${'VALIDATION'}, error_signature = ${`VALIDATION:${sig.signature.split(':')[1]}`},
+            error_detail = ${tx.json({ excerpt: sig.excerpt, captures: sig.captures, validation } as never)} where id = ${attempt.id}`;
+            await transition(tx, {
+              deploymentId,
+              to: 'BUILD_FAILED',
+              payload: {
+                stage: 'validation',
+                status: validation.status,
+                pageErrors: validation.pageErrors.slice(0, 5),
+                failedRequests: validation.failedRequests.slice(0, 5),
+              },
+              set: {
+                error_summary:
+                  `Validation failed: ${validation.pageErrors[0] ?? validation.failedRequests[0] ?? `HTTP ${validation.status}`}`.slice(
+                    0,
+                    500,
+                  ),
+              },
+            });
+            await enqueue(
+              tx,
+              'deployment.recover',
+              { deploymentId, attemptId: attempt.id },
+              { orgId: d.org_id, idempotencyKey: `recover:${attempt.id}` },
+            );
+          });
+          return;
+        }
+
+        const artifact = await storeArtifact(deps, result.outputDir);
+        let screenshotKey: string | null = null;
+        if (validation.screenshotPath) {
+          screenshotKey = `screenshots/${deploymentId}.png`;
+          await deps.storage.put(
+            screenshotKey,
+            await readFile(validation.screenshotPath),
+            'image/png',
+          );
+        }
+        // Immutable per-deployment URL (and the PR preview URL) are routable as soon as the build is good.
+        const value = {
+          deploymentId,
+          number: d.number,
+          artifactSha: artifact.sha256,
+          projectSlug: d.slug,
+        };
+        await deps.routes.put(
+          routeKey({ kind: 'deployment', slug: d.slug, number: d.number }),
+          value,
+        );
+        if (d.kind === 'preview' && d.pr_number !== null)
+          await deps.routes.put(
+            routeKey({ kind: 'preview', slug: d.slug, pr: d.pr_number }),
+            value,
+          );
+
+        await deps.sql.begin(async (tx) => {
+          await recordEvent(
+            tx,
+            { id: d.id, org_id: d.org_id, project_id: d.project_id },
+            'validated',
+            {
+              title: validation.title,
+              status: validation.status,
+              skipped: validation.skipped,
+              consoleErrors: validation.consoleErrors.slice(0, 5),
+              externalBlocked: validation.externalBlocked,
+              artifact: {
+                sha256: artifact.sha256,
+                files: artifact.fileCount,
+                bytes: artifact.bytes,
+                reused: artifact.reused,
+              },
+            },
+          );
+          const rule = await tx<{ id: string }[]>`update repair_attempts set status = 'validated'
+          where deployment_id = ${deploymentId} and strategy = 'rule' and status = 'applied' returning id`;
+          if (config.requiresApproval) {
+            await tx`update repair_attempts set status = 'awaiting_approval' where id = ${payload.repairId ?? null}`;
+            await transition(tx, {
+              deploymentId,
+              to: 'AWAITING_APPROVAL',
+              set: { artifact_id: artifact.id, screenshot_key: screenshotKey },
+              payload: { repairId: payload.repairId ?? null },
+            });
+            return;
+          }
+          await transition(tx, {
+            deploymentId,
+            to: 'READY',
+            set: {
+              artifact_id: artifact.id,
+              screenshot_key: screenshotKey,
+              ...(rule.length > 0 && { recovered_by: 'rule' as const }),
+            },
+            payload: { attempts: attempt.attempt_no, recoveredBy: rule.length > 0 ? 'rule' : null },
+          });
+          if (d.kind === 'production') {
+            await enqueue(
+              tx,
+              'deployment.activate',
+              { deploymentId },
+              { orgId: d.org_id, idempotencyKey: `activate:${deploymentId}` },
+            );
+          }
+        });
+      } finally {
+        await cleanupWorkspace(ws.root);
+      }
+    },
+  );
+}
+
+async function finishFailed(
+  deps: Deps,
+  d: DepRow,
+  attempt: { id: string; attempt_no: number },
+  log: LogSink,
+  exitCode: number | null,
+  indexDirs: string[],
+  reason: string,
+  durationMs = 0,
+) {
+  await log.close();
+  const sig = classify(log.tail, exitCode ?? undefined);
+  await deps.sql.begin(async (tx) => {
+    await tx`update deployment_attempts set status = 'failed', finished_at = now(), exit_code = ${exitCode}, log_lines = ${log.lineCount},
+      duration_ms = ${durationMs}, error_code = ${sig.code}, error_signature = ${sig.signature},
+      error_detail = ${tx.json({ excerpt: sig.excerpt, captures: sig.captures, keyLine: sig.keyLine, indexDirs, reason } as never)}
+      where id = ${attempt.id}`;
+    await transition(tx, {
+      deploymentId: d.id,
+      to: 'BUILD_FAILED',
+      payload: { attemptNo: attempt.attempt_no, errorCode: sig.code, keyLine: sig.keyLine },
+      set: { error_summary: sig.keyLine.slice(0, 500) },
+    });
+    await enqueue(
+      tx,
+      'deployment.recover',
+      { deploymentId: d.id, attemptId: attempt.id },
+      { orgId: d.org_id, idempotencyKey: `recover:${attempt.id}` },
+    );
+  });
+}
+
+async function loadSecrets(deps: Deps, projectId: string): Promise<Record<string, string>> {
+  const rows = await deps.sql<
+    { key: string; ciphertext: Buffer; dek_ciphertext: Buffer; key_version: number }[]
+  >`
+    select key, ciphertext, dek_ciphertext, key_version from env_vars where project_id = ${projectId}`;
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    out[r.key] = decrypt(
+      deps.keyring,
+      { ciphertext: r.ciphertext, dekCiphertext: r.dek_ciphertext, keyVersion: r.key_version },
+      `env:${projectId}:${r.key}`,
+    );
+  }
+  return out;
+}
+
+// ----------------------------------------------------------------- activate
+
+export async function activateDeployment(deps: Deps, ctx: JobContext): Promise<void> {
+  const { deploymentId } = ctx.job.payload as { deploymentId: string };
+  const d = await loadDeployment(deps, deploymentId);
+  if (d?.status !== 'READY' || d.kind !== 'production') return;
+  const r = await activate(deps.sql, deps.routes, deploymentId, 'promote', 'autodeploy');
+  deps.log.info(
+    { deploymentId, ms: Math.round(r.ms), previous: r.previousId },
+    'deployment activated',
+  );
+}
+
+export async function removeRoute(deps: Deps, ctx: JobContext): Promise<void> {
+  const { key } = ctx.job.payload as { key: string };
+  await deps.routes.delete(key);
+}

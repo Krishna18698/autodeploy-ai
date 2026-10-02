@@ -11,6 +11,7 @@ export function createSql(url: string, opts: { max?: number; application?: strin
     idle_timeout: 30,
     connect_timeout: 5,
     prepare: true,
+    onnotice: () => {},
     connection: { application_name: opts.application ?? 'autodeploy' },
     // bigint identity columns come back as JS numbers; ids stay < 2^53.
     types: { bigint: postgres.BigInt },

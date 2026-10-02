@@ -116,7 +116,9 @@ export const RULES: readonly Rule[] = [
     title: 'Point at the directory the build actually produced',
     apply: ({ config, indexDirs }) => {
       const preferred = ['dist', 'build', 'out', '.output/public', 'public', '_site'];
-      const found = preferred.find((d) => indexDirs.includes(d)) ?? indexDirs[0];
+      // The repo root holds the *source* index.html when there is a build step; never publish it.
+      const candidates = config.buildCommand ? indexDirs.filter((d) => d !== '.') : indexDirs;
+      const found = preferred.find((d) => candidates.includes(d)) ?? candidates[0];
       if (!found || found === config.outputDir) return undefined;
       return {
         ruleId: 'R-005',

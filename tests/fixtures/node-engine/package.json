@@ -1,0 +1,7 @@
+{
+  "name": "node-engine",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}
