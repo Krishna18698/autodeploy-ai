@@ -87,7 +87,7 @@ export function Record() {
             data-rollback-note
             className="absolute bottom-0 left-0 right-0 text-center font-mono text-[12px] text-muted"
           >
-            rollback #128 → #127 · <span className="text-ok">11.7 ms</span> · nothing rebuilt
+            rollback #128 → #127 · <span className="text-ok">3.7 ms</span> · nothing rebuilt
           </p>
         </div>
       </div>

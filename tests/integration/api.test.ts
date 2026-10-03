@@ -345,3 +345,26 @@ describe('GitHub webhooks', () => {
     expect(r.json().deployments).toBe(0);
   });
 });
+
+describe('API contract', () => {
+  it('publishes an OpenAPI document where every public route declares a response schema', async () => {
+    const r = await app.inject({ url: '/openapi.json' });
+    expect(r.statusCode).toBe(200);
+    const doc = r.json() as {
+      openapi: string;
+      paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
+    };
+    expect(doc.openapi).toMatch(/^3\./);
+    const ops = Object.entries(doc.paths).flatMap(([path, methods]) =>
+      Object.entries(methods).map(([m, op]) => ({ path, m, op })),
+    );
+    expect(ops.length).toBeGreaterThan(30);
+    const missing = ops
+      .filter(({ op }) => !op.responses || Object.keys(op.responses).length === 0)
+      .map(({ m, path }) => `${m} ${path}`);
+    // Routes that return 204 / stream have no body schema by design.
+    const allowed =
+      /(DELETE|delete)|\/session\/org|\/members|\/logout|\/env\/|\/stream|\/screenshot/;
+    expect(missing.filter((x) => !allowed.test(x))).toEqual([]);
+  });
+});

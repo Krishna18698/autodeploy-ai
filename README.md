@@ -71,6 +71,19 @@ GitHub repo — or a fixture: `file:///…/tests/fixtures/ts-error` with
 `AI_PROVIDERS=mock` shows the whole AI-repair path without any API keys.
 API docs: http://localhost:4000/docs.
 
+## Tests
+
+```bash
+pnpm test               # 63 unit tests (pure domain code)
+pnpm test:integration   # 24 tests on real Postgres / Valkey / Kafka (Testcontainers)
+pnpm test:e2e           # 8 Playwright tests against the running stack
+pnpm corpus --mode ai   # 38 labelled repos deployed for real (also --mode rules)
+pnpm chaos              # kill the worker, Kafka, DB connections, storage mid-deploy
+pnpm load               # k6: 100 concurrent deploys + polling dashboards
+```
+
+Results and the bugs they caught: [`docs/measurements.md`](docs/measurements.md).
+
 ## Repository
 
 ```

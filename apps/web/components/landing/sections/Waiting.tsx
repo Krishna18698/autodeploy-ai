@@ -27,7 +27,8 @@ export function Waiting() {
       { scaleX: 0, transformOrigin: 'left', stagger: 0.7, duration: 0.7 },
       0,
     );
-    tl.from('[data-step]', { opacity: 0.25, stagger: 0.7, duration: 0.2 }, 0);
+    // Steps brighten from the (still readable) muted tone rather than fading in from near-invisible.
+    tl.from('[data-step]', { color: '#8a93a3', stagger: 0.7, duration: 0.2 }, 0);
   });
   return (
     <section ref={root} id="how" className="relative flex min-h-dvh items-center">
@@ -44,7 +45,7 @@ export function Waiting() {
           </p>
           <ol className="mt-8 flex flex-wrap items-center gap-2 font-mono text-[12px]">
             {STEPS.map((s, i) => (
-              <li key={s} data-step className="flex items-center gap-2">
+              <li key={s} data-step className="flex items-center gap-2 text-fg">
                 <span className="text-ok">✓</span>
                 {s}
                 {i < STEPS.length - 1 && (

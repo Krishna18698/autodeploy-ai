@@ -14,7 +14,11 @@ export function Hero() {
   useGSAP(
     () => {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const split = SplitText.create('[data-split]', { type: 'lines,words', mask: 'lines' });
+      const split = SplitText.create('[data-split]', {
+        type: 'lines,words',
+        mask: 'lines',
+        aria: 'none',
+      });
       const tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
       tl.from(split.words, { yPercent: 110, duration: 1.1, stagger: 0.06 })
         .from('[data-accent]', { yPercent: 110, opacity: 0, duration: 1.2 }, '-=0.7')
@@ -73,7 +77,7 @@ export function Hero() {
             Watch a self-heal, 40s
           </a>
         </div>
-        <p data-fade className="mt-5 font-mono text-[11px] text-muted/80">
+        <p data-fade className="mt-5 font-mono text-[11px] text-muted">
           free · no card · rules first, AI only when needed
         </p>
       </div>

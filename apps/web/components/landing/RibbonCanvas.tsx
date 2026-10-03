@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { whenIdle } from '@/lib/idle';
 
 // Flowing silk ribbons as one full-screen fragment shader. A bundle of thin
 // strands follows a shared, slowly-moving centreline; strands fan out with
@@ -83,6 +84,18 @@ export function RibbonCanvas() {
   const fallbackRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Compile the shader after first paint; the vignette/background shows meanwhile.
+    let teardown: (() => void) | undefined;
+    const cancel = whenIdle(() => {
+      teardown = setup();
+    });
+    return () => {
+      cancel();
+      teardown?.();
+    };
+  }, []);
+
+  function setup(): (() => void) | undefined {
     const canvas = ref.current;
     if (!canvas) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -192,7 +205,7 @@ export function RibbonCanvas() {
       document.removeEventListener('visibilitychange', onVis);
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
-  }, []);
+  }
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
