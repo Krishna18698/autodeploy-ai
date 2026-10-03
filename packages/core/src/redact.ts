@@ -27,8 +27,12 @@ export function createRedactor(secretValues: Iterable<string>): Redactor {
       if (out.includes(v)) out = out.split(v).join('[redacted]');
     }
     for (const re of TOKEN_PATTERNS) {
-      out = out.replace(re, (_m, pre?: string, post?: string) =>
-        pre !== undefined && post !== undefined ? `${pre}[redacted]${post}` : '[redacted]',
+      // Only the URL-credentials pattern has capture groups; for the others the
+      // callback's extra arguments are (offset, input), which must never be echoed.
+      out = out.replace(re, (_m: string, pre: unknown, post: unknown) =>
+        typeof pre === 'string' && typeof post === 'string'
+          ? `${pre}[redacted]${post}`
+          : '[redacted]',
       );
     }
     return out;

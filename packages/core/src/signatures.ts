@@ -99,7 +99,7 @@ export function normalizeLine(line: string): string {
   return line
     .replace(ANSI, '')
     .replace(/^\s*\d{4}-\d\d-\d\dT[\d:.]+Z?\s*/, '') // ISO timestamps
-    .replace(/\b\d{1,2}:\d\d:\d\d(?:\.\d+)?\s*(?:AM|PM)?\b/g, '<time>')
+    .replace(/\b\d{1,2}:\d\d:\d\d(?:\.\d+)?(?:\s?(?:AM|PM)\b)?/g, '<time>')
     .replace(/(?:\/[\w.@+-]+)+\/(?=[\w.@+-]+)/g, '') // absolute dirs (keep basename)
     .replace(/\(\d+,\d+\)|:\d+:\d+\b/g, ':<pos>')
     .replace(/\b[0-9a-f]{7,64}\b/g, '<hash>')

@@ -205,7 +205,9 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
   const nvmPath = firstExisting(tree, rootDir, ['.nvmrc', '.node-version']);
   const nvm = nvmPath ? tree.read(nvmPath)?.trim() : undefined;
   if (nvm && /^v?\d/.test(nvm)) {
-    nodeRange = nvm.replace(/^v/, '');
+    // An exact pin ("20.11.0") means "that major": we provide the latest of each major.
+    const pinned = nvm.replace(/^v/, '');
+    nodeRange = /^\d+(\.\d+){0,2}$/.test(pinned) ? `${pinned.split('.')[0]}.x` : pinned;
     nodeEvidence.push({ source: nvmPath ?? '.nvmrc', detail: `pins ${nvm}` });
   } else if (pkg?.engines?.node) {
     nodeRange = pkg.engines.node;

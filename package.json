@@ -13,12 +13,32 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "infra:up": "docker compose -f infra/compose/docker-compose.yml --env-file .env up -d",
-    "infra:down": "docker compose -f infra/compose/docker-compose.yml --env-file .env down"
+    "infra:down": "docker compose -f infra/compose/docker-compose.yml --env-file .env down",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:all": "vitest run"
   },
   "devDependencies": {
+    "@autodeploy/ai": "workspace:*",
+    "@autodeploy/contracts": "workspace:*",
+    "@autodeploy/core": "workspace:*",
+    "@autodeploy/crypto": "workspace:*",
+    "@autodeploy/db": "workspace:*",
+    "@autodeploy/events": "workspace:*",
+    "@autodeploy/github": "workspace:*",
+    "@autodeploy/queue": "workspace:*",
+    "@autodeploy/resilience": "workspace:*",
     "@biomejs/biome": "2.5.14",
+    "@testcontainers/kafka": "12.2.0",
+    "@testcontainers/postgresql": "12.2.0",
     "@types/node": "26.6.2",
+    "iovalkey": "0.4.0",
+    "postgres": "3.4.9",
+    "testcontainers": "12.2.0",
+    "tsx": "4.23.15",
     "turbo": "2.11.3",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite": "^7.3.6",
+    "vitest": "5.0.3"
   }
 }
