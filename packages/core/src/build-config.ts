@@ -52,7 +52,8 @@ export function diffConfig(a: BuildConfig, b: BuildConfig): ConfigChange[] {
   }
   const envKeys = new Set([...Object.keys(a.env), ...Object.keys(b.env)]);
   for (const k of envKeys) {
-    if (a.env[k] !== b.env[k]) changes.push({ field: `env.${k}`, from: a.env[k], to: b.env[k] });
+    if (a.env[k] !== b.env[k])
+      changes.push({ field: `env.${k}`, from: a.env[k] ?? null, to: b.env[k] ?? null });
   }
   if ((a.patch ?? '') !== (b.patch ?? ''))
     changes.push({ field: 'patch', from: Boolean(a.patch), to: Boolean(b.patch) });

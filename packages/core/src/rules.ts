@@ -237,6 +237,13 @@ export function decideRecovery(
     const result = rule.apply(ctx);
     if (result) return { kind: 'rule', result };
   }
+  if (signature.code === 'PLATFORM') {
+    return {
+      kind: 'give_up',
+      reason:
+        'The build infrastructure is missing a component (no build image for this Node version). The operators have been alerted; nothing in your repository is wrong.',
+    };
+  }
   if (signature.code === 'TIMEOUT') {
     return { kind: 'give_up', reason: 'The build exceeded the time limit.' };
   }

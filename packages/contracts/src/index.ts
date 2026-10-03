@@ -253,7 +253,13 @@ export const Repair = z.object({
       model: z.string().optional(),
     })
     .nullable(),
-  configChanges: z.array(z.object({ field: z.string(), from: z.unknown(), to: z.unknown() })),
+  configChanges: z.array(
+    z.object({
+      field: z.string(),
+      from: z.unknown().nullable().optional(),
+      to: z.unknown().nullable().optional(),
+    }),
+  ),
   diff: z.string().nullable(),
   policy: z
     .object({

@@ -98,11 +98,26 @@ export class SandboxExecutor implements Executor {
       HTTP_PROXY: proxy,
       HTTPS_PROXY: proxy,
       NO_PROXY: 'localhost,127.0.0.1',
+      // Node's built-in fetch ignores proxy variables unless told otherwise.
+      NODE_USE_ENV_PROXY: '1',
       NEXT_TELEMETRY_DISABLED: '1',
       ASTRO_TELEMETRY_DISABLED: '1',
     };
     const envArgs = Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
     const image = `${this.env.SANDBOX_IMAGE_PREFIX}${config.nodeVersion}`;
+    if ((await run('docker', ['image', 'inspect', image])) !== 0) {
+      // An operator problem, not the user's: say so plainly and don't guess at a fix.
+      log.write(
+        `autodeploy: no build image for Node ${config.nodeVersion} on this worker (${image}); this is a platform issue`,
+      );
+      return {
+        ok: false,
+        exitCode: null,
+        reason: 'failed',
+        durationMs: Date.now() - started,
+        indexDirs: [],
+      };
+    }
     const args = [
       'run',
       '--rm',

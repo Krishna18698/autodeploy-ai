@@ -18,6 +18,7 @@ export type ErrorCode =
   | 'MISSING_ENV'
   | 'SSR_REQUIRED'
   | 'TIMEOUT'
+  | 'PLATFORM'
   | 'UNKNOWN';
 
 export type ErrorSignature = {
@@ -42,6 +43,7 @@ type Matcher = {
 // Order matters: the first matching line wins, and more specific patterns
 // come before generic ones.
 const MATCHERS: Matcher[] = [
+  { code: 'PLATFORM', re: /^autodeploy: no build image for Node/ },
   { code: 'TIMEOUT', re: /^autodeploy: build exceeded (?<limit>\d+)s/ },
   {
     code: 'OUTPUT_DIR_MISSING',

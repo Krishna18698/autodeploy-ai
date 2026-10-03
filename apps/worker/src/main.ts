@@ -26,6 +26,22 @@ await deps.storage
   .catch((err) => log.warn({ err }, 'object storage not reachable yet'));
 await ensureTopics(deps.kafka, Object.values(GROUPS).map(dlqTopic));
 
+// Every supported Node major needs its sandbox image; say so loudly at boot.
+{
+  const { SUPPORTED_NODE_MAJORS } = await import('@autodeploy/core');
+  const { runProcess } = await import('./executors/sandbox.js');
+  const missing: string[] = [];
+  for (const m of SUPPORTED_NODE_MAJORS) {
+    const img = `${env.SANDBOX_IMAGE_PREFIX}${m}`;
+    if ((await runProcess('docker', ['image', 'inspect', img])) !== 0) missing.push(img);
+  }
+  if (missing.length)
+    log.error(
+      { missing },
+      'sandbox images missing: builds for these Node versions will fail (run infra/sandbox/build-images.sh)',
+    );
+}
+
 // Heavy and light work get separate slot pools: a long build never blocks
 // a webhook delivery or an activation.
 const heavy = new Runner(deps, {
