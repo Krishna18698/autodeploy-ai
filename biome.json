@@ -11,7 +11,11 @@
       "!tests/fixtures",
       "!tests/corpus/repos",
       "!tests/corpus/report-*.json",
-      "!.dev"
+      "!.dev",
+      "!test-results",
+      "!playwright-report",
+      "!tests/e2e/results.json",
+      "!tests/load/config.json"
     ]
   },
   "formatter": {
