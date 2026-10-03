@@ -25,17 +25,17 @@ const nodeBuild = (script: string, extra: object = {}) => ({
   'package.json': pkg({ type: 'module', scripts: { build: 'node build.mjs' }, ...extra }),
   'build.mjs': script,
 });
-const engine = (need: string, have: string) =>
+const engine = (need: string, _have: string) =>
   `const major = Number(process.versions.node.split('.')[0]);\nif (!(${need.replace('>=', 'major >= ')})) {\n  console.error('npm error code EBADENGINE');\n  console.error('error some-lib@3.0.0: The engine "node" is incompatible with this module. Expected version "${need}". Got "' + process.versions.node + '"');\n  process.exit(1);\n}\n`;
 const fixDiff = (path: string, before: string[], after: string[]) =>
-  [
+  `${[
     `diff --git a/${path} b/${path}`,
     `--- a/${path}`,
     `+++ b/${path}`,
     `@@ -1,${before.length} +1,${after.length} @@`,
     ...before.map((l) => `-${l}`),
     ...after.map((l) => `+${l}`),
-  ].join('\n') + '\n';
+  ].join('\n')}\n`;
 
 export const CASES: Case[] = [
   // ---- builds that should just work -------------------------------------

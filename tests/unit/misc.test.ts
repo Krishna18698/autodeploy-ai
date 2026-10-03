@@ -22,11 +22,11 @@ describe('redaction', () => {
   it('removes known secret values and well-known token shapes', () => {
     const r = createRedactor(['hunter2-supersecret']);
     expect(r('password=hunter2-supersecret')).toBe('password=[redacted]');
-    expect(r('token ghp_' + 'a'.repeat(36))).toBe('token [redacted]');
+    expect(r(`token ghp_${'a'.repeat(36)}`)).toBe('token [redacted]');
     expect(r('https://user:p4ssw0rd@registry.example.com')).toBe(
       'https://user:[redacted]@registry.example.com',
     );
-    expect(r('adp_' + 'x'.repeat(30))).toBe('[redacted]');
+    expect(r(`adp_${'x'.repeat(30)}`)).toBe('[redacted]');
     expect(r('nothing to see')).toBe('nothing to see');
   });
 });

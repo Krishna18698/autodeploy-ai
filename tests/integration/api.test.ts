@@ -5,7 +5,7 @@ import { createDeps, type Deps } from '@autodeploy/api/deps';
 import { loadEnv } from '@autodeploy/api/env';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
-import { makeDeployment, makeOrg, makeProject, makeUser } from './helpers';
+import { makeDeployment, makeOrg, makeProject } from './helpers';
 
 const WEBHOOK_SECRET = 'whsec-test-secret';
 let app: FastifyInstance;

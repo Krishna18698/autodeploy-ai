@@ -8,7 +8,10 @@
       "!**/.turbo",
       "!**/.next",
       "!**/next-env.d.ts",
-      "!tests/fixtures"
+      "!tests/fixtures",
+      "!tests/corpus/repos",
+      "!tests/corpus/report-*.json",
+      "!.dev"
     ]
   },
   "formatter": {
@@ -37,6 +40,16 @@
         "rules": {
           "complexity": {
             "noImportantStyles": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["tests/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
           }
         }
       }
