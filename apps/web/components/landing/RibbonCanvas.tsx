@@ -83,6 +83,7 @@ export function RibbonCanvas() {
   const ref = useRef<HTMLCanvasElement>(null);
   const fallbackRef = useRef<HTMLDivElement>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setup only touches refs; it runs once on mount by design
   useEffect(() => {
     // Compile the shader after first paint; the vignette/background shows meanwhile.
     let teardown: (() => void) | undefined;
