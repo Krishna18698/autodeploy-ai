@@ -92,7 +92,7 @@ export function StackedColumns({
           <svg
             viewBox={`0 0 ${w} ${height}`}
             className="h-auto w-full"
-            role="img"
+            role="group"
             aria-label={ariaLabel}
             onPointerLeave={() => setTip(null)}
           >

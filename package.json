@@ -20,7 +20,8 @@
     "corpus": "tsx tests/corpus/run.ts",
     "corpus:generate": "tsx tests/corpus/generate.ts",
     "chaos": "tsx tests/chaos/run.ts",
-    "load": "tsx tests/load/run.ts"
+    "load": "tsx tests/load/run.ts",
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@autodeploy/ai": "workspace:*",
@@ -33,7 +34,9 @@
     "@autodeploy/github": "workspace:*",
     "@autodeploy/queue": "workspace:*",
     "@autodeploy/resilience": "workspace:*",
+    "@axe-core/playwright": "4.13.0",
     "@biomejs/biome": "2.5.14",
+    "@playwright/test": "1.63.0",
     "@testcontainers/kafka": "12.2.0",
     "@testcontainers/postgresql": "12.2.0",
     "@types/node": "26.6.2",

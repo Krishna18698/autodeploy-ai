@@ -28,7 +28,7 @@ export function Recovery() {
     'The prop was renamed to `account` in Props, but Header still reads `user`.'.split(' ');
   return (
     <section ref={root} id="recovery" className="relative flex min-h-dvh items-center">
-      <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+      <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center [&>*]:min-w-0">
         <div className="order-2 flex flex-col gap-3 lg:order-1 [perspective:900px]">
           <div className="glass rounded-[10px] p-4 font-mono text-[12px]">
             <div className="mb-2 flex items-center justify-between text-muted">
@@ -70,10 +70,10 @@ export function Recovery() {
             className="glass overflow-hidden rounded-[10px] font-mono text-[12px] leading-6"
           >
             <div className="border-b border-line px-4 py-2 text-muted">src/Header.tsx · +1 −1</div>
-            <div className="bg-fail/10 px-4 text-fail">
+            <div className="break-all bg-fail/10 px-4 text-fail">
               - &lt;Avatar user=&#123;props.user&#125; /&gt;
             </div>
-            <div className="bg-ok/10 px-4 text-ok">
+            <div className="break-all bg-ok/10 px-4 text-ok">
               + &lt;Avatar user=&#123;props.account&#125; /&gt;
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 py-2 text-[11px]">

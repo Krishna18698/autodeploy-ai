@@ -31,7 +31,7 @@ export function Waiting() {
   });
   return (
     <section ref={root} id="how" className="relative flex min-h-dvh items-center">
-      <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+      <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center [&>*]:min-w-0">
         <div>
           <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-run">01 · build</p>
           <h2 className="mt-3 text-[clamp(2rem,4.4vw,3.6rem)] font-semibold leading-[1.02] tracking-[-0.03em]">

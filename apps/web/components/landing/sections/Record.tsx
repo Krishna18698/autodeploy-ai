@@ -52,7 +52,7 @@ export function Record() {
   });
   return (
     <section ref={root} className="relative flex min-h-dvh items-center">
-      <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+      <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center [&>*]:min-w-0">
         <div>
           <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-run">03 · release</p>
           <h2 className="mt-3 text-[clamp(2rem,4.4vw,3.6rem)] font-semibold leading-[1.02] tracking-[-0.03em]">
@@ -63,7 +63,7 @@ export function Record() {
             pointer at the edge. No rebuild, no downtime, no guessing which files are served.
           </p>
         </div>
-        <div className="relative h-[340px] [perspective:1200px]">
+        <div className="relative h-[340px] overflow-hidden [perspective:1200px]">
           <div className="absolute inset-x-6 bottom-10 top-10 [transform:rotateX(55deg)_rotateZ(-35deg)] [transform-style:preserve-3d]">
             <div className="absolute inset-0 rounded-xl border border-line bg-panel/40" />
             {DEPLOYS.map((d, i) => (

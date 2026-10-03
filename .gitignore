@@ -29,3 +29,6 @@ next-env.d.ts
 .dev/
 tests/corpus/repos/
 tests/load/config.json
+tests/e2e/results.json
+test-results/
+playwright-report/

@@ -161,8 +161,7 @@ function History({ projectId, activeId }: { projectId: string; activeId: string 
             <div className="flex items-center gap-2">
               <StatusPill status={d.status} />
               {(d.status === 'SUPERSEDED' || d.status === 'ROLLED_BACK') &&
-                d.kind === 'production' &&
-                d.id !== activeId && (
+                d.kind === 'production' && (
                   <Button size="sm" onClick={() => setTarget(d)}>
                     Roll back
                   </Button>

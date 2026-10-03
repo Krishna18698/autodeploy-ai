@@ -18,7 +18,8 @@ export default function Landing() {
       <RibbonCanvas />
       <Cursor />
       <Nav />
-      <main>
+      {/* Scroll scenes animate in from offsets; clip so they never widen the page. */}
+      <main className="overflow-x-clip">
         <Hero />
         <Waiting />
         <Recovery />
