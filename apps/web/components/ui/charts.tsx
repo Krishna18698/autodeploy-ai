@@ -89,6 +89,7 @@ export function StackedColumns({
         />
       ) : (
         <div className="relative">
+          {/* biome-ignore lint/a11y/useSemanticElements: an SVG cannot be a fieldset; a labelled group lets its columns be focusable */}
           <svg
             viewBox={`0 0 ${w} ${height}`}
             className="h-auto w-full"

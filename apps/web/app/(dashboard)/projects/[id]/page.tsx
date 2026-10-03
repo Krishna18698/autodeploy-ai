@@ -74,7 +74,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         ]}
       />
       <div className="mt-5">
-        {tab === 'deployments' && <History projectId={id} activeId={p.activeDeploymentId} />}
+        {tab === 'deployments' && <History projectId={id} />}
         {tab === 'settings' && <Settings project={p} onSaved={() => project.refetch()} />}
         {tab === 'env' && <EnvVars projectId={id} />}
       </div>
@@ -82,7 +82,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   );
 }
 
-function History({ projectId, activeId }: { projectId: string; activeId: string | null }) {
+function History({ projectId }: { projectId: string }) {
   const deps = useDeployments({ projectId, limit: 50 }, 5_000);
   const qc = useQueryClient();
   const toast = useToast();

@@ -100,8 +100,6 @@ try {
   k6 = String((err as { stdout?: string }).stdout ?? err);
 }
 const pick = (re: RegExp) => re.exec(k6)?.[0] ?? '';
-const scenarioLine = (name: string) =>
-  new RegExp(`\\{ scenario:${name} \\}[^\\n]*`).exec(k6)?.[0]?.trim() ?? '';
 console.log(pick(/http_req_duration[^\n]*\n(?:\s+\{[^\n]*\n)+/));
 console.log(pick(/checks[^\n]*\n/), pick(/http_reqs[^\n]*\n/));
 
