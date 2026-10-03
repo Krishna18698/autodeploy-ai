@@ -150,6 +150,6 @@ test('landing respects reduced motion and works without WebGL', async ({ browser
   // The static gradient fallback replaces the canvas.
   await expect(page.locator('canvas')).toBeHidden();
   // Count-ups show their final values immediately.
-  await expect(page.getByText('11.7').first()).toBeAttached();
+  await expect(page.getByText('82', { exact: true }).first()).toBeAttached();
   await ctx.close();
 });
