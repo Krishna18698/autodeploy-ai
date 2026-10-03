@@ -1,10 +1,16 @@
 import type { Redactor } from '@autodeploy/core';
 import { TOPICS } from '@autodeploy/db';
 import { publish } from '@autodeploy/events';
+import { CircuitBreaker, withTimeout } from '@autodeploy/resilience';
 import { monotonicFactory } from 'ulid';
 import type { Deps } from '../deps.js';
 
 const ulid = monotonicFactory();
+
+// Live log batches are best-effort: if Kafka is slow or down they are skipped
+// (the full log still goes to object storage), and the breaker stops every
+// build from waiting on a dead broker.
+const liveLogs = new CircuitBreaker('live-logs', { failureThreshold: 3, cooldownMs: 30_000 });
 const PUBLISH_EVERY_MS = 400;
 const PUBLISH_MAX_LINES = 200;
 const CHUNK_LINES = 1000;
@@ -85,9 +91,15 @@ export class LogSink {
       deploymentId: this.ctx.deploymentId,
       data: { attemptNo: this.ctx.attemptNo, lines },
     };
-    await publish(this.deps.producer, [
-      { topic: TOPICS.buildLogs, key: this.ctx.attemptId, value: JSON.stringify(event) },
-    ]);
+    await liveLogs
+      .exec(() =>
+        withTimeout(2_000, () =>
+          publish(this.deps.producer, [
+            { topic: TOPICS.buildLogs, key: this.ctx.attemptId, value: JSON.stringify(event) },
+          ]),
+        ),
+      )
+      .catch(() => {}); // dropped live batch; history is persisted separately
   }
 
   private async persistChunk() {

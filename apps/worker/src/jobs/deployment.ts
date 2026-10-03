@@ -14,6 +14,7 @@ import { decrypt } from '@autodeploy/crypto';
 import { activate, recordEvent, transition } from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
 import { enqueue } from '@autodeploy/queue';
+import { retry } from '@autodeploy/resilience';
 import { currentTraceparent, withSpan } from '@autodeploy/telemetry';
 import type { Deps } from '../deps.js';
 import { GitHubActionsExecutor } from '../executors/github-actions.js';
@@ -189,6 +190,18 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
     async (span) => {
       const d = await loadDeployment(deps, deploymentId);
       if (!d) return;
+      if (d.status === 'VALIDATING') {
+        // A previous run died between building and publishing: redo the build.
+        await deps.sql.begin((tx) =>
+          transition(tx, {
+            deploymentId,
+            to: 'QUEUED',
+            expectFrom: ['VALIDATING'],
+            payload: { reason: 'validation interrupted; rebuilding' },
+          }),
+        );
+        d.status = 'QUEUED';
+      }
       if (d.status === 'QUEUED') {
         await deps.sql.begin((tx) =>
           transition(tx, {
@@ -338,7 +351,14 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
           return;
         }
 
-        const artifact = await storeArtifact(deps, result.outputDir);
+        // Object storage blips shouldn't cost a rebuild: retry the upload in place.
+        const artifact = await retry(() => storeArtifact(deps, result.outputDir), {
+          attempts: 6,
+          baseMs: 1_000,
+          capMs: 15_000,
+          onRetry: (err, n, delay) =>
+            deps.log.warn({ err, attempt: n, delay }, 'artifact upload failed; retrying'),
+        });
         let screenshotKey: string | null = null;
         if (validation.screenshotPath) {
           screenshotKey = `screenshots/${deploymentId}.png`;

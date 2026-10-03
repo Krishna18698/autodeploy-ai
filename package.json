@@ -18,7 +18,8 @@
     "test:integration": "vitest run --project integration",
     "test:all": "vitest run",
     "corpus": "tsx tests/corpus/run.ts",
-    "corpus:generate": "tsx tests/corpus/generate.ts"
+    "corpus:generate": "tsx tests/corpus/generate.ts",
+    "chaos": "tsx tests/chaos/run.ts"
   },
   "devDependencies": {
     "@autodeploy/ai": "workspace:*",

@@ -31,7 +31,8 @@ export const TRANSITIONS: Readonly<Record<DeploymentStatus, readonly DeploymentS
   // Recovery either re-queues a patched build, or gives up / asks a human.
   RECOVERING: ['QUEUED', 'NEEDS_INPUT', 'FAILED', 'CANCELED'],
   // Validation can send a build back into recovery (e.g. wrong base path).
-  VALIDATING: ['READY', 'AWAITING_APPROVAL', 'BUILD_FAILED', 'FAILED', 'CANCELED'],
+  // QUEUED: validation was interrupted (worker lost, storage down) and the build is redone.
+  VALIDATING: ['READY', 'AWAITING_APPROVAL', 'BUILD_FAILED', 'QUEUED', 'FAILED', 'CANCELED'],
   // AI-patched builds are already validated; approval publishes them as-is.
   AWAITING_APPROVAL: ['READY', 'FAILED', 'CANCELED'],
   NEEDS_INPUT: ['FAILED', 'CANCELED'],

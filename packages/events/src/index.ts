@@ -3,10 +3,14 @@ import { withTimeout } from '@autodeploy/resilience';
 import {
   Admin,
   Consumer,
+  type Message,
   Producer,
   stringDeserializers,
   stringSerializers,
 } from '@platformatic/kafka';
+
+type KafkaMessage = Message<string, string, string, string>;
+
 import type postgres from 'postgres';
 
 // Kafka is the event backbone (fan-out + replay). Jobs stay in Postgres.
@@ -124,81 +128,113 @@ export async function runConsumer(
   // The DLQ topic must exist before the first poison message: publishing to a
   // missing topic waits on metadata and would stall the whole partition.
   await ensureTopics(o.kafka, [dlqTopic(o.groupId)]);
-  const consumer = new Consumer({
-    groupId: o.groupId,
-    clientId: `${o.kafka.clientId}-${o.groupId}`,
-    bootstrapBrokers: o.kafka.brokers,
-    deserializers: stringDeserializers,
-    sessionTimeout: 15_000,
-    heartbeatInterval: 1_000,
-    rebalanceTimeout: 30_000,
-  });
-  const stream = await consumer.consume({
-    topics: o.topics,
-    autocommit: false,
-    mode: 'committed',
-    fallbackMode: 'earliest',
-    maxWaitTime: 500,
-  });
   const maxAttempts = o.maxAttempts ?? 3;
   let stopped = false;
+  let current: {
+    consumer: Consumer<string, string, string, string>;
+    stream: { close(): Promise<void> } & AsyncIterable<KafkaMessage>;
+  } | null = null;
 
-  const loop = (async () => {
-    for await (const msg of stream) {
-      if (stopped) break;
-      const raw = msg.value;
-      let event: DomainEvent | undefined;
-      try {
-        event = DomainEvent.parse(JSON.parse(raw));
-      } catch (err) {
-        await deadLetter(o, msg.topic, undefined, raw, `unparseable: ${(err as Error).message}`, 1);
-        await msg.commit();
-        continue;
-      }
-      let attempt = 0;
-      for (;;) {
-        attempt++;
-        try {
-          const processed =
-            o.dedupe === false
-              ? await (o.handler as LooseHandler)(event).then(() => true)
-              : await o.sql.begin(async (tx) => {
-                  const ins = await tx`insert into processed_events (consumer, event_id)
-                    values (${o.groupId}, ${event.id}) on conflict do nothing returning event_id`;
-                  if (ins.length === 0) return false; // already handled: duplicate delivery
-                  await (o.handler as Handler)(event, tx);
-                  return true;
-                });
-          if (processed) o.onProcessed?.(event);
-          break;
-        } catch (err) {
-          if (attempt >= maxAttempts) {
-            o.log.error(
-              { err, eventId: event.id, group: o.groupId },
-              'event failed; dead-lettering',
-            );
-            await deadLetter(o, msg.topic, event.id, raw, (err as Error).message, attempt);
-            break;
-          }
-          o.log.warn({ err, eventId: event.id, attempt }, 'event handler failed; retrying');
-          await sleep(200 * 2 ** attempt);
-        }
-      }
+  const connect = async () => {
+    const consumer = new Consumer({
+      groupId: o.groupId,
+      clientId: `${o.kafka.clientId}-${o.groupId}`,
+      bootstrapBrokers: o.kafka.brokers,
+      deserializers: stringDeserializers,
+      sessionTimeout: 15_000,
+      heartbeatInterval: 1_000,
+      rebalanceTimeout: 30_000,
+    });
+    const stream = await consumer.consume({
+      topics: o.topics,
+      autocommit: false,
+      mode: 'committed',
+      fallbackMode: 'earliest',
+      maxWaitTime: 500,
+    });
+    return {
+      consumer,
+      stream: stream as unknown as { close(): Promise<void> } & AsyncIterable<KafkaMessage>,
+    };
+  };
+
+  const processMessage = async (msg: KafkaMessage) => {
+    const raw = msg.value;
+    let event: DomainEvent | undefined;
+    try {
+      event = DomainEvent.parse(JSON.parse(raw));
+    } catch (err) {
+      await deadLetter(o, msg.topic, undefined, raw, `unparseable: ${(err as Error).message}`, 1);
       await msg.commit();
+      return;
     }
-  })().catch((err) => {
-    if (!stopped) o.log.error({ err, group: o.groupId }, 'consumer loop crashed');
-  });
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const processed =
+          o.dedupe === false
+            ? await (o.handler as LooseHandler)(event).then(() => true)
+            : await o.sql.begin(async (tx) => {
+                const ins = await tx`insert into processed_events (consumer, event_id)
+                  values (${o.groupId}, ${event.id}) on conflict do nothing returning event_id`;
+                if (ins.length === 0) return false; // already handled: duplicate delivery
+                await (o.handler as Handler)(event, tx);
+                return true;
+              });
+        if (processed) o.onProcessed?.(event);
+        break;
+      } catch (err) {
+        if (attempt >= maxAttempts) {
+          o.log.error({ err, eventId: event.id, group: o.groupId }, 'event failed; dead-lettering');
+          await deadLetter(o, msg.topic, event.id, raw, (err as Error).message, attempt);
+          break;
+        }
+        o.log.warn({ err, eventId: event.id, attempt }, 'event handler failed; retrying');
+        await sleep(200 * 2 ** attempt);
+      }
+    }
+    await msg.commit();
+  };
+
+  // Supervisor: a broker outage ends the stream with an error; reconnect with
+  // backoff instead of leaving the group dead until someone restarts us.
+  const loop = (async () => {
+    let backoff = 1_000;
+    while (!stopped) {
+      try {
+        current = await connect();
+        backoff = 1_000;
+        for await (const msg of current.stream) {
+          if (stopped) break;
+          await processMessage(msg);
+        }
+      } catch (err) {
+        if (stopped) break;
+        o.log.warn(
+          { err: (err as Error).message, group: o.groupId, retryInMs: backoff },
+          'consumer disconnected; reconnecting',
+        );
+      }
+      const c = current;
+      current = null;
+      await c?.stream.close().catch(() => {});
+      await c?.consumer.close(true).catch(() => {});
+      if (!stopped) {
+        await sleep(backoff);
+        backoff = Math.min(backoff * 2, 30_000);
+      }
+    }
+  })();
 
   return {
     stop: async () => {
       stopped = true;
-      await stream.close();
-      await consumer.close(true);
+      await current?.stream.close().catch(() => {});
+      await current?.consumer.close(true).catch(() => {});
       await loop;
     },
     lag: async () => {
-      const lag = await consumer.getLag({ topics: o.topics });
+      if (!current) return Number.NaN;
+      const lag = await current.consumer.getLag({ topics: o.topics });
       let total = 0n;
       for (const parts of lag.values()) for (const p of parts) if (p > 0n) total += p;
       return Number(total);

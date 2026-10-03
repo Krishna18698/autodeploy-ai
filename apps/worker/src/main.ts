@@ -24,7 +24,22 @@ await migrate(deps.sql);
 await deps.storage
   .ensureBucket()
   .catch((err) => log.warn({ err }, 'object storage not reachable yet'));
-await ensureTopics(deps.kafka, Object.values(GROUPS).map(dlqTopic));
+
+// A worker that was killed (OOM, kill -9, host reboot) can leave its build
+// containers running. This host runs one worker, so anything left is orphaned:
+// stop it before claiming new work. Its job comes back via the lease reaper.
+{
+  const { execFile } = await import('node:child_process');
+  const ids = await new Promise<string[]>((resolve) =>
+    execFile('docker', ['ps', '-q', '--filter', 'name=^ad-build-'], (err, out) =>
+      resolve(err ? [] : out.split('\n').filter(Boolean)),
+    ),
+  );
+  if (ids.length) {
+    await new Promise((r) => execFile('docker', ['kill', ...ids], r));
+    log.warn({ count: ids.length }, 'killed orphaned build containers from a previous worker');
+  }
+}
 
 // Every supported Node major needs its sandbox image; say so loudly at boot.
 {
@@ -68,9 +83,28 @@ await light.start();
 const relay = startRelay(deps);
 const cron = startCron(deps);
 
+// Kafka is needed for live logs and the event consumers, not for building:
+// the worker runs jobs immediately and attaches consumers once the broker is
+// reachable (the outbox holds events until then).
 const consumers: RunningConsumer[] = [];
-for (const g of Object.keys(GROUPS) as Array<keyof typeof GROUPS>)
-  consumers.push(await startConsumer(deps, g));
+void (async () => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await ensureTopics(deps.kafka, Object.values(GROUPS).map(dlqTopic));
+      for (const g of Object.keys(GROUPS) as Array<keyof typeof GROUPS>)
+        consumers.push(await startConsumer(deps, g));
+      log.info('event consumers attached');
+      return;
+    } catch (err) {
+      const delay = Math.min(30_000, 1_000 * 2 ** Math.min(attempt, 5));
+      log.warn(
+        { err: (err as Error).message, retryInMs: delay },
+        'Kafka unavailable; consumers will attach when it is back',
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+})();
 
 // Consumer lag → Prometheus gauge + a hash the API's analytics endpoint reads.
 const lagTimer = setInterval(async () => {
