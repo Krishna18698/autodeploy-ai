@@ -28,3 +28,4 @@ next-env.d.ts
 .wrangler/
 .dev/
 tests/corpus/repos/
+tests/load/config.json

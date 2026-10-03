@@ -19,7 +19,8 @@
     "test:all": "vitest run",
     "corpus": "tsx tests/corpus/run.ts",
     "corpus:generate": "tsx tests/corpus/generate.ts",
-    "chaos": "tsx tests/chaos/run.ts"
+    "chaos": "tsx tests/chaos/run.ts",
+    "load": "tsx tests/load/run.ts"
   },
   "devDependencies": {
     "@autodeploy/ai": "workspace:*",

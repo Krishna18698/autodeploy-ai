@@ -31,15 +31,17 @@ export async function createDeployment(
   return withOrg(deps.sql, input.orgId, async (tx) => {
     await enforceQuota(tx, input.orgId);
 
-    const [alloc] = await tx<{ number: number }[]>`
-      update projects set next_deploy_number = next_deploy_number + 1, updated_at = now()
-      where id = ${input.projectId} returning next_deploy_number - 1 as number`;
-    if (!alloc) throw new AppError(404, 'not_found', 'Project not found');
-
     // A newer production build makes older not-yet-started ones pointless.
     if (input.kind === 'production') await cancelStale(tx, input.projectId, input.branch);
     if (input.kind === 'preview' && input.prNumber)
       await cancelStalePreview(tx, input.projectId, input.prNumber);
+
+    // Numbering takes the project row lock; take it as late as possible so
+    // concurrent deploys to one project hold it only for the inserts below.
+    const [alloc] = await tx<{ number: number }[]>`
+      update projects set next_deploy_number = next_deploy_number + 1, updated_at = now()
+      where id = ${input.projectId} returning next_deploy_number - 1 as number`;
+    if (!alloc) throw new AppError(404, 'not_found', 'Project not found');
 
     const [dep] = await tx<{ id: string; number: number }[]>`
       insert into deployments (org_id, project_id, number, kind, trigger, ref, branch, commit_sha, commit_message,
