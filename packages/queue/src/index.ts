@@ -40,11 +40,15 @@ export async function enqueue(
   payload: object,
   opts: EnqueueOptions = {},
 ): Promise<number | null> {
-  const runAt = opts.runAt ?? (opts.delayMs ? new Date(Date.now() + opts.delayMs) : new Date());
+  // The database clock is the only clock the queue trusts: claim() compares
+  // run_at with now(), so stamping it with the app server's clock would let
+  // skew between hosts delay (or prematurely release) work.
+  const delayMs = opts.delayMs ?? 0;
   const rows = await db<{ id: number }[]>`
     insert into jobs (type, payload, org_id, priority, run_at, max_attempts, idempotency_key)
     values (${type}, ${db.json(payload as never)}, ${opts.orgId ?? null}, ${opts.priority ?? 0},
-            ${runAt}, ${opts.maxAttempts ?? 5}, ${opts.idempotencyKey ?? null})
+            coalesce(${opts.runAt ?? null}::timestamptz, now() + ${`${delayMs} milliseconds`}::interval),
+            ${opts.maxAttempts ?? 5}, ${opts.idempotencyKey ?? null})
     on conflict (idempotency_key) do nothing
     returning id`;
   await db`select pg_notify(${NOTIFY_CHANNEL}, ${type})`;

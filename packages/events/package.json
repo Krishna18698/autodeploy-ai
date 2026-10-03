@@ -12,6 +12,7 @@
     "@platformatic/kafka": "2.13.0",
     "@autodeploy/contracts": "workspace:*",
     "ulid": "3.0.2",
-    "postgres": "3.4.9"
+    "postgres": "3.4.9",
+    "@autodeploy/resilience": "workspace:*"
   }
 }

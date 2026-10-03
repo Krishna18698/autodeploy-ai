@@ -11,6 +11,9 @@ importers:
       '@autodeploy/ai':
         specifier: workspace:*
         version: link:packages/ai
+      '@autodeploy/api':
+        specifier: workspace:*
+        version: link:apps/api
       '@autodeploy/contracts':
         specifier: workspace:*
         version: link:packages/contracts
@@ -360,6 +363,9 @@ importers:
       '@autodeploy/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@autodeploy/resilience':
+        specifier: workspace:*
+        version: link:../resilience
       '@platformatic/kafka':
         specifier: 2.13.0
         version: 2.13.0

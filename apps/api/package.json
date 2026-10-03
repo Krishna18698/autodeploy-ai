@@ -37,5 +37,10 @@
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "tsup": "8.5.1"
+  },
+  "exports": {
+    "./app": "./src/app.ts",
+    "./deps": "./src/deps.ts",
+    "./env": "./src/env.ts"
   }
 }

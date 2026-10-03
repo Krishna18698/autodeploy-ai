@@ -1,4 +1,5 @@
 import { DomainEvent } from '@autodeploy/contracts';
+import { withTimeout } from '@autodeploy/resilience';
 import {
   Admin,
   Consumer,
@@ -120,6 +121,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function runConsumer(
   o: ConsumerOptions,
 ): Promise<{ stop: () => Promise<void>; lag: () => Promise<number> }> {
+  // The DLQ topic must exist before the first poison message: publishing to a
+  // missing topic waits on metadata and would stall the whole partition.
+  await ensureTopics(o.kafka, [dlqTopic(o.groupId)]);
   const consumer = new Consumer({
     groupId: o.groupId,
     clientId: `${o.kafka.clientId}-${o.groupId}`,
@@ -212,14 +216,17 @@ async function deadLetter(
 ) {
   await o.sql`insert into dead_letters (consumer, topic, event_id, payload, error, attempts)
     values (${o.groupId}, ${topic}, ${eventId ?? null}, ${o.sql.json(safeJson(raw) as never)}, ${error.slice(0, 4000)}, ${attempts})`;
-  await publish(o.producer, [
-    {
-      topic: dlqTopic(o.groupId),
-      key: eventId ?? 'unknown',
-      value: raw,
-      headers: { error: error.slice(0, 500), source: topic },
-    },
-  ]).catch((err) =>
+  // Bounded: the DB row above is the durable record; the topic is a convenience.
+  await withTimeout(5_000, () =>
+    publish(o.producer, [
+      {
+        topic: dlqTopic(o.groupId),
+        key: eventId ?? 'unknown',
+        value: raw,
+        headers: { error: error.slice(0, 500), source: topic },
+      },
+    ]),
+  ).catch((err) =>
     o.log.error({ err }, 'failed to publish to DLQ topic (row kept in dead_letters)'),
   );
 }

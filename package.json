@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@autodeploy/ai": "workspace:*",
+    "@autodeploy/api": "workspace:*",
     "@autodeploy/contracts": "workspace:*",
     "@autodeploy/core": "workspace:*",
     "@autodeploy/crypto": "workspace:*",
