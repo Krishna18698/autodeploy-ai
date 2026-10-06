@@ -35,3 +35,4 @@ tests/e2e/results.json
 test-results/
 playwright-report/
 .vercel
+tests/demo/out/

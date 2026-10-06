@@ -17,6 +17,7 @@
       "!tests/e2e/results.json",
       "!tests/load/config.json",
       "!tests/security/zap",
+      "!tests/demo/acme-shop",
       "!.vercel"
     ]
   },

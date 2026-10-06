@@ -4,6 +4,7 @@ import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { useRef } from 'react';
+import { DemoVideo } from './DemoVideo';
 import { HeroCard } from './HeroCard';
 
 gsap.registerPlugin(useGSAP, SplitText);
@@ -67,15 +68,7 @@ export function Hero() {
           >
             Connect GitHub
           </a>
-          <a
-            href="#recovery"
-            className="flex items-center gap-2 rounded-full border border-line bg-panel/50 px-4 py-2.5 text-sm text-fg/90 transition-colors hover:border-muted"
-          >
-            <span aria-hidden className="text-[10px]">
-              ▶
-            </span>{' '}
-            Watch a self-heal, 40s
-          </a>
+          <DemoVideo />
         </div>
         <p data-fade className="mt-5 font-mono text-[11px] text-muted">
           free · no card · rules first, AI only when needed
