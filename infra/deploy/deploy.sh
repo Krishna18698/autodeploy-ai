@@ -9,7 +9,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 : "${IMAGE_TAG:?set IMAGE_TAG to the image tag to deploy}"
 export IMAGE_TAG
-compose() { docker compose --env-file .env.prod -f docker-compose.prod.yml "$@"; }
+# SMALL=1: the 1 OCPU / 6 GB profile (docker-compose.small.yml).
+files=(-f docker-compose.prod.yml)
+[ "${SMALL:-}" = 1 ] && files+=(-f docker-compose.small.yml)
+apis=(api-1 api-2)
+[ "${SMALL:-}" = 1 ] && apis=(api-1)
+compose() { docker compose --env-file .env.prod "${files[@]}" "$@"; }
 
 wait_healthy() {
   local svc=$1
@@ -23,9 +28,9 @@ wait_healthy() {
 }
 
 # SKIP_PULL=1 when ship.sh built the images on this VM.
-[ "${SKIP_PULL:-}" = 1 ] || compose pull api-1 api-2 worker egress
+[ "${SKIP_PULL:-}" = 1 ] || compose pull "${apis[@]}" worker egress
 compose up -d --remove-orphans postgres valkey kafka egress caddy
-for svc in api-1 api-2; do
+for svc in "${apis[@]}"; do
   echo "▸ rolling $svc"
   compose up -d --no-deps "$svc"
   wait_healthy "$svc"

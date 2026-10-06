@@ -4,6 +4,7 @@
 #   First time (VM just created):   ./ship.sh ubuntu@<vm public ip>
 #     needs, only for that run:     terraform apply -var bootstrap_ssh_cidr=<your ip>/32
 #   Every time after:               ./ship.sh autodeploy-vm      (SSH over the tunnel)
+#   On a 1 OCPU / 6 GB VM:          SMALL=1 ./ship.sh …          (docker-compose.small.yml)
 #
 # Idempotent: each step checks before it acts. Only committed files are sent
 # (git archive), so local env files and keys never leave the Mac except
@@ -69,7 +70,7 @@ remote "cd $dir/src && \
   sudo docker build -q -t ghcr.io/$owner/autodeploy-egress:$tag infra/sandbox/egress"
 
 step "deploy (rolling)"
-remote "cd $dir/src/infra/deploy && sudo IMAGE_TAG=$tag SKIP_PULL=1 bash deploy.sh"
+remote "cd $dir/src/infra/deploy && sudo IMAGE_TAG=$tag SKIP_PULL=1 SMALL=${SMALL:-} bash deploy.sh"
 
 step "nightly encrypted backup (03:30 UTC)"
 remote "echo '30 3 * * * root bash $dir/src/infra/backup/backup.sh >> /var/log/autodeploy-backup.log 2>&1' | sudo tee /etc/cron.d/autodeploy-backup >/dev/null"

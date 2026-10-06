@@ -27,3 +27,15 @@ variable "bootstrap_ssh_cidr" {
   default     = ""
   description = "Your IP as a.b.c.d/32 during first VM setup only; empty = no inbound SSH."
 }
+
+# Always Free allows up to 2 OCPU / 12 GB of A1 in total. If Oracle keeps
+# reporting "Out of host capacity", 1 / 6 is easier to get (pair it with
+# SMALL=1 for ship.sh).
+variable "vm_ocpus" {
+  type    = number
+  default = 2
+}
+variable "vm_memory_gb" {
+  type    = number
+  default = 12
+}

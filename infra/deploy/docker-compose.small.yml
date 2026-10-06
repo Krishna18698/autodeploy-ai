@@ -1,0 +1,26 @@
+# Overrides for a smaller Always Free VM (1 OCPU / 6 GB instead of 2 / 12),
+# in case Oracle only has capacity for that. Used when SMALL=1:
+#   SMALL=1 ./ship.sh <target>
+# One API replica (Caddy routes around the missing api-2), one build at a
+# time with less memory, and smaller Postgres/Valkey/Kafka footprints.
+# Budget: ~3.2 GB services + 2 GB build container + OS.
+services:
+  postgres:
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=80", "-c", "effective_cache_size=768MB"]
+    mem_limit: 1g
+  valkey:
+    command: ["valkey-server", "--appendonly", "yes", "--requirepass", "${VALKEY_PASSWORD}", "--maxmemory", "192mb", "--maxmemory-policy", "volatile-lru"]
+    mem_limit: 256m
+  kafka:
+    environment:
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    mem_limit: 768m
+  api-2:
+    profiles: ["two-apis"] # not started unless that profile is enabled
+  worker:
+    environment:
+      SANDBOX_CPUS: "0.8"
+      SANDBOX_MEMORY: 2g
+    mem_limit: 512m
+  caddy:
+    depends_on: !override [api-1]

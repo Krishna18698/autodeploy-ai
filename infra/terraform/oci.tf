@@ -75,8 +75,8 @@ resource "oci_core_instance" "vm" {
   display_name        = "autodeploy"
   shape               = "VM.Standard.A1.Flex"
   shape_config {
-    ocpus         = 2
-    memory_in_gbs = 12
+    ocpus         = var.vm_ocpus
+    memory_in_gbs = var.vm_memory_gb
   }
   source_details {
     source_type             = "image"
