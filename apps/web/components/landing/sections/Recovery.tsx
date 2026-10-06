@@ -27,7 +27,7 @@ export function Recovery() {
   const diagnosis =
     'The prop was renamed to `account` in Props, but Header still reads `user`.'.split(' ');
   return (
-    <section ref={root} id="recovery" className="relative flex min-h-dvh items-center">
+    <section ref={root} id="recovery" className="relative flex min-h-svh items-center">
       <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center [&>*]:min-w-0">
         <div className="order-2 flex flex-col gap-3 lg:order-1 [perspective:900px]">
           <div className="glass rounded-[10px] p-4 font-mono text-[12px]">

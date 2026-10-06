@@ -26,7 +26,7 @@ function LoginInner() {
   };
 
   return (
-    <main className="grid min-h-dvh place-items-center px-4">
+    <main className="grid min-h-svh place-items-center px-4">
       <div className="w-full max-w-sm rounded-[10px] border border-line bg-panel p-6">
         <div className="mb-6 flex items-center gap-2 text-sm font-semibold">
           <span

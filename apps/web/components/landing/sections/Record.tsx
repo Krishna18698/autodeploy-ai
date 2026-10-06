@@ -55,7 +55,7 @@ export function Record() {
       .from('[data-rollback-note]', { opacity: 0, y: 6, duration: 0.3 });
   });
   return (
-    <section ref={root} className="relative flex min-h-dvh items-center">
+    <section ref={root} className="relative flex min-h-svh items-center">
       <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center [&>*]:min-w-0">
         <div>
           <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-run">03 · release</p>

@@ -31,7 +31,7 @@ export function Waiting() {
     tl.from('[data-step]', { color: '#8a93a3', stagger: 0.7, duration: 0.2 }, 0);
   });
   return (
-    <section ref={root} id="how" className="relative flex min-h-dvh items-center">
+    <section ref={root} id="how" className="relative flex min-h-svh items-center">
       <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center [&>*]:min-w-0">
         <div>
           <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-run">01 · build</p>

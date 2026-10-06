@@ -6,6 +6,9 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import type { RefObject } from 'react';
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
+// Phones fire resize whenever the address bar slides in or out; re-measuring
+// then (scroll to 0, restore) jolts the page. Real rotations still refresh.
+ScrollTrigger.config({ ignoreMobileResize: true });
 
 /**
  * A pinned, scroll-scrubbed scene on desktop; a simple reveal on small

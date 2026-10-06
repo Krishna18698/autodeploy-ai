@@ -33,7 +33,7 @@ export function Hero() {
   return (
     <section
       ref={root}
-      className="relative mx-auto grid min-h-dvh max-w-7xl items-center gap-12 px-4 pb-16 pt-28 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pt-20"
+      className="relative mx-auto grid min-h-svh max-w-7xl items-center gap-12 px-4 pb-16 pt-28 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pt-20"
     >
       <div>
         <p
