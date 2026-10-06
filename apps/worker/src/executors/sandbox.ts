@@ -103,6 +103,14 @@ export class SandboxExecutor implements Executor {
       NEXT_TELEMETRY_DISABLED: '1',
       ASTRO_TELEMETRY_DISABLED: '1',
     };
+    // That proxy switch makes Node print an "experimental" warning on every
+    // process; it is ours, not the user's, so keep it out of their logs.
+    // (--disable-warning needs Node 20.11+; Node 18 builds keep the warning.)
+    if (config.nodeVersion >= 20) {
+      env.NODE_OPTIONS = [env.NODE_OPTIONS, '--disable-warning=UNDICI-EHPA']
+        .filter(Boolean)
+        .join(' ');
+    }
     const envArgs = Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
     const image = `${this.env.SANDBOX_IMAGE_PREFIX}${config.nodeVersion}`;
     if ((await run('docker', ['image', 'inspect', image])) !== 0) {
