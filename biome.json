@@ -15,7 +15,9 @@
       "!test-results",
       "!playwright-report",
       "!tests/e2e/results.json",
-      "!tests/load/config.json"
+      "!tests/load/config.json",
+      "!tests/security/zap",
+      "!.vercel"
     ]
   },
   "formatter": {
