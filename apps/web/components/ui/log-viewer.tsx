@@ -62,16 +62,30 @@ export function LogViewer({ lines, live }: { lines: LogLine[]; live: boolean }) 
     () => (query ? lines.filter((l) => l.text.toLowerCase().includes(query.toLowerCase())) : lines),
     [lines, query],
   );
+  // Line numbers restart with each attempt, so each attempt gets a divider
+  // once a deployment has more than one.
+  const rows = useMemo(() => {
+    const multi = new Set(lines.map((l) => l.attemptNo)).size > 1;
+    const out: Array<{ kind: 'attempt'; attemptNo: number } | { kind: 'line'; line: LogLine }> = [];
+    let prev: number | undefined;
+    for (const line of filtered) {
+      if (multi && line.attemptNo !== prev)
+        out.push({ kind: 'attempt', attemptNo: line.attemptNo });
+      prev = line.attemptNo;
+      out.push({ kind: 'line', line });
+    }
+    return out;
+  }, [filtered, lines]);
   const v = useVirtualizer({
-    count: filtered.length,
+    count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 20,
     overscan: 30,
   });
 
   useEffect(() => {
-    if (follow && filtered.length) v.scrollToIndex(filtered.length - 1, { align: 'end' });
-  }, [filtered.length, follow, v]);
+    if (follow && rows.length) v.scrollToIndex(rows.length - 1, { align: 'end' });
+  }, [rows.length, follow, v]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -118,8 +132,23 @@ export function LogViewer({ lines, live }: { lines: LogLine[]; live: boolean }) 
         ) : (
           <div style={{ height: v.getTotalSize(), position: 'relative' }}>
             {v.getVirtualItems().map((item) => {
-              const l = filtered[item.index];
-              if (!l) return null;
+              const row = rows[item.index];
+              if (!row) return null;
+              if (row.kind === 'attempt')
+                return (
+                  <div
+                    key={item.key}
+                    data-index={item.index}
+                    ref={v.measureElement}
+                    className="absolute inset-x-0 flex items-center gap-3 px-3 pb-1 pt-2 text-[11px] uppercase tracking-[0.1em] text-muted"
+                    style={{ transform: `translateY(${item.start}px)` }}
+                  >
+                    <span className="w-10 shrink-0" />
+                    <span>attempt {row.attemptNo}</span>
+                    <span className="h-px flex-1 bg-line" />
+                  </div>
+                );
+              const l = row.line;
               return (
                 <div
                   key={item.key}

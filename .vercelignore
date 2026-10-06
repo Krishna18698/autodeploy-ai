@@ -1,0 +1,26 @@
+# Vercel CLI uploads ignore this file, not .gitignore. Allowlist only what the
+# dashboard build needs; everything else (env files, infra state, keys) stays local.
+/*
+!/apps
+!/packages
+!/package.json
+!/pnpm-lock.yaml
+!/pnpm-workspace.yaml
+!/tsconfig.base.json
+!/turbo.json
+!/.nvmrc
+
+node_modules
+dist
+.next
+.turbo
+.wrangler
+.dev
+.env
+.env.*
+!.env.example
+.dev.vars
+*.pem
+*.key
+*.tfvars
+*.tfstate*

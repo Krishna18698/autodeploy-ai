@@ -34,3 +34,4 @@ tests/load/config.json
 tests/e2e/results.json
 test-results/
 playwright-report/
+.vercel
