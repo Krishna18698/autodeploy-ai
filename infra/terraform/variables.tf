@@ -21,3 +21,9 @@ variable "platform_domain" {
   type        = string
   description = "e.g. autodeploy.eu.org — must already be a zone in Cloudflare"
 }
+
+variable "bootstrap_ssh_cidr" {
+  type        = string
+  default     = ""
+  description = "Your IP as a.b.c.d/32 during first VM setup only; empty = no inbound SSH."
+}

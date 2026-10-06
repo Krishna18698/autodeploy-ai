@@ -4,7 +4,16 @@
 //   pr-42--shop.<domain>   preview for pull request 42
 //   d128--shop.<domain>    one specific deployment (immutable)
 
-export const RESERVED_LABELS = new Set(['app', 'api', 'www', 'docs', 'status', 'admin', 'mail']);
+export const RESERVED_LABELS = new Set([
+  'app',
+  'api',
+  'www',
+  'docs',
+  'status',
+  'admin',
+  'mail',
+  'ssh',
+]);
 
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 

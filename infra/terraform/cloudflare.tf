@@ -22,8 +22,11 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
   account_id = var.cloudflare_account_id
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.api.id
   config = {
+    # cloudflared runs on the VM host (systemd), not in Compose, so SSH keeps
+    # working even when the stack is down.
     ingress = [
-      { hostname = "api.${var.platform_domain}", service = "http://caddy:8080" },
+      { hostname = "api.${var.platform_domain}", service = "http://localhost:8080" },
+      { hostname = "ssh.${var.platform_domain}", service = "ssh://localhost:22" },
       { service = "http_status:404" },
     ]
   }
@@ -32,6 +35,15 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
 resource "cloudflare_dns_record" "api" {
   zone_id = data.cloudflare_zone.platform.zone_id
   name    = "api"
+  type    = "CNAME"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.api.id}.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "ssh" {
+  zone_id = data.cloudflare_zone.platform.zone_id
+  name    = "ssh"
   type    = "CNAME"
   content = "${cloudflare_zero_trust_tunnel_cloudflared.api.id}.cfargotunnel.com"
   proxied = true
@@ -66,6 +78,15 @@ resource "cloudflare_workers_route" "sites" {
   zone_id = data.cloudflare_zone.platform.zone_id
   pattern = "*.${var.platform_domain}/*"
   script  = "autodeploy-edge"
+}
+
+# api and ssh go straight to the tunnel: more specific routes with no Worker
+# win over the wildcard, so they don't spend the free 100k Worker requests/day
+# (and SSH's WebSocket never passes through site-serving code).
+resource "cloudflare_workers_route" "bypass" {
+  for_each = toset(["api", "ssh"])
+  zone_id  = data.cloudflare_zone.platform.zone_id
+  pattern  = "${each.key}.${var.platform_domain}/*"
 }
 
 output "kv_namespace_id" { value = cloudflare_workers_kv_namespace.routes.id }

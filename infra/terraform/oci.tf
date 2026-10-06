@@ -45,7 +45,19 @@ resource "oci_core_security_list" "egress_only" {
     destination = "0.0.0.0/0"
     protocol    = "all"
   }
-  # Deliberately no ingress_security_rules.
+  # No ingress, except SSH from one address while bootstrapping the VM
+  # (infra/deploy/ship.sh). Afterwards SSH goes through the Cloudflare Tunnel.
+  dynamic "ingress_security_rules" {
+    for_each = var.bootstrap_ssh_cidr == "" ? [] : [var.bootstrap_ssh_cidr]
+    content {
+      source   = ingress_security_rules.value
+      protocol = "6" # TCP
+      tcp_options {
+        min = 22
+        max = 22
+      }
+    }
+  }
 }
 
 resource "oci_core_subnet" "public" {
@@ -79,6 +91,12 @@ resource "oci_core_instance" "vm" {
     ssh_authorized_keys = var.ssh_public_key
     user_data           = base64encode(file("${path.module}/../deploy/setup-vm.sh"))
   }
+  # A newer Ubuntu image or an edited setup script must never replace a VM
+  # that free-tier capacity made hard to get.
+  lifecycle {
+    ignore_changes = [metadata, source_details]
+  }
 }
 
+output "vm_public_ip" { value = oci_core_instance.vm.public_ip }
 output "vm_id" { value = oci_core_instance.vm.id }

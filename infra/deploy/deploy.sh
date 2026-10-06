@@ -22,8 +22,9 @@ wait_healthy() {
   return 1
 }
 
-compose pull api-1 api-2 worker egress
-compose up -d postgres valkey kafka egress caddy cloudflared
+# SKIP_PULL=1 when ship.sh built the images on this VM.
+[ "${SKIP_PULL:-}" = 1 ] || compose pull api-1 api-2 worker egress
+compose up -d --remove-orphans postgres valkey kafka egress caddy
 for svc in api-1 api-2; do
   echo "▸ rolling $svc"
   compose up -d --no-deps "$svc"
