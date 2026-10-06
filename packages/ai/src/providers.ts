@@ -51,6 +51,8 @@ export class OpenAICompatibleProvider implements Provider {
     private readonly opts: {
       structuredOutput: 'json_schema' | 'json_object' | 'none';
       extraHeaders?: Record<string, string>;
+      /** Appended to the last user message, e.g. Qwen3's "/no_think" switch. */
+      userSuffix?: string;
     } = {
       structuredOutput: 'json_schema',
     },
@@ -75,7 +77,13 @@ export class OpenAICompatibleProvider implements Provider {
           },
           body: JSON.stringify({
             model: this.model,
-            messages: req.messages,
+            messages: this.opts.userSuffix
+              ? req.messages.map((m, i) =>
+                  i === req.messages.length - 1 && m.role === 'user'
+                    ? { ...m, content: `${m.content} ${this.opts.userSuffix}` }
+                    : m,
+                )
+              : req.messages,
             max_tokens: req.maxTokens,
             temperature: req.temperature ?? 0.1,
             ...(responseFormat && { response_format: responseFormat }),
@@ -95,13 +103,19 @@ export class OpenAICompatibleProvider implements Provider {
       );
     }
     const body = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
       model?: string;
     };
     const content = body.choices?.[0]?.message?.content;
-    if (typeof content !== 'string')
-      throw new ProviderError(this.name, 502, 'response had no message content');
+    if (typeof content !== 'string' || content === '')
+      throw new ProviderError(
+        this.name,
+        502,
+        body.choices?.[0]?.finish_reason === 'length'
+          ? `no answer within ${req.maxTokens} tokens (reasoning models spend them thinking)`
+          : 'response had no message content',
+      );
     return {
       content,
       ...(body.usage?.prompt_tokens !== undefined && { tokensIn: body.usage.prompt_tokens }),
@@ -132,6 +146,9 @@ export const workersAi = (accountId: string, apiToken: string, model: string) =>
     model,
     {
       structuredOutput: 'json_schema',
+      // Qwen3 reasons before answering by default and spends the whole
+      // classifier budget (300 tokens) doing it; the answer never arrives.
+      ...(/qwen3/i.test(model) && { userSuffix: '/no_think' }),
     },
   );
 

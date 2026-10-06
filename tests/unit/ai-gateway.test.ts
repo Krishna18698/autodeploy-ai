@@ -5,9 +5,10 @@ import {
   type ChatRequest,
   type Provider,
   ProviderError,
+  workersAi,
 } from '@autodeploy/ai';
 import { classify } from '@autodeploy/core';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tree } from './tree';
 
 const diagnosis = JSON.stringify({
@@ -91,5 +92,40 @@ describe('AI gateway', () => {
     expect(boundary).toBeDefined();
     // The file's fake terminator doesn't match the real (random) boundary.
     expect(ctx.text.split(`<<<END ${boundary}>>>`).length - 1).toBe(ctx.filesIncluded.length + 1);
+  });
+});
+
+describe('Workers AI provider', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const reply = (content: string | null, finish = 'stop') =>
+    new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: finish }] }));
+
+  it('switches off Qwen3 thinking, which otherwise spends the whole token budget', async () => {
+    const fetch = vi.fn(async () => reply('{"ok":true}'));
+    vi.stubGlobal('fetch', fetch);
+    await workersAi('acct', 'tok', '@cf/qwen/qwen3-30b-a3b-fp8').chat({
+      messages: [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'classify this' },
+      ],
+      maxTokens: 300,
+      timeoutMs: 1000,
+    });
+    const body = JSON.parse(String((fetch.mock.calls[0] as [string, RequestInit])[1].body));
+    expect(body.messages[0].content).toBe('sys');
+    expect(body.messages[1].content).toBe('classify this /no_think');
+  });
+
+  it('leaves other models alone and explains an answer cut off by the token limit', async () => {
+    const fetch = vi.fn(async () => reply(null, 'length'));
+    vi.stubGlobal('fetch', fetch);
+    const p = workersAi('acct', 'tok', '@cf/meta/llama-3.1-8b-instruct-fast');
+    const err = await p
+      .chat({ messages: [{ role: 'user', content: 'q' }], maxTokens: 300, timeoutMs: 1000 })
+      .catch((e: unknown) => e);
+    const body = JSON.parse(String((fetch.mock.calls[0] as [string, RequestInit])[1].body));
+    expect(body.messages[0].content).toBe('q');
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as Error).message).toMatch(/no answer within 300 tokens/);
   });
 });

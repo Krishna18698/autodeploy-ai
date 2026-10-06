@@ -26,6 +26,7 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | Edge storage reads | **30 site requests → 2 storage reads** (was 85): manifest-checked misses, immutable edge cache. Fits B2's free 2,500 reads/day | old vs new Worker behind a counting proxy |
 | Landing in production (Vercel, Lighthouse mobile) | performance **96** (2 of 3 runs; the first, cold run scored 58 with a 1.8 s blocking spike), accessibility/best practices/SEO **100**, CLS **0**, LCP 2.7 s | `npx lighthouse https://autodeploy-zeta.vercel.app --skip-audits=bf-cache` ×3 |
 | OWASP ZAP | API: **118 pass / 0 warn / 0 fail**; landing: **0 fail**, warnings 8 → 4 after adding CSP + Permissions-Policy | `tests/security/README.md` |
+| AI classifier (Workers AI, Qwen3-30B) | **18/18 valid answers** (was **0/18**: the model spent its 300-token budget thinking), 0 fixable failures wrongly stopped, gate 15/18, p50 **1.0 s** | `pnpm tsx tests/ai-eval/classifier.ts` |
 | Dashboard accessibility | **0** serious/critical axe violations on 7 pages | `pnpm test:e2e` |
 
 ## Bugs the tests found (and fixed)
@@ -45,3 +46,4 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | e2e | Roll back button vanished after a new deploy (stale state) |
 | e2e / Lighthouse | Nested-interactive chart, landing overflow on phones, 2.6 s main-thread block at load, ARIA/contrast issues |
 | review | Edge re-read `index.html` from storage on every request and probed 3 paths per SPA route (85 reads for 30 requests, now 2) |
+| AI eval | Workers AI classifier never answered: Qwen3 reasons before replying and used all 300 tokens; every call failed and the breaker opened, silently skipping the cheap gate |
