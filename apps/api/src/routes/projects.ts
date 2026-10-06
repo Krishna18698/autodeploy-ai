@@ -37,7 +37,8 @@ export const projectRoutes =
         schema: { tags: ['projects'], body: AnalyzeBody, response: { 200: AnalyzeResult } },
       },
       async (req) => {
-        const src = await resolveSource(deps, req.body.repoUrl, req.body.ref);
+        const a = authOf(req);
+        const src = await resolveSource(deps, req.body.repoUrl, req.body.ref, a);
         const analysis = await analyzeSource(deps, src, req.body.rootDir);
         return {
           repo: { fullName: src.fullName, ref: src.ref, commitSha: src.commitSha },
@@ -84,7 +85,7 @@ export const projectRoutes =
       },
       async (req, reply) => {
         const a = authOf(req);
-        const src = await resolveSource(deps, req.body.repoUrl);
+        const src = await resolveSource(deps, req.body.repoUrl, undefined, a);
         const analysis = await analyzeSource(deps, src, req.body.rootDir);
         const slug = (
           req.body.slug ?? (await firstFreeSlug(deps, suggestSlug(src.fullName)))
@@ -95,11 +96,18 @@ export const projectRoutes =
             'Slugs are 1–40 lowercase letters, digits and single hyphens.',
           );
 
+        // Remember (and claim for this org) the App installation that gives
+        // access; builds, commit statuses and fix PRs all use it.
+        if (src.installationId)
+          await deps.sql`
+            insert into github_installations (id, account_login, org_id)
+            values (${src.installationId}, ${src.installationAccount ?? src.repo.owner}, ${a.orgId})
+            on conflict (id) do update set org_id = coalesce(github_installations.org_id, excluded.org_id)`;
         const project = await withOrg(deps.sql, a.orgId, async (tx) => {
           const [row] = await tx<ProjectRow[]>`
-            insert into projects (org_id, slug, name, repo_full_name, repo_url, default_branch, framework, root_dir, analysis)
+            insert into projects (org_id, slug, name, repo_full_name, repo_url, default_branch, framework, root_dir, analysis, installation_id)
             values (${a.orgId}, ${slug}, ${req.body.name ?? src.fullName.split('/')[1] ?? slug}, ${src.fullName}, ${src.repoUrl},
-                    ${src.defaultBranch}, ${analysis.framework.value}, ${req.body.rootDir}, ${tx.json(analysis as never)})
+                    ${src.defaultBranch}, ${analysis.framework.value}, ${req.body.rootDir}, ${tx.json(analysis as never)}, ${src.installationId})
             returning *`;
           return row;
         }).catch((err: { code?: string; constraint_name?: string }) => {

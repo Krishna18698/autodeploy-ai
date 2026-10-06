@@ -367,10 +367,40 @@ export function createAppJwt(
   return `${unsigned}.${sig}`;
 }
 
+export type RepoInstallation = { id: number; account: string };
+
 /** Caches installation tokens until 5 minutes before they expire. */
 export class InstallationTokens {
   private readonly cache = new Map<number, { token: string; expiresAt: number }>();
+  private readonly repos = new Map<string, { hit: RepoInstallation | null; at: number }>();
   constructor(private readonly app: Pick<GitHubAppConfig, 'appId' | 'privateKey'>) {}
+
+  /**
+   * The installation that covers a repository, or null if the App isn't
+   * installed on it. Asked of GitHub directly (cached 10 minutes), so it does
+   * not depend on an "installation" webhook ever having been delivered.
+   */
+  async forRepo(r: RepoRef): Promise<RepoInstallation | null> {
+    const key = `${r.owner}/${r.repo}`.toLowerCase();
+    const cached = this.repos.get(key);
+    if (cached && Date.now() - cached.at < 10 * 60_000) return cached.hit;
+    const res = await fetch(`https://api.github.com/repos/${r.owner}/${r.repo}/installation`, {
+      headers: {
+        authorization: `Bearer ${createAppJwt(this.app.appId, this.app.privateKey)}`,
+        accept: 'application/vnd.github+json',
+        'user-agent': 'autodeploy',
+      },
+    });
+    if (res.status === 404) {
+      this.repos.set(key, { hit: null, at: Date.now() });
+      return null;
+    }
+    if (!res.ok) throw await toError(res);
+    const body = (await res.json()) as { id: number; account: { login: string } };
+    const hit = { id: body.id, account: body.account.login };
+    this.repos.set(key, { hit, at: Date.now() });
+    return hit;
+  }
 
   async get(installationId: number): Promise<string> {
     const hit = this.cache.get(installationId);

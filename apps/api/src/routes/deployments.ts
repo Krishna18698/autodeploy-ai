@@ -79,6 +79,7 @@ export const deploymentRoutes =
           deps,
           project.repo_url,
           req.body.ref ?? project.default_branch,
+          a,
         );
         const d = await createDeployment(deps, {
           orgId: a.orgId,

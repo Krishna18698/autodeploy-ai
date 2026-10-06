@@ -6,6 +6,7 @@ import { type Analysis, analyze, slugify } from '@autodeploy/core';
 import {
   copyLocalSource,
   downloadTarball,
+  GitHubClient,
   parseRepoUrl,
   type RepoRef,
   readTree,
@@ -27,13 +28,41 @@ export type ResolvedSource = {
   branch: string | null;
   commitMessage: string | null;
   defaultBranch: string;
+  /** GitHub App installation covering the repo (private repos need one). */
+  installationId: number | null;
+  installationAccount?: string | null;
   localPath?: string;
 };
+
+/** A token for reading the repo: its App installation's, else the optional PAT. */
+async function readToken(deps: Deps, installationId: number | null) {
+  return installationId && deps.installations
+    ? deps.installations.get(installationId)
+    : deps.env.GITHUB_TOKEN;
+}
+
+/** Who is asking: an installation may only be used by its own account or org. */
+export type SourceActor = { login: string; orgId: string };
+
+/**
+ * The App installation this actor may use for the repo. Another account's
+ * installation is never used, so one tenant can't read another's private repo
+ * just because the App can.
+ */
+async function usableInstallation(deps: Deps, repo: RepoRef, actor: SourceActor) {
+  const inst = deps.installations ? await deps.installations.forRepo(repo) : null;
+  if (!inst) return null;
+  if (inst.account.toLowerCase() === actor.login.toLowerCase()) return inst;
+  const [claimed] = await deps.sql<{ id: string }[]>`
+    select id from github_installations where id = ${inst.id} and org_id = ${actor.orgId}`;
+  return claimed ? inst : null;
+}
 
 export async function resolveSource(
   deps: Deps,
   repoUrl: string,
-  ref?: string,
+  ref: string | undefined,
+  actor: SourceActor,
 ): Promise<ResolvedSource> {
   if (repoUrl.startsWith('file://')) {
     if (!deps.env.ALLOW_LOCAL_SOURCES)
@@ -57,6 +86,7 @@ export async function resolveSource(
       branch: 'local',
       commitMessage: `local directory ${name}`,
       defaultBranch: 'local',
+      installationId: null,
       localPath: path,
     };
   }
@@ -66,7 +96,14 @@ export async function resolveSource(
   } catch (err) {
     throw badRequest('invalid_repo_url', (err as Error).message);
   }
-  const c = await deps.github.resolveCommit(repo, ref);
+  const installation = await usableInstallation(deps, repo, actor);
+  const installationId = installation?.id ?? null;
+  // Installation-scoped requests skip the shared ETag cache, so one org's
+  // private-repo metadata is never served to another.
+  const github = installationId
+    ? new GitHubClient({ token: () => readToken(deps, installationId) as Promise<string> })
+    : deps.github;
+  const c = await github.resolveCommit(repo, ref);
   return {
     kind: 'github',
     repo,
@@ -77,6 +114,8 @@ export async function resolveSource(
     branch: c.branch,
     commitMessage: c.message,
     defaultBranch: c.defaultBranch,
+    installationId,
+    installationAccount: installation?.account ?? null,
   };
 }
 
@@ -93,7 +132,13 @@ export async function analyzeSource(
   const dir = await mkdtemp(join(deps.env.WORK_DIR, 'analyze-'));
   try {
     if (src.kind === 'local' && src.localPath) await copyLocalSource(src.localPath, dir);
-    else await downloadTarball(src.repo, src.commitSha, dir, deps.env.GITHUB_TOKEN);
+    else
+      await downloadTarball(
+        src.repo,
+        src.commitSha,
+        dir,
+        await readToken(deps, src.installationId),
+      );
     const tree = await readTree(dir);
     const analysis = analyze(tree, rootDir);
     if (src.kind === 'github')
