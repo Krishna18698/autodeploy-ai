@@ -54,6 +54,52 @@ function candidates(pathname: string): string[] {
   return hasExt ? [p] : [p, `${p}/index.html`, `${p}.html`];
 }
 
+const MANIFEST = '.autodeploy-manifest.tsv';
+const EDGE_CACHE = 'public, max-age=31536000, immutable';
+const BROWSER_CC = 'x-browser-cache-control';
+// Per-isolate memo of artifact file lists; artifacts never change, so no expiry.
+const manifests = new Map<string, Set<string>>();
+
+/** File list of an artifact, or null to fall back to probing storage. */
+async function loadManifest(
+  sha: string,
+  cache: Cache,
+  ctx: ExecutionContext,
+  fromStorage: (key: string) => Promise<Response>,
+): Promise<Set<string> | null> {
+  const memo = manifests.get(sha);
+  if (memo) return memo;
+  const cacheKey = new Request(`https://edge-cache.internal/sites/${sha}/${MANIFEST}`);
+  let text: string;
+  const hit = await cache.match(cacheKey);
+  if (hit) text = await hit.text();
+  else {
+    const res = await fromStorage(MANIFEST);
+    if (!res.ok) return null;
+    text = await res.text();
+    ctx.waitUntil(
+      cache.put(cacheKey, new Response(text, { headers: { 'cache-control': EDGE_CACHE } })),
+    );
+  }
+  const files = new Set(
+    text
+      .split('\n')
+      .map((line) => line.split('\t')[0] ?? '')
+      .filter(Boolean),
+  );
+  if (manifests.size >= 500) manifests.clear();
+  manifests.set(sha, files);
+  return files;
+}
+
+/** Swaps the edge-cache lifetime for the file's own browser cache policy. */
+function forBrowser(res: Response): Response {
+  const headers = new Headers(res.headers);
+  headers.set('cache-control', headers.get(BROWSER_CC) ?? 'public, max-age=0, must-revalidate');
+  headers.delete(BROWSER_CC);
+  return new Response(res.body, { status: res.status, headers });
+}
+
 function notFound(message: string, status = 404) {
   const html = `<!doctype html><meta charset="utf-8"><title>${status}</title><style>body{background:#0a0c0f;color:#e8ebf0;font:15px/1.5 system-ui;display:grid;place-items:center;height:100vh;margin:0}p{color:#8a93a3}</style><div><h1>${status}</h1><p>${message}</p></div>`;
   return new Response(html, {
@@ -88,26 +134,34 @@ export default {
     });
     const cache = caches.default;
     const prefix = `sites/${target.artifactSha}`;
+    const fromStorage = (key: string) =>
+      s3.fetch(`${env.S3_ENDPOINT}/${env.S3_BUCKET}/${prefix}/${key}`);
+    // The manifest says which files exist, so misses (SPA routes, /about →
+    // about.html probing) never reach storage. Free B2 allows 2,500 reads a day.
+    const files = await loadManifest(target.artifactSha, cache, ctx, fromStorage);
 
     const tryKey = async (key: string): Promise<Response | null> => {
-      // Artifact paths are immutable (content-addressed), so they cache forever.
+      if (key === MANIFEST || (files && !files.has(key))) return null;
+      // Every path under sites/<sha>/ is immutable, so the edge keeps it for a
+      // year, even index.html; browsers still get the file's own cache policy.
       const cacheKey = new Request(`https://edge-cache.internal/${prefix}/${key}`);
       const hit = await cache.match(cacheKey);
-      if (hit) return hit;
-      const res = await s3.fetch(`${env.S3_ENDPOINT}/${env.S3_BUCKET}/${prefix}/${key}`);
+      if (hit) return forBrowser(hit);
+      const res = await fromStorage(key);
       if (res.status === 404 || res.status === 403) return null;
       if (!res.ok) throw new Error(`storage ${res.status}`);
-      const out = new Response(res.body, {
+      const stored = new Response(res.body, {
         status: 200,
         headers: {
           'content-type': res.headers.get('content-type') ?? 'application/octet-stream',
-          'cache-control': res.headers.get('cache-control') ?? 'public, max-age=0, must-revalidate',
+          'cache-control': EDGE_CACHE,
+          [BROWSER_CC]: res.headers.get('cache-control') ?? 'public, max-age=0, must-revalidate',
           etag: res.headers.get('etag') ?? `"${target.artifactSha.slice(0, 16)}"`,
           ...SECURITY_HEADERS,
         },
       });
-      ctx.waitUntil(cache.put(cacheKey, out.clone()));
-      return out;
+      ctx.waitUntil(cache.put(cacheKey, stored.clone()));
+      return forBrowser(stored);
     };
 
     try {

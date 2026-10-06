@@ -23,6 +23,7 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | Load: reads | p95 **18 ms** at ~3.1k req/s | `pnpm load` |
 | Load: correctness | **100/100** built, 0 multi-attempt builds, 0 duplicate jobs | `pnpm load` |
 | Landing (Lighthouse, mobile) | performance **89–90**, accessibility **100**, best practices **100**, CLS **0**, TBT ≤100 ms | `npx lighthouse … --skip-audits=bf-cache` |
+| Edge storage reads | **30 site requests → 2 storage reads** (was 85): manifest-checked misses, immutable edge cache. Fits B2's free 2,500 reads/day | old vs new Worker behind a counting proxy |
 | Dashboard accessibility | **0** serious/critical axe violations on 7 pages | `pnpm test:e2e` |
 
 ## Bugs the tests found (and fixed)
@@ -41,3 +42,4 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | chaos | Deployments interrupted mid-publish stayed VALIDATING forever |
 | e2e | Roll back button vanished after a new deploy (stale state) |
 | e2e / Lighthouse | Nested-interactive chart, landing overflow on phones, 2.6 s main-thread block at load, ARIA/contrast issues |
+| review | Edge re-read `index.html` from storage on every request and probed 3 paths per SPA route (85 reads for 30 requests, now 2) |
