@@ -21,7 +21,8 @@
     "corpus:generate": "tsx tests/corpus/generate.ts",
     "chaos": "tsx tests/chaos/run.ts",
     "load": "tsx tests/load/run.ts",
-    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts"
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "github-app": "node scripts/github-app.mjs"
   },
   "devDependencies": {
     "@autodeploy/ai": "workspace:*",
