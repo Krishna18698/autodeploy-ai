@@ -4,19 +4,18 @@
 set -euo pipefail
 
 # Docker Engine
-curl -fsSL https://get.docker.com | sh
+command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh
 systemctl enable --now docker
 
 # gVisor (runsc): build containers get a user-space kernel instead of the host's.
-ARCH=$(uname -m)
-URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
-for f in runsc containerd-shim-runsc-v1; do
-  curl -fsSL "${URL}/${f}" -o "/usr/local/bin/${f}"
-  curl -fsSL "${URL}/${f}.sha512" -o "/tmp/${f}.sha512"
-  (cd /usr/local/bin && sha512sum -c "/tmp/${f}.sha512")
-  chmod a+rx "/usr/local/bin/${f}"
-done
-/usr/local/bin/runsc install
+# From gVisor's signed apt repository (the old direct-download URLs now 404).
+if ! command -v runsc >/dev/null; then
+  curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
+    > /etc/apt/sources.list.d/gvisor.list
+  apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq runsc
+fi
+runsc install
 systemctl restart docker
 docker run --rm --runtime=runsc hello-world >/dev/null && echo "gVisor OK"
 
@@ -25,7 +24,11 @@ mkdir -p /var/lib/autodeploy/work
 chown 1000:1000 /var/lib/autodeploy/work
 
 # No inbound ports at all: the Cloudflare Tunnel dials out.
+# The OCI security list is the real gate (no ingress except a temporary
+# bootstrap rule); the host firewall must still allow SSH or enabling it would
+# cut off that bootstrap session.
 if command -v ufw >/dev/null; then
+  ufw allow OpenSSH >/dev/null
   ufw default deny incoming && ufw default allow outgoing && ufw --force enable
 fi
 
