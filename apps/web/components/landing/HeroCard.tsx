@@ -55,13 +55,18 @@ const feedRow = (id: number) => FEED[id % FEED.length] ?? FEED[0];
 const FEED_TONE = { ok: 'bg-ok', ai: 'bg-ai', fail: 'bg-fail', run: 'bg-run' } as const;
 
 export function HeroCard() {
+  // Reduced motion is only known in the browser, so the first render is the
+  // same for everyone (no hydration mismatch) and the effect jumps to the end.
   const reduced = useReducedMotion();
-  const [step, setStep] = useState(reduced ? SCRIPT.length - 1 : 0);
+  const [step, setStep] = useState(0);
   // Newest first; ids are monotonic so exactly one row enters and one leaves per tick.
   const [feed, setFeed] = useState(() => [3, 2, 1, 0].map((id) => ({ id, row: feedRow(id) })));
 
   useEffect(() => {
-    if (reduced) return;
+    if (reduced) {
+      setStep(SCRIPT.length - 1);
+      return;
+    }
     const a = setInterval(() => setStep((s) => (s + 1) % SCRIPT.length), 1150);
     const b = setInterval(
       () =>
@@ -113,7 +118,7 @@ export function HeroCard() {
   return (
     <div className="relative [perspective:1400px]">
       <motion.div
-        style={reduced ? { rotateY: -12, rotateX: 4 } : { rotateY, rotateX }}
+        style={{ rotateY, rotateX }}
         className="glass relative w-full max-w-[560px] rounded-[10px] p-5 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.8)] [transform-style:preserve-3d]"
       >
         {/* edge light */}
