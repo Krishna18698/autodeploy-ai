@@ -55,7 +55,8 @@ const EnvSchema = z.object({
   NVIDIA_API_KEY: z.string().optional(),
   NVIDIA_MODEL: z.string().default('deepseek-ai/deepseek-v4.1-flash'),
   OPENROUTER_API_KEY: z.string().optional(),
-  OPENROUTER_MODEL: z.string().default('qwen/qwen3.8-27b:free'),
+  // Free models come and go; checked against openrouter.ai/api/v1/models 2026-10-07.
+  OPENROUTER_MODEL: z.string().default('nvidia/nemotron-3-super-120b-a12b:free'),
   CF_ACCOUNT_ID: z.string().optional(),
   CF_AI_TOKEN: z.string().optional(),
   CF_AI_MODEL: z.string().default('@cf/qwen/qwen3-30b-a3b-fp8'),

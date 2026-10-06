@@ -53,6 +53,8 @@ export class OpenAICompatibleProvider implements Provider {
       extraHeaders?: Record<string, string>;
       /** Appended to the last user message, e.g. Qwen3's "/no_think" switch. */
       userSuffix?: string;
+      /** Provider-specific request fields, e.g. OpenRouter's reasoning effort. */
+      extraBody?: Record<string, unknown>;
     } = {
       structuredOutput: 'json_schema',
     },
@@ -87,6 +89,7 @@ export class OpenAICompatibleProvider implements Provider {
             max_tokens: req.maxTokens,
             temperature: req.temperature ?? 0.1,
             ...(responseFormat && { response_format: responseFormat }),
+            ...this.opts.extraBody,
           }),
           signal,
         }),
@@ -136,6 +139,9 @@ export const openrouter = (apiKey: string, model: string) =>
   new OpenAICompatibleProvider('openrouter', 'https://openrouter.ai/api/v1', apiKey, model, {
     structuredOutput: 'json_schema',
     extraHeaders: { 'x-title': 'AutoDeploy' },
+    // Every free model there now reasons first; keep it short so the answer
+    // fits the token budget (the Workers AI classifier lost all of it).
+    extraBody: { reasoning: { effort: 'low' } },
   });
 
 export const workersAi = (accountId: string, apiToken: string, model: string) =>
