@@ -5,6 +5,9 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages packages
 COPY apps/worker apps/worker
+# The root package.json references @autodeploy/api (integration tests); pnpm
+# only needs its manifest to resolve the workspace, not its code.
+COPY apps/api/package.json apps/api/package.json
 RUN pnpm install --frozen-lockfile --filter @autodeploy/worker...
 RUN pnpm --filter @autodeploy/worker build \
  && pnpm --config.node-linker=hoisted --filter @autodeploy/worker deploy --prod --legacy /out

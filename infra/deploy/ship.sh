@@ -64,10 +64,11 @@ step "sandbox images (first run only; ~10 min)"
 remote "sudo docker image inspect autodeploy-build:node24 autodeploy-validator:latest >/dev/null 2>&1 || sudo bash $dir/src/infra/sandbox/build-images.sh"
 
 step "app images @ $tag (built on the VM; no registry needed)"
-remote "cd $dir/src && \
-  sudo docker build -q -f apps/api/Dockerfile -t ghcr.io/$owner/autodeploy-api:$tag . && \
-  sudo docker build -q -f apps/worker/Dockerfile -t ghcr.io/$owner/autodeploy-worker:$tag . && \
-  sudo docker build -q -t ghcr.io/$owner/autodeploy-egress:$tag infra/sandbox/egress"
+remote "cd $dir/src && for spec in api:apps/api/Dockerfile:. worker:apps/worker/Dockerfile:. egress:infra/sandbox/egress/Dockerfile:infra/sandbox/egress; do \
+  IFS=: read -r name file ctx <<<\"\$spec\"; \
+  sudo docker build --progress=plain -f \"\$file\" -t ghcr.io/$owner/autodeploy-\$name:$tag \"\$ctx\" > /tmp/build-\$name.log 2>&1 \
+    || { echo \"✗ \$name image failed:\"; tail -40 /tmp/build-\$name.log; exit 1; }; \
+  echo \"  built \$name\"; done"
 
 step "deploy (rolling)"
 remote "cd $dir/src/infra/deploy && sudo IMAGE_TAG=$tag SKIP_PULL=1 SMALL=${SMALL:-} bash deploy.sh"
