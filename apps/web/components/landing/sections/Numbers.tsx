@@ -4,7 +4,6 @@ import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useRef } from 'react';
-import { whenIdle } from '@/lib/idle';
 import { MEASURED } from '@/lib/measured';
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
@@ -12,37 +11,34 @@ gsap.registerPlugin(useGSAP, ScrollTrigger);
 export function Numbers() {
   const root = useRef<HTMLElement>(null);
   useGSAP(
-    (_ctx, contextSafe) => {
-      // Below the fold: set up after first paint.
-      return whenIdle(
-        contextSafe?.(() => {
-          const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-          for (const el of gsap.utils.toArray<HTMLElement>('[data-count]')) {
-            const target = Number(el.dataset.count);
-            const decimals = Number(el.dataset.decimals ?? 0);
-            if (reduced) continue;
-            const o = { v: 0 };
-            gsap.to(o, {
-              v: target,
-              duration: 1.6,
-              ease: 'power3.out',
-              scrollTrigger: { trigger: el, start: 'top 85%' },
-              onUpdate: () => {
-                el.textContent = o.v.toFixed(decimals);
-              },
-            });
-          }
-          if (!reduced)
-            gsap.from('[data-stat]', {
-              y: 24,
-              opacity: 0,
-              stagger: 0.12,
-              duration: 0.8,
-              ease: 'expo.out',
-              scrollTrigger: { trigger: root.current, start: 'top 75%' },
-            });
-        }) ?? (() => {}),
-      );
+    () => {
+      // Set up at mount like the pinned scenes: ScrollTriggers created later
+      // (mid-scroll) make GSAP refresh every trigger, which jolts the page.
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      for (const el of gsap.utils.toArray<HTMLElement>('[data-count]')) {
+        const target = Number(el.dataset.count);
+        const decimals = Number(el.dataset.decimals ?? 0);
+        if (reduced) continue;
+        const o = { v: 0 };
+        gsap.to(o, {
+          v: target,
+          duration: 1.6,
+          ease: 'power3.out',
+          scrollTrigger: { trigger: el, start: 'top 85%' },
+          onUpdate: () => {
+            el.textContent = o.v.toFixed(decimals);
+          },
+        });
+      }
+      if (!reduced)
+        gsap.from('[data-stat]', {
+          y: 24,
+          opacity: 0,
+          stagger: 0.12,
+          duration: 0.8,
+          ease: 'expo.out',
+          scrollTrigger: { trigger: root.current, start: 'top 75%' },
+        });
     },
     { scope: root },
   );

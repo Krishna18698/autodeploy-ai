@@ -4,7 +4,6 @@ import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useRef } from 'react';
-import { whenIdle } from '@/lib/idle';
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -34,29 +33,24 @@ const pos = (id: string): Node => NODES.find((n) => n.id === id) ?? FALLBACK;
 export function Architecture() {
   const root = useRef<HTMLElement>(null);
   useGSAP(
-    (_ctx, contextSafe) => {
-      // Below the fold: set up after first paint.
-      return whenIdle(
-        contextSafe?.(() => {
-          if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-          gsap.from('[data-node]', {
-            opacity: 0,
-            scale: 0.9,
-            transformOrigin: 'center',
-            stagger: 0.08,
-            duration: 0.6,
-            ease: 'expo.out',
-            scrollTrigger: { trigger: root.current, start: 'top 70%' },
-          });
-          gsap.from('[data-edge]', {
-            strokeDashoffset: 300,
-            stagger: 0.1,
-            duration: 0.9,
-            ease: 'power2.out',
-            scrollTrigger: { trigger: root.current, start: 'top 65%' },
-          });
-        }) ?? (() => {}),
-      );
+    () => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      gsap.from('[data-node]', {
+        opacity: 0,
+        scale: 0.9,
+        transformOrigin: 'center',
+        stagger: 0.08,
+        duration: 0.6,
+        ease: 'expo.out',
+        scrollTrigger: { trigger: root.current, start: 'top 70%' },
+      });
+      gsap.from('[data-edge]', {
+        strokeDashoffset: 300,
+        stagger: 0.1,
+        duration: 0.9,
+        ease: 'power2.out',
+        scrollTrigger: { trigger: root.current, start: 'top 65%' },
+      });
     },
     { scope: root },
   );
