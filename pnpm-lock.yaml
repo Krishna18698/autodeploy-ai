@@ -38,6 +38,9 @@ importers:
       '@autodeploy/resilience':
         specifier: workspace:*
         version: link:packages/resilience
+      '@autodeploy/storage':
+        specifier: workspace:*
+        version: link:packages/storage
       '@axe-core/playwright':
         specifier: 4.13.0
         version: 4.13.0(playwright-core@1.63.0)

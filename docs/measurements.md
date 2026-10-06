@@ -27,6 +27,7 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | Landing in production (Vercel, Lighthouse mobile) | performance **96** (2 of 3 runs; the first, cold run scored 58 with a 1.8 s blocking spike), accessibility/best practices/SEO **100**, CLS **0**, LCP 2.7 s | `npx lighthouse https://autodeploy-zeta.vercel.app --skip-audits=bf-cache` ×3 |
 | OWASP ZAP | API: **118 pass / 0 warn / 0 fail**; landing: **0 fail**, warnings 8 → 4 after adding CSP + Permissions-Policy | `tests/security/README.md` |
 | AI classifier (Workers AI, Qwen3-30B) | **18/18 valid answers** (was **0/18**: the model spent its 300-token budget thinking), 0 fixable failures wrongly stopped, gate 15/18, p50 **1.0 s** | `pnpm tsx tests/ai-eval/classifier.ts` |
+| Production edge path (Cloudflare → Worker → KV → B2) | **6/6 checks**: live 2.4 s after the KV write, SPA fallback, immutable assets, 404s, security headers; warm requests **27–29 ms**; cleaned up | `pnpm tsx tests/smoke/edge.ts` |
 | Dashboard accessibility | **0** serious/critical axe violations on 7 pages | `pnpm test:e2e` |
 
 ## Bugs the tests found (and fixed)
