@@ -46,7 +46,9 @@ await pause(1200);
 await approve.scrollIntoViewIfNeeded();
 await pause(5000); // the diff and the policy checks
 await approve.click();
-await page.getByText(/recovered automatically \(AI patch, approved\)/).waitFor({ timeout: 120_000 });
+await page
+  .getByText(/recovered automatically \(AI patch, approved\)/)
+  .waitFor({ timeout: 120_000 });
 await page.getByRole('tab', { name: /Logs/ }).click();
 await pause(3500);
 

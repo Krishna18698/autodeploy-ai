@@ -31,6 +31,7 @@ export function DemoVideo() {
         </span>{' '}
         Watch a self-heal, 38s
       </button>
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the click only closes on the backdrop; Escape already closes a native <dialog> */}
       <dialog
         ref={dialog}
         aria-label="A failing build repaired and shipped"
