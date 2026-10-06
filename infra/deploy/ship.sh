@@ -15,7 +15,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 envfile="$here/.env.prod"
 [ -f "$envfile" ] || { echo "missing $envfile" >&2; exit 1; }
-if [ -n "$(git -C "$root" status --porcelain -- apps packages infra/deploy infra/sandbox)" ]; then
+if [ -n "$(git -C "$root" status --porcelain --untracked-files=no -- apps packages infra/deploy infra/sandbox)" ]; then
   echo "Uncommitted changes in apps/packages/infra; ship deploys HEAD only. Commit first." >&2
   exit 1
 fi
