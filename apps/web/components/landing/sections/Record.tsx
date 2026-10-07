@@ -37,7 +37,7 @@ const WALLS = [
 
 export function Record() {
   const root = useRef<HTMLElement>(null);
-  useScrollScene(root, (tl, mobile) => {
+  useScrollScene(root, (tl) => {
     // GSAP can't read a CSS variable's resting value, so give it explicitly.
     tl.fromTo(
       '[data-block]',
@@ -46,7 +46,7 @@ export function Record() {
         '--h': (i: number) => `${DEPLOYS[i]?.h ?? 0}px`,
         stagger: 0.15,
         duration: 0.5,
-        ease: mobile ? 'power2.out' : 'none',
+        ease: 'power2.out',
       },
     )
       .fromTo('[data-block="4"] [data-top]', IDLE, { ...LIVE, duration: 0.3 }, '+=0.2')

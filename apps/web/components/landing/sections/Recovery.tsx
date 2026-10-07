@@ -5,25 +5,21 @@ import { useScrollScene } from './useScrollScene';
 
 export function Recovery() {
   const root = useRef<HTMLElement>(null);
-  useScrollScene(
-    root,
-    (tl, mobile) => {
-      const d = mobile ? 0.4 : 1;
-      tl.to('[data-err]', { backgroundColor: 'rgba(244,63,94,0.14)', duration: d })
-        .from('[data-sig]', { rotateX: -90, opacity: 0, transformOrigin: 'top', duration: d })
-        .from('[data-diag] span', { opacity: 0, stagger: 0.06, duration: d / 4 })
-        .from('[data-diff]', { x: 40, opacity: 0, duration: d })
-        .from('[data-check]', { opacity: 0, x: -8, stagger: 0.25, duration: d / 2 })
-        .to('[data-status]', {
-          color: '#34d399',
-          borderColor: 'rgba(52,211,153,0.5)',
-          duration: d / 2,
-        })
-        .to('[data-status-fail]', { opacity: 0, duration: d / 4 }, '<')
-        .to('[data-status-ok]', { opacity: 1, duration: d / 4 }, '<');
-    },
-    '+=180%',
-  );
+  useScrollScene(root, (tl) => {
+    const d = 0.4;
+    tl.to('[data-err]', { backgroundColor: 'rgba(244,63,94,0.14)', duration: d })
+      .from('[data-sig]', { rotateX: -90, opacity: 0, transformOrigin: 'top', duration: d })
+      .from('[data-diag] span', { opacity: 0, stagger: 0.06, duration: d / 4 })
+      .from('[data-diff]', { x: 40, opacity: 0, duration: d })
+      .from('[data-check]', { opacity: 0, x: -8, stagger: 0.25, duration: d / 2 })
+      .to('[data-status]', {
+        color: '#34d399',
+        borderColor: 'rgba(52,211,153,0.5)',
+        duration: d / 2,
+      })
+      .to('[data-status-fail]', { opacity: 0, duration: d / 4 }, '<')
+      .to('[data-status-ok]', { opacity: 1, duration: d / 4 }, '<');
+  });
   const diagnosis =
     'The prop was renamed to `account` in Props, but Header still reads `user`.'.split(' ');
   return (

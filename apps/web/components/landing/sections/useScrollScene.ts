@@ -11,48 +11,28 @@ gsap.registerPlugin(useGSAP, ScrollTrigger);
 ScrollTrigger.config({ ignoreMobileResize: true });
 
 /**
- * A pinned, scroll-scrubbed scene on desktop; a simple reveal on small
- * screens; nothing at all with reduced motion (the static end state shows).
+ * A short scene that plays once when its section scrolls into view, on every
+ * screen size. No pinning or scroll-scrubbing: the page never holds the
+ * reader back, the content is there within ~1.5 s of arriving. Nothing at all
+ * with reduced motion (the static end state shows).
  */
 export function useScrollScene(
   scope: RefObject<HTMLElement | null>,
-  build: (tl: gsap.core.Timeline, mobile: boolean) => void,
-  pinLength = '+=140%',
+  build: (tl: gsap.core.Timeline) => void,
 ) {
   useGSAP(
     () => {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      // Wire the scene at mount, before Lenis starts. Creating a pin saves and
-      // restores the scroll position from ScrollTrigger's cache, which trails
-      // Lenis by a frame; done mid-scroll (as an idle callback after a slow
-      // load), that pulled the page back ~15 px.
-      const mm = gsap.matchMedia();
-      mm.add('(min-width: 768px)', () => {
-        const tl = gsap.timeline({
-          defaults: { ease: 'none' },
-          scrollTrigger: {
-            trigger: scope.current,
-            start: 'top top',
-            end: pinLength,
-            pin: true,
-            scrub: 0.6,
-          },
-        });
-        build(tl, false);
+      const tl = gsap.timeline({
+        defaults: { ease: 'power2.out', duration: 0.6 },
+        scrollTrigger: { trigger: scope.current, start: 'top 70%', once: true },
       });
-      mm.add('(max-width: 767px)', () => {
-        const tl = gsap.timeline({
-          defaults: { ease: 'power2.out', duration: 0.6 },
-          scrollTrigger: {
-            trigger: scope.current,
-            start: 'top 70%',
-            toggleActions: 'play none none reverse',
-          },
-        });
-        build(tl, true);
-      });
-      return () => mm.revert();
+      build(tl);
+      // Cap the whole scene so a long storyboard never makes anyone wait.
+      if (tl.duration() > MAX_SCENE_SECONDS) tl.timeScale(tl.duration() / MAX_SCENE_SECONDS);
     },
     { scope },
   );
 }
+
+const MAX_SCENE_SECONDS = 1.6;

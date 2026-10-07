@@ -9,12 +9,17 @@ import { HeroCard } from './HeroCard';
 
 gsap.registerPlugin(useGSAP, SplitText);
 
+const LATE_HYDRATION_MS = 1200;
+
 export function Hero() {
   const root = useRef<HTMLElement>(null);
 
   useGSAP(
     () => {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      // On a slow load the hero has already been readable for a while; hiding
+      // it again just to animate it in looks like the page glitching.
+      if (performance.now() > LATE_HYDRATION_MS) return;
       const split = SplitText.create('[data-split]', {
         type: 'lines,words',
         mask: 'lines',

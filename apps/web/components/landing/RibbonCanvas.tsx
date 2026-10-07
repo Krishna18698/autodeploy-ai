@@ -81,11 +81,10 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string) {
 
 export function RibbonCanvas() {
   const ref = useRef<HTMLCanvasElement>(null);
-  const fallbackRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: setup only touches refs; it runs once on mount by design
   useEffect(() => {
-    // Compile the shader after first paint; the vignette/background shows meanwhile.
+    // Compile the shader after first paint; the static glow shows meanwhile.
     let teardown: (() => void) | undefined;
     const cancel = whenIdle(() => {
       teardown = setup();
@@ -107,11 +106,8 @@ export function RibbonCanvas() {
       alpha: false,
       powerPreference: 'high-performance',
     });
-    if (!gl) {
-      canvas.style.display = 'none';
-      fallbackRef.current?.removeAttribute('hidden');
-      return;
-    }
+    // Without WebGL the static glow underneath simply stays.
+    if (!gl) return;
 
     let prog: WebGLProgram;
     try {
@@ -121,8 +117,6 @@ export function RibbonCanvas() {
       gl.linkProgram(prog);
       if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link failed');
     } catch {
-      canvas.style.display = 'none';
-      fallbackRef.current?.removeAttribute('hidden');
       return;
     }
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL API, not a React hook
@@ -182,6 +176,8 @@ export function RibbonCanvas() {
       gl.uniform1f(uScroll, eased.scroll);
       gl.uniform2f(uPointer, eased.x, eased.y);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      // First frame drawn: fade the ribbons in over the static glow.
+      if (canvas.style.opacity !== '1') canvas.style.opacity = '1';
       if (!reduced) raf = requestAnimationFrame(frame);
     };
     const kick = () => {
@@ -210,15 +206,18 @@ export function RibbonCanvas() {
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
-      <canvas ref={ref} className="h-full w-full" />
+      {/* The static glow is there from the first paint; the WebGL ribbons
+          fade in over it once the shader has drawn (it compiles when idle). */}
       <div
-        ref={fallbackRef}
-        hidden
-        className="h-full w-full"
+        className="absolute inset-0"
         style={{
           background:
             'radial-gradient(60% 50% at 45% 60%, rgba(34,211,238,0.22), transparent 70%), radial-gradient(50% 40% at 75% 30%, rgba(52,211,153,0.16), transparent 70%), #0a0c0f',
         }}
+      />
+      <canvas
+        ref={ref}
+        className="absolute inset-0 h-full w-full opacity-0 transition-opacity duration-700"
       />
       {/* Vignette keeps text legible over the brightest strands. */}
       <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_40%,transparent_40%,rgba(10,12,15,0.85))]" />

@@ -2,18 +2,21 @@ import type { Metadata, Viewport } from 'next';
 import { Instrument_Serif, Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
+// display 'optional': a font is used only if it's ready before first paint;
+// otherwise the (size-matched) fallback stays for that visit. No late swap, so
+// headings and the hero card never resize while someone is looking at them.
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'optional' });
 const serif = Instrument_Serif({
   subsets: ['latin'],
   weight: '400',
   style: 'italic',
   variable: '--font-instrument-serif',
-  display: 'swap',
+  display: 'optional',
 });
 const mono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-jetbrains-mono',
-  display: 'swap',
+  display: 'optional',
 });
 
 export const metadata: Metadata = {
