@@ -38,7 +38,7 @@ function LoginInner() {
           AutoDeploy
         </div>
         <h1 className="text-[20px] font-semibold tracking-tight">
-          Sign in to deploy <span className="font-serif font-normal italic">anything static.</span>
+          Sign in to deploy <span className="font-serif font-normal italic">your repos.</span>
         </h1>
         <p className="mt-2 text-[13px] text-muted">Invite-only during the beta.</p>
         <div className="mt-6 flex flex-col gap-2">

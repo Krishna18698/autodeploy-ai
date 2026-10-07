@@ -89,6 +89,8 @@ export const GitHubRepos = z.object({
       pushedAt: Timestamp.nullable(),
       url: z.string(),
       imported: z.boolean(),
+      /** Already a project here: the picker links to it instead of importing again. */
+      projectId: Id.nullable(),
     }),
   ),
 });

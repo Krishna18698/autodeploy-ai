@@ -55,21 +55,27 @@ export const projectRoutes =
         const repos = (
           await Promise.all(mine.map((i) => deps.installations?.repositories(i.id) ?? []))
         ).flat();
-        const imported = new Set(
+        const imported = new Map(
           (
             await withOrg(
               deps.sql,
               a.orgId,
-              (tx) => tx<{ repo_full_name: string }[]>`select repo_full_name from projects`,
+              (tx) =>
+                tx<
+                  { id: string; repo_full_name: string }[]
+                >`select id, repo_full_name from projects`,
             )
-          ).map((p) => p.repo_full_name.toLowerCase()),
+          ).map((p) => [p.repo_full_name.toLowerCase(), p.id]),
         );
         return {
           configured: true,
           installUrl,
           accounts: mine.map((i) => i.account),
           repos: repos
-            .map((r) => ({ ...r, imported: imported.has(r.fullName.toLowerCase()) }))
+            .map((r) => {
+              const projectId = imported.get(r.fullName.toLowerCase()) ?? null;
+              return { ...r, imported: projectId !== null, projectId };
+            })
             .sort((x, y) => (y.pushedAt ?? '').localeCompare(x.pushedAt ?? '')),
         };
       },

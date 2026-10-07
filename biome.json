@@ -30,6 +30,9 @@
   "linter": {
     "rules": {
       "preset": "recommended",
+      "correctness": {
+        "useHookAtTopLevel": "error"
+      },
       "suspicious": {
         "noUndeclaredEnvVars": "off"
       }

@@ -2,6 +2,7 @@
 
 import type { GitHubRepos } from '@autodeploy/contracts';
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { z } from 'zod';
 import { Panel } from '@/components/ui/panel';
@@ -84,6 +85,24 @@ export function RepoPicker({
           <ul className="max-h-72 divide-y divide-line overflow-y-auto">
             {shown.map((r) => {
               const active = selected === r.url;
+              if (r.projectId)
+                return (
+                  <li key={r.fullName}>
+                    <Link
+                      href={`/projects/${r.projectId}`}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[13px] transition-colors hover:bg-raised/60"
+                    >
+                      <span
+                        aria-hidden
+                        className="size-2.5 shrink-0 rounded-full border border-ok/60 bg-ok/40"
+                      />
+                      <span className="min-w-0 flex-1 truncate font-mono text-fg">
+                        {r.fullName}
+                      </span>
+                      <span className="font-mono text-[11px] text-ok">Open project →</span>
+                    </Link>
+                  </li>
+                );
               return (
                 <li key={r.fullName}>
                   <button

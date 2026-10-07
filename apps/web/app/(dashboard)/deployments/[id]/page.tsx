@@ -3,6 +3,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { use, useEffect, useMemo, useRef, useState } from 'react';
 import { RuntimePanel } from '@/components/app/runtime-panel';
 import { PageHeader } from '@/components/app/shell';
@@ -15,7 +16,7 @@ import { StatusPill } from '@/components/ui/status';
 import { Stepper } from '@/components/ui/stepper';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
-import { ApiError, api, post } from '@/lib/api';
+import { ApiError, api, newIdempotencyKey, post } from '@/lib/api';
 import { ago, duration, shortSha } from '@/lib/format';
 import {
   type DeploymentT,
@@ -37,6 +38,8 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
   const qc = useQueryClient();
   const toast = useToast();
   const [cancel, setCancel] = useState(false);
+  const router = useRouter();
+  const [redeploying, setRedeploying] = useState(false);
 
   // Jump to the Recovery tab the first time a repair needs attention.
   const pendingRepair = repairs.data?.some((r) => r.status === 'awaiting_approval');
@@ -51,6 +54,25 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
   if (dep.isLoading) return <Skeleton className="h-60" />;
   if (!d) return <Empty title="Deployment not found" />;
   const attempt = d.attempts.at(-1);
+
+  // A failed build is never a dead end: build the project's latest commit again.
+  const redeploy = async () => {
+    if (!d) return;
+    setRedeploying(true);
+    try {
+      const next = await post<{ id: string; number: number }>(
+        `/api/v1/projects/${d.projectId}/deployments`,
+        {},
+        { idempotencyKey: newIdempotencyKey('redeploy') },
+      );
+      toast(`Deployment #${next.number} queued`, 'ok');
+      router.push(`/deployments/${next.id}`);
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not start a deployment', 'fail');
+    } finally {
+      setRedeploying(false);
+    }
+  };
 
   const doCancel = async () => {
     try {
@@ -98,6 +120,11 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
             {(live || d.status === 'AWAITING_APPROVAL') && (
               <Button variant="danger" size="sm" onClick={() => setCancel(true)}>
                 Cancel
+              </Button>
+            )}
+            {(d.status === 'FAILED' || d.status === 'CANCELED' || d.status === 'NEEDS_INPUT') && (
+              <Button variant="primary" size="sm" loading={redeploying} onClick={redeploy}>
+                Deploy again
               </Button>
             )}
           </>
