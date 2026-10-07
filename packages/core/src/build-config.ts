@@ -16,6 +16,8 @@ export type BuildConfig = {
   patch?: string;
   /** Publishing this attempt needs a human to approve it. */
   requiresApproval?: boolean;
+  /** 'ssr': a Next.js server (standalone build, run on demand); default static. */
+  mode?: 'static' | 'ssr';
 };
 
 export type ProjectOverrides = Partial<
@@ -30,6 +32,7 @@ export function buildConfigFrom(analysis: Analysis, overrides: ProjectOverrides 
     outputDir: overrides.outputDir ?? analysis.outputDir.value,
     rootDir: overrides.rootDir ?? analysis.rootDir,
     env: {},
+    ...(analysis.mode.value === 'ssr' && { mode: 'ssr' as const }),
   };
 }
 

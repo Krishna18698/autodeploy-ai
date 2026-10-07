@@ -78,10 +78,16 @@ export type DeploymentRow = {
   error_summary: string | null;
   recovered_by: 'rule' | 'ai' | null;
   artifact_id: string | null;
+  mode: 'static' | 'ssr';
   created_at: Date;
   updated_at: Date;
   finished_at: Date | null;
   attempt_count?: number;
+  runtime_status?: 'starting' | 'running' | 'stopped' | 'failed' | null;
+  runtime_last_request_at?: Date | null;
+  runtime_cold_start_ms?: number | null;
+  runtime_requests?: string | number | null;
+  runtime_error?: string | null;
 };
 
 export type AttemptRow = {
@@ -133,6 +139,16 @@ export function toDeployment(
     screenshotUrl: r.screenshot_key ? `${apiUrl}/api/v1/deployments/${r.id}/screenshot` : null,
     errorSummary: r.error_summary,
     recoveredBy: r.recovered_by,
+    mode: r.mode,
+    runtime: r.runtime_status
+      ? {
+          status: r.runtime_status,
+          lastRequestAt: r.runtime_last_request_at?.toISOString() ?? null,
+          coldStartMs: r.runtime_cold_start_ms ?? null,
+          requests: Number(r.runtime_requests ?? 0),
+          error: r.runtime_error ?? null,
+        }
+      : null,
     attempts: attempts.map((a) => ({
       id: a.id,
       attemptNo: a.attempt_no,

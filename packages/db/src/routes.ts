@@ -7,6 +7,8 @@ export type RouteValue = {
   number: number;
   artifactSha: string;
   projectSlug: string;
+  /** 'ssr': anything not in the static artifact is proxied to the runtime gateway. */
+  mode?: 'ssr';
 };
 
 export interface RouteStore {

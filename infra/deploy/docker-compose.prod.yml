@@ -141,6 +141,45 @@ services:
     restart: unless-stopped
     mem_limit: 768m
 
+  # SSR runtime gateway (ADR 0008): starts server-rendered deployments on demand
+  # and proxies to them. Same image as the worker; it runs no user code itself,
+  # only gVisor containers on the internal runtime network.
+  gateway:
+    image: ghcr.io/${GHCR_OWNER}/autodeploy-worker:${IMAGE_TAG}
+    command: ["node", "--enable-source-maps", "--import", "./dist/register.js", "dist/gateway.js"]
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: autodeploy-gateway
+      SANDBOX_RUNTIME: runsc
+      RUNTIME_NETWORK: autodeploy-runtime
+      RUNTIME_PROXY: http://egress-runtime:3129
+      RUNTIME_BUNDLES_DIR: /var/lib/autodeploy/runtimes
+    group_add: ["${DOCKER_GID}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/autodeploy/runtimes:/var/lib/autodeploy/runtimes
+    networks: [default, runtime]
+    # Only the host's cloudflared (run.<domain>) reaches this.
+    ports: ["127.0.0.1:8082:8082"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8082/__gateway/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      start_period: 20s
+    stop_grace_period: 30s
+    # api-1 applies the migrations the gateway needs.
+    depends_on: { postgres: { condition: service_healthy }, api-1: { condition: service_healthy } }
+    restart: unless-stopped
+    mem_limit: 256m
+
+  # The runtimes' only way out: any public host, never a private/metadata address.
+  egress-runtime:
+    image: ghcr.io/${GHCR_OWNER}/autodeploy-egress:${IMAGE_TAG}
+    environment: { EGRESS_MODE: public, PORT: "3129" }
+    networks: { default: {}, runtime: { aliases: [egress-runtime] } }
+    restart: unless-stopped
+    mem_limit: 128m
+
   caddy:
     image: caddy:2-alpine
     volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro]
@@ -153,6 +192,8 @@ services:
 networks:
   default: {}
   sandbox: { internal: true }
+  # Fixed name: the gateway attaches runtime containers to it with `docker run`.
+  runtime: { internal: true, name: autodeploy-runtime }
 
 volumes:
   pgdata:

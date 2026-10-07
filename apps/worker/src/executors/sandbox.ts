@@ -106,6 +106,9 @@ export class SandboxExecutor implements Executor {
     // That proxy switch makes Node print an "experimental" warning on every
     // process; it is ours, not the user's, so keep it out of their logs.
     // (--disable-warning needs Node 20.11+; Node 18 builds keep the warning.)
+    // Server builds: Next's own switch for standalone output, so the user's
+    // next.config is never edited (ADR 0008).
+    if (config.mode === 'ssr') env.NEXT_PRIVATE_STANDALONE = '1';
     if (config.nodeVersion >= 20) {
       env.NODE_OPTIONS = [env.NODE_OPTIONS, '--disable-warning=UNDICI-EHPA']
         .filter(Boolean)
@@ -191,6 +194,24 @@ export class SandboxExecutor implements Executor {
         log.write('autodeploy: the build was killed (exit code 137): likely out of memory');
       return { ok: false, exitCode, reason: 'failed', durationMs, indexDirs: [] };
     }
+    if (config.mode === 'ssr') {
+      const serverDir = await findStandaloneServer(
+        join(projectRoot, config.outputDir, 'standalone'),
+      );
+      if (!serverDir) {
+        log.write(
+          `autodeploy: the build did not produce a standalone server (${config.outputDir}/standalone/server.js)`,
+        );
+        return { ok: false, exitCode, reason: 'output_missing', durationMs, indexDirs: [] };
+      }
+      return {
+        ok: true,
+        outputDir: join(projectRoot, config.outputDir),
+        durationMs,
+        serverDir,
+        projectRoot,
+      };
+    }
     const outputDir = join(projectRoot, config.outputDir);
     const hasIndex = await access(join(outputDir, 'index.html')).then(
       () => true,
@@ -211,6 +232,26 @@ export class SandboxExecutor implements Executor {
     }
     return { ok: true, outputDir, durationMs };
   }
+}
+
+/**
+ * Where server.js landed inside .next/standalone. It's at the top unless the
+ * app sits in a monorepo (Next mirrors the path from the tracing root).
+ */
+export async function findStandaloneServer(standalone: string, depth = 4): Promise<string | null> {
+  const has = await access(join(standalone, 'server.js')).then(
+    () => true,
+    () => false,
+  );
+  if (has) return standalone;
+  if (depth === 0) return null;
+  const entries = await readdir(standalone, { withFileTypes: true }).catch(() => []);
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name === 'node_modules' || e.name.startsWith('.')) continue;
+    const found = await findStandaloneServer(join(standalone, e.name), depth - 1);
+    if (found) return found;
+  }
+  return null;
 }
 
 /** Applies an AI-proposed unified diff to the workspace (already policy-checked). */

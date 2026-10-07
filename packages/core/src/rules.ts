@@ -121,6 +121,8 @@ export const RULES: readonly Rule[] = [
     codes: ['OUTPUT_DIR_MISSING'],
     title: 'Point at the directory the build actually produced',
     apply: ({ config, indexDirs }) => {
+      // A server build has no index.html to find; a missing server is not an output-dir problem.
+      if (config.mode === 'ssr') return undefined;
       const preferred = ['dist', 'build', 'out', '.output/public', 'public', '_site'];
       // The repo root holds the *source* index.html when there is a build step; never publish it.
       const candidates = config.buildCommand ? indexDirs.filter((d) => d !== '.') : indexDirs;

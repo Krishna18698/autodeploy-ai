@@ -16,6 +16,12 @@ export type FileTree = {
 export type Evidence = { source: string; detail: string };
 export type Inference<T> = { value: T; evidence: Evidence[] };
 
+/**
+ * Bump whenever analyze() reaches different conclusions for the same repo, so
+ * cached analyses (API and worker, keyed by commit) are recomputed. v2: SSR.
+ */
+export const ANALYSIS_VERSION = 2;
+
 export type Framework = 'next' | 'vite' | 'astro' | 'cra' | 'static' | 'unknown';
 export type PackageManager = 'pnpm' | 'yarn' | 'npm' | 'bun' | 'none';
 export type DeployMode = 'static' | 'ssr' | 'unknown';
@@ -313,17 +319,20 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
       if (distDir)
         warnings.push(`next.config sets distDir "${distDir}"; the export still lands in out/.`);
     } else {
+      // Runs as a server: built in standalone mode and started on demand (ADR 0008).
       mode = {
         value: 'ssr',
         evidence: [
           {
             source: cfgPath ?? 'next.config',
-            detail: cfgPath ? "no output: 'export'" : 'no next.config',
+            detail: cfgPath ? "no output: 'export' → server" : 'no next.config → server',
           },
         ],
       };
-      unsupportedReason =
-        "This Next.js app needs a server (no output: 'export'). AutoDeploy V1 serves static sites only.";
+      outputDir = {
+        value: '.next',
+        evidence: [{ source: 'next', detail: 'standalone server in .next/standalone' }],
+      };
     }
   } else if (framework === 'vite') {
     const cfgPath = firstExisting(tree, rootDir, [

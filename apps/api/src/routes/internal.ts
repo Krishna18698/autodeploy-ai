@@ -24,6 +24,7 @@ export const internalRoutes =
               number: z.number(),
               artifactSha: z.string(),
               projectSlug: z.string(),
+              mode: z.literal('ssr').optional(),
             }),
           },
         },
@@ -37,19 +38,25 @@ export const internalRoutes =
 
         const rows =
           route.kind === 'production'
-            ? await deps.sql<{ id: string; number: number; sha256: string }[]>`
-                select d.id, d.number, a.sha256 from projects p
+            ? await deps.sql<
+                { id: string; number: number; sha256: string; mode: 'static' | 'ssr' }[]
+              >`
+                select d.id, d.number, a.sha256, d.mode from projects p
                 join deployments d on d.id = p.active_deployment_id join artifacts a on a.id = d.artifact_id
                 where p.slug = ${route.slug}`
             : route.kind === 'preview'
-              ? await deps.sql<{ id: string; number: number; sha256: string }[]>`
-                  select d.id, d.number, a.sha256 from projects p
+              ? await deps.sql<
+                  { id: string; number: number; sha256: string; mode: 'static' | 'ssr' }[]
+                >`
+                  select d.id, d.number, a.sha256, d.mode from projects p
                   join deployments d on d.project_id = p.id join artifacts a on a.id = d.artifact_id
                   where p.slug = ${route.slug} and d.kind = 'preview' and d.pr_number = ${route.pr}
                     and d.status in ('READY', 'AWAITING_APPROVAL')
                   order by d.number desc limit 1`
-              : await deps.sql<{ id: string; number: number; sha256: string }[]>`
-                  select d.id, d.number, a.sha256 from projects p
+              : await deps.sql<
+                  { id: string; number: number; sha256: string; mode: 'static' | 'ssr' }[]
+                >`
+                  select d.id, d.number, a.sha256, d.mode from projects p
                   join deployments d on d.project_id = p.id join artifacts a on a.id = d.artifact_id
                   where p.slug = ${route.slug} and d.number = ${route.number}`;
         const r = rows[0];
@@ -60,6 +67,7 @@ export const internalRoutes =
           number: r.number,
           artifactSha: r.sha256,
           projectSlug: route.slug,
+          ...(r.mode === 'ssr' && { mode: 'ssr' as const }),
         };
       },
     );

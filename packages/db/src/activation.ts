@@ -38,9 +38,10 @@ export async function activate(
           kind: string;
           number: number;
           artifact_id: string | null;
+          mode: 'static' | 'ssr';
         }[]
       >`
-        select id, project_id, org_id, status, kind, number, artifact_id from deployments where id = ${deploymentId}`;
+        select id, project_id, org_id, status, kind, number, artifact_id, mode from deployments where id = ${deploymentId}`;
       if (!dep) throw new Error('deployment not found');
       if (dep.kind !== 'production')
         throw new Error('only production deployments can be activated');
@@ -76,6 +77,7 @@ export async function activate(
         number: dep.number,
         artifactSha: artifact.sha256,
         projectSlug: project.slug,
+        ...(dep.mode === 'ssr' && { mode: 'ssr' as const }),
       });
 
       const updated =
@@ -104,7 +106,15 @@ async function currentRoute(
   deploymentId: string,
   slug: string,
 ): Promise<RouteValue | null> {
-  const [r] = await tx<{ number: number; sha256: string }[]>`
-    select d.number, a.sha256 from deployments d join artifacts a on a.id = d.artifact_id where d.id = ${deploymentId}`;
-  return r ? { deploymentId, number: r.number, artifactSha: r.sha256, projectSlug: slug } : null;
+  const [r] = await tx<{ number: number; sha256: string; mode: 'static' | 'ssr' }[]>`
+    select d.number, a.sha256, d.mode from deployments d join artifacts a on a.id = d.artifact_id where d.id = ${deploymentId}`;
+  return r
+    ? {
+        deploymentId,
+        number: r.number,
+        artifactSha: r.sha256,
+        projectSlug: slug,
+        ...(r.mode === 'ssr' && { mode: 'ssr' as const }),
+      }
+    : null;
 }

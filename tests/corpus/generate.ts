@@ -302,12 +302,22 @@ export const CASES: Case[] = [
     ),
   },
   {
-    name: 'unsupported-next-ssr',
-    expect: 'unsupported',
-    note: 'Next.js without output: export',
+    name: 'ok-next-ssr',
+    expect: 'live',
+    note: 'server-rendered Next.js (standalone, runs on demand: ADR 0008)',
     files: {
-      'package.json': pkg({ scripts: { build: 'next build' }, dependencies: { next: '16.2.0' } }),
+      'package.json': pkg({
+        scripts: { build: 'next build' },
+        dependencies: { next: '16.2.0', react: '19.2.0', 'react-dom': '19.2.0' },
+      }),
       'next.config.mjs': 'export default {};\n',
+      'app/layout.js':
+        'export default function RootLayout({ children }) {\n  return <html lang="en"><body>{children}</body></html>;\n}\n',
+      // Rendered per request: proves a server answers, not a prebuilt file.
+      'app/page.js':
+        "export const dynamic = 'force-dynamic';\nexport default function Page() {\n  return <h1>rendered at {new Date().toISOString()}</h1>;\n}\n",
+      'app/api/hello/route.js':
+        "export async function POST(req) {\n  const body = await req.json();\n  return Response.json({ hello: body.name ?? 'world' });\n}\n",
     },
   },
   {

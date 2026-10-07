@@ -25,6 +25,8 @@ const EnvSchema = z
     APP_URL: z.url().default('http://localhost:3000'),
     API_PUBLIC_URL: z.url().default('http://localhost:4000'),
     SESSION_COOKIE_DOMAIN: z.string().optional(),
+    /** Server-rendered projects per org: each can hold a container awake (ADR 0008). */
+    SSR_PROJECTS_PER_ORG: z.coerce.number().int().min(0).default(3),
     DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
     VALKEY_URL: z.url({ protocol: /^rediss?$/ }),
     S3_ENDPOINT: z.url(),

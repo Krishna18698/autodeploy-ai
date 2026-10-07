@@ -24,3 +24,7 @@ services:
     mem_limit: 512m
   caddy:
     depends_on: !override [api-1]
+  gateway:
+    environment:
+      RUNTIME_MAX_AWAKE: "6"
+      RUNTIME_MEMORY: 192m

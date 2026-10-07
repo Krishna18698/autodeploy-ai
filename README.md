@@ -33,6 +33,9 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
 - **Validates** in headless Chromium with no network, and keeps a screenshot.
 - **Ships** content-addressed artifacts; going live or rolling back moves one
   pointer (measured 11.7 ms).
+- **Runs server-rendered Next.js apps** (API routes, server actions) as
+  gVisor containers that wake on the first request and sleep after 15 idle
+  minutes, so one free VM hosts many of them ([ADR 0008](docs/adr/0008-ssr-runtime.md)).
 - **Streams** build logs and status over SSE (resumable), via Kafka.
 
 ## Backend concepts, and where they live
@@ -49,6 +52,7 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
 | Circuit breakers, retries, timeouts, bulkheads | `packages/resilience`, `packages/ai` |
 | OpenTelemetry traces across API → queue → worker; Prometheus metrics | `packages/telemetry`, `apps/worker/src/metrics.ts` |
 | Leader-elected maintenance (advisory lock) | `apps/worker/src/cron.ts` |
+| Scale-to-zero containers: on-demand start, idle reaping, LRU cap, cold-start tracking, SSRF-guarded egress | `apps/worker/src/gateway*`, `infra/sandbox/egress` |
 | Zero-downtime deploys, encrypted backups, restore drill, IaC | `infra/` |
 
 Decisions and trade-offs are in [`docs/adr`](docs/adr); numbers in

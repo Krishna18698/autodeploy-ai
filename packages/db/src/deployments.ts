@@ -37,6 +37,9 @@ export type TransitionInput = {
     queued_at: Date;
     started_at: Date;
     finished_at: Date;
+    mode: 'static' | 'ssr';
+    runtime_sha: string | null;
+    runtime_node: number | null;
   }>;
   /** Only transition if the current status is one of these (optimistic guard). */
   expectFrom?: readonly DeploymentStatus[];

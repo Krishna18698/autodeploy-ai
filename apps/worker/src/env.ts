@@ -38,6 +38,19 @@ const EnvSchema = z.object({
 
   // Sandbox
   SANDBOX_RUNTIME: z.enum(['runc', 'runsc']).default('runc'),
+  // ---- SSR runtime gateway (ADR 0008) ----
+  INTERNAL_TOKEN: z.string().min(24).optional(),
+  GATEWAY_PORT: z.coerce.number().int().default(8082),
+  RUNTIME_NETWORK: z.string().default('autodeploy-runtime'),
+  RUNTIME_PROXY: z.string().default('http://egress-runtime:3129'),
+  /** 'network': reach containers by name on RUNTIME_NETWORK (prod); 'publish': via a localhost port (dev). */
+  RUNTIME_REACH: z.enum(['network', 'publish']).default('network'),
+  RUNTIME_BUNDLES_DIR: z.string().default('/var/lib/autodeploy/runtimes'),
+  RUNTIME_MEMORY: z.string().default('256m'),
+  RUNTIME_CPUS: z.string().default('0.5'),
+  RUNTIME_IDLE_MIN: z.coerce.number().min(1).default(15),
+  RUNTIME_MAX_AWAKE: z.coerce.number().int().min(1).default(20),
+  RUNTIME_START_TIMEOUT_S: z.coerce.number().int().min(5).default(30),
   SANDBOX_NETWORK: z.string().default('autodeploy_sandbox'),
   SANDBOX_PROXY: z.string().default('http://egress:3128'),
   SANDBOX_IMAGE_PREFIX: z.string().default('autodeploy-build:node'),

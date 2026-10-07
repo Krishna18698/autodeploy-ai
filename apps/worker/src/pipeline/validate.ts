@@ -22,6 +22,8 @@ export async function validateSite(
   siteDir: string,
   outDir: string,
   signal: AbortSignal,
+  /** Server builds: the validator starts server.js from siteDir instead of serving files. */
+  opts?: { ssr: true; env: Record<string, string> },
 ): Promise<ValidationResult> {
   const skipped: ValidationResult = {
     ok: true,
@@ -39,6 +41,11 @@ export async function validateSite(
   await mkdir(outDir, { recursive: true });
   // The validator runs as an unprivileged user inside its container.
   await chmod(outDir, 0o777);
+  // A server writes caches (.next/cache, ISR) under its own directory.
+  if (opts?.ssr) await runProcess('chmod', ['-R', 'a+rwX', siteDir], () => {});
+  const ssrArgs = opts?.ssr
+    ? ['-e', 'MODE=ssr', ...Object.entries(opts.env).flatMap(([k, v]) => ['-e', `${k}=${v}`])]
+    : [];
   const code = await runProcess(
     'docker',
     [
@@ -59,7 +66,8 @@ export async function validateSite(
       '--ipc',
       'host',
       '-v',
-      `${siteDir}:/site:ro`,
+      `${siteDir}:/site:${opts?.ssr ? 'rw' : 'ro'}`,
+      ...ssrArgs,
       '-v',
       `${outDir}:/out:rw`,
       deps.env.VALIDATOR_IMAGE,

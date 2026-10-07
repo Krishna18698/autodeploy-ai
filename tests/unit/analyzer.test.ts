@@ -61,7 +61,7 @@ describe('analyzer', () => {
     expect(a.warnings.some((w) => w.includes('base path'))).toBe(true);
   });
 
-  it('accepts a statically exported Next.js app and rejects an SSR one', () => {
+  it('builds an exported Next.js app as static and any other as a server (SSR)', () => {
     const exported = analyze(
       tree({
         'package.json': { dependencies: { next: '16.2.0' }, scripts: { build: 'next build' } },
@@ -78,7 +78,9 @@ describe('analyzer', () => {
       }),
     );
     expect(ssr.mode.value).toBe('ssr');
-    expect(ssr.supported).toBe(false);
+    expect(ssr.supported).toBe(true);
+    expect(buildConfigFrom(ssr).mode).toBe('ssr');
+    expect(buildConfigFrom(exported).mode).toBeUndefined();
   });
 
   it('treats a repo with only index.html as a static site with no build', () => {

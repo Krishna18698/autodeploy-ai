@@ -5,6 +5,7 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: {
     main: 'src/main.ts',
+    gateway: 'src/gateway.ts',
     replay: 'src/replay.ts',
     register: '../../packages/telemetry/src/register.ts',
   },

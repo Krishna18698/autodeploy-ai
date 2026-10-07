@@ -1,6 +1,9 @@
 // Serves /site on localhost, loads it in Chromium, and reports whether it
 // actually works: HTTP 200 for "/", every same-origin asset loads, no
 // uncaught exceptions. Writes /out/result.json and /out/screenshot.png.
+// MODE=ssr: /site is a Next.js standalone bundle; its server.js is started
+// instead (still with no network: the container runs with --network none).
+import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -46,7 +49,33 @@ const server = createServer(async (req, res) => {
   res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
   createReadStream(file).pipe(res);
 });
-await new Promise((r) => server.listen(4173, '127.0.0.1', r));
+const SSR = process.env.MODE === 'ssr';
+// Vercel's Analytics / Speed Insights scripts only exist on Vercel's platform;
+// elsewhere they 404 harmlessly. Not the site being broken.
+const PLATFORM_ONLY = /^\/_vercel\//;
+let child = null;
+const serverLog = [];
+if (SSR) {
+  child = spawn('node', ['server.js'], {
+    cwd: SITE,
+    env: { ...process.env, PORT: '4173', HOSTNAME: '127.0.0.1', NODE_ENV: 'production' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  for (const s of [child.stdout, child.stderr])
+    s.on('data', (d) => serverLog.push(...String(d).split('\n').filter(Boolean)));
+  // Wait for the server to answer (cold start of a Next.js server: ~1-5 s).
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const up = await fetch('http://127.0.0.1:4173/', { redirect: 'manual' }).then(
+      () => true,
+      () => false,
+    );
+    if (up || child.exitCode !== null || Date.now() > deadline) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+} else {
+  await new Promise((r) => server.listen(4173, '127.0.0.1', r));
+}
 
 const started = Date.now();
 const result = {
@@ -56,6 +85,7 @@ const result = {
   consoleErrors: [],
   failedRequests: [],
   externalBlocked: 0,
+  platformSkipped: 0,
   title: null,
   durationMs: 0,
 };
@@ -69,13 +99,15 @@ try {
   );
   page.on('requestfailed', (r) => {
     const u = new URL(r.url());
-    if (u.hostname === '127.0.0.1')
+    if (u.hostname === '127.0.0.1' && PLATFORM_ONLY.test(u.pathname)) result.platformSkipped++;
+    else if (u.hostname === '127.0.0.1')
       result.failedRequests.push(`${u.pathname} (${r.failure()?.errorText ?? 'failed'})`);
     else result.externalBlocked++;
   });
   page.on('response', (r) => {
     const u = new URL(r.url());
-    if (u.hostname === '127.0.0.1' && r.status() >= 400)
+    if (u.hostname === '127.0.0.1' && PLATFORM_ONLY.test(u.pathname)) result.platformSkipped++;
+    else if (u.hostname === '127.0.0.1' && r.status() >= 400)
       result.failedRequests.push(`${u.pathname} (${r.status()})`);
   });
   const resp = await page
@@ -92,7 +124,14 @@ try {
     result.status === 200 && result.pageErrors.length === 0 && result.failedRequests.length === 0;
 } finally {
   await browser.close();
-  server.close();
+  if (child) {
+    if (child.exitCode !== null)
+      result.pageErrors.push(
+        `server exited (${child.exitCode}): ${serverLog.slice(-3).join(' | ').slice(0, 300)}`,
+      );
+    child.kill('SIGTERM');
+  } else server.close();
+  if (SSR) result.serverLog = serverLog.slice(-20);
   result.durationMs = Date.now() - started;
   await writeFile(join(OUT, 'result.json'), JSON.stringify(result, null, 2));
 }

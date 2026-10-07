@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type Analysis, analyze, slugify } from '@autodeploy/core';
+import { ANALYSIS_VERSION, type Analysis, analyze, slugify } from '@autodeploy/core';
 import {
   copyLocalSource,
   downloadTarball,
@@ -124,7 +124,7 @@ export async function analyzeSource(
   src: ResolvedSource,
   rootDir = '.',
 ): Promise<Analysis> {
-  const cacheKey = `analysis:v1:${src.fullName}:${src.commitSha}:${rootDir}`;
+  const cacheKey = `analysis:v${ANALYSIS_VERSION}:${src.fullName}:${src.commitSha}:${rootDir}`;
   const cached = src.kind === 'github' ? await deps.valkey.get(cacheKey) : null;
   if (cached) return JSON.parse(cached) as Analysis;
 

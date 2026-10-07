@@ -28,8 +28,8 @@ wait_healthy() {
 }
 
 # SKIP_PULL=1 when ship.sh built the images on this VM.
-[ "${SKIP_PULL:-}" = 1 ] || compose pull "${apis[@]}" worker egress
-compose up -d --remove-orphans postgres valkey kafka egress caddy
+[ "${SKIP_PULL:-}" = 1 ] || compose pull "${apis[@]}" worker gateway egress egress-runtime
+compose up -d --remove-orphans postgres valkey kafka egress egress-runtime caddy
 for svc in "${apis[@]}"; do
   echo "▸ rolling $svc"
   compose up -d --no-deps "$svc"
@@ -38,4 +38,8 @@ done
 echo "▸ draining and replacing worker"
 compose up -d --no-deps worker
 wait_healthy worker
+# The gateway restarts its runtimes cold (they wake again on the next request).
+echo "▸ replacing SSR gateway"
+compose up -d --no-deps gateway
+wait_healthy gateway
 echo "✓ deployed $IMAGE_TAG"

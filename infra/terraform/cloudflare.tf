@@ -27,6 +27,8 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
     ingress = [
       { hostname = "api.${var.platform_domain}", service = "http://localhost:8080" },
       { hostname = "ssh.${var.platform_domain}", service = "ssh://localhost:22" },
+      # SSR runtime gateway (ADR 0008); it rejects anything without the internal token.
+      { hostname = "run.${var.platform_domain}", service = "http://localhost:8082" },
       { service = "http_status:404" },
     ]
   }
@@ -35,6 +37,15 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
 resource "cloudflare_dns_record" "api" {
   zone_id = data.cloudflare_zone.platform.zone_id
   name    = "api"
+  type    = "CNAME"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.api.id}.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "run" {
+  zone_id = data.cloudflare_zone.platform.zone_id
+  name    = "run"
   type    = "CNAME"
   content = "${cloudflare_zero_trust_tunnel_cloudflared.api.id}.cfargotunnel.com"
   proxied = true
@@ -87,7 +98,7 @@ resource "cloudflare_workers_route" "sites" {
 # win over the wildcard, so they don't spend the free 100k Worker requests/day
 # (and SSH's WebSocket never passes through site-serving code).
 resource "cloudflare_workers_route" "bypass" {
-  for_each = toset(["api", "ssh"])
+  for_each = toset(["api", "ssh", "run"])
   zone_id  = data.cloudflare_zone.platform.zone_id
   pattern  = "${each.key}.${var.platform_domain}/*"
 }

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { use, useEffect, useMemo, useRef, useState } from 'react';
+import { RuntimePanel } from '@/components/app/runtime-panel';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
@@ -138,6 +139,7 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
               <LogViewer lines={lines} live={live && connected} />
             </div>
             <aside className="flex flex-col gap-3">
+              <RuntimePanel d={d} />
               <Panel title={`Attempt ${attempt?.attemptNo ?? '—'} / ${d.attempts.length}`}>
                 {attempt ? (
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 font-mono text-[12px]">

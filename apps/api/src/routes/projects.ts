@@ -142,6 +142,19 @@ export const projectRoutes =
             'Slugs are 1–40 lowercase letters, digits and single hyphens.',
           );
 
+        if (analysis.mode.value === 'ssr') {
+          const [{ n } = { n: 0 }] = await withOrg(
+            deps.sql,
+            a.orgId,
+            (tx) => tx<{ n: number }[]>`
+              select count(*)::int as n from projects where analysis->'mode'->>'value' = 'ssr'`,
+          );
+          if (n >= deps.env.SSR_PROJECTS_PER_ORG)
+            throw conflict(
+              'ssr_quota',
+              `This org already has ${n} server-rendered projects (the limit is ${deps.env.SSR_PROJECTS_PER_ORG}).`,
+            );
+        }
         // Remember (and claim for this org) the App installation that gives
         // access; builds, commit statuses and fix PRs all use it.
         if (src.installationId)

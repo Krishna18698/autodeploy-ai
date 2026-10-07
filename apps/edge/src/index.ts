@@ -21,6 +21,8 @@ export interface Env {
   S3_SECRET_ACCESS_KEY: string;
   /** Where the dashboard's pages are built and hosted (Vercel); served as app.<domain>. */
   APP_ORIGIN?: string;
+  /** The SSR runtime gateway (ADR 0008), reached through the tunnel. */
+  RUNTIME_URL?: string;
 }
 
 type RouteValue = {
@@ -28,6 +30,8 @@ type RouteValue = {
   number: number;
   artifactSha: string;
   projectSlug: string;
+  /** Server-rendered: anything not in the static artifact goes to the runtime gateway. */
+  mode?: 'ssr';
 };
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -131,6 +135,47 @@ async function serveApp(request: Request, env: Env & { APP_ORIGIN: string }, hos
   return out;
 }
 
+function withDeployment(res: Response, target: RouteValue, method: string): Response {
+  const headers = new Headers(res.headers);
+  headers.set('x-autodeploy-deployment', `${target.projectSlug}#${target.number}`);
+  return new Response(method === 'HEAD' ? null : res.body, { status: res.status, headers });
+}
+
+/**
+ * Server-rendered request → the gateway, which wakes the deployment's container
+ * if needed and streams the response back (SSE and streamed AI replies work).
+ */
+async function proxyRuntime(
+  request: Request,
+  env: Env,
+  host: string,
+  target: RouteValue,
+  url: URL,
+): Promise<Response> {
+  if (!env.RUNTIME_URL) return notFound('Server-rendered sites are not enabled here.', 502);
+  const headers = new Headers(request.headers);
+  headers.delete('host');
+  headers.set('x-forwarded-host', host);
+  headers.set('x-forwarded-proto', url.protocol.replace(':', ''));
+  const client = request.headers.get('cf-connecting-ip');
+  if (client) headers.set('x-forwarded-for', client);
+  headers.set('x-autodeploy-deployment', target.deploymentId);
+  headers.set('x-internal-token', env.INTERNAL_TOKEN);
+  try {
+    const res = await fetch(new URL(url.pathname + url.search, env.RUNTIME_URL), {
+      method: request.method,
+      headers,
+      body: request.method === 'GET' || request.method === 'HEAD' ? null : request.body,
+      redirect: 'manual',
+    });
+    const out = new Response(res.body, res);
+    out.headers.set('x-autodeploy-deployment', `${target.projectSlug}#${target.number}`);
+    return out;
+  } catch {
+    return notFound('The site is temporarily unavailable.', 502);
+  }
+}
+
 function notFound(message: string, status = 404) {
   const html = `<!doctype html><meta charset="utf-8"><title>${status}</title><style>body{background:#0a0c0f;color:#e8ebf0;font:15px/1.5 system-ui;display:grid;place-items:center;height:100vh;margin:0}p{color:#8a93a3}</style><div><h1>${status}</h1><p>${message}</p></div>`;
   return new Response(html, {
@@ -151,17 +196,18 @@ export default {
       .replace(/:\d+$/, '');
     if (env.APP_ORIGIN && reqHost === appHost)
       return serveApp(request, env as Env & { APP_ORIGIN: string }, appHost);
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
-    }
     const url = new URL(request.url);
-    const host = (request.headers.get('host') ?? url.host).toLowerCase();
-    const route = parseSiteHost(host, env.PLATFORM_DOMAIN);
+    const route = parseSiteHost(reqHost, env.PLATFORM_DOMAIN);
     // app/api/www and unknown hosts are not ours to serve: pass through to origin.
     if (!route) return fetch(request);
+    const isRead = request.method === 'GET' || request.method === 'HEAD';
 
-    const target = await resolveRoute(env, host, route);
+    const target = await resolveRoute(env, reqHost, route);
     if (!target) return notFound('No deployment is live at this address.');
+    // Static sites are read-only; a server-rendered one takes any method (forms, API routes).
+    if (target.mode !== 'ssr' && !isRead) {
+      return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
+    }
 
     const s3 = new AwsClient({
       accessKeyId: env.S3_ACCESS_KEY_ID,
@@ -200,6 +246,17 @@ export default {
       ctx.waitUntil(cache.put(cacheKey, stored.clone()));
       return forBrowser(stored);
     };
+
+    if (target.mode === 'ssr') {
+      // Build assets and public/ files come straight from storage (cached at
+      // the edge, no container woken); pages and API routes go to the server.
+      const key = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+      if (isRead && key && files?.has(key)) {
+        const asset = await tryKey(key).catch(() => null);
+        if (asset) return withDeployment(asset, target, request.method);
+      }
+      return proxyRuntime(request, env, reqHost, target, url);
+    }
 
     try {
       let res: Response | null = null;

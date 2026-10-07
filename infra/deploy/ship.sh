@@ -60,8 +60,12 @@ gid=$(remote "getent group docker | cut -d: -f3")
 sed -e "s/^DOCKER_GID=.*/DOCKER_GID=$gid/" -e "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" "$envfile" |
   remote "sudo install -m 600 /dev/stdin $dir/src/infra/deploy/.env.prod"
 
-step "sandbox images (first run only; ~10 min)"
-remote "sudo docker image inspect autodeploy-build:node24 autodeploy-validator:latest >/dev/null 2>&1 || sudo bash $dir/src/infra/sandbox/build-images.sh"
+step "runtime bundles dir (SSR)"
+remote "sudo mkdir -p /var/lib/autodeploy/runtimes && sudo chown 1000:1000 /var/lib/autodeploy/runtimes"
+
+step "sandbox images (rebuilt when infra/sandbox changes; first run ~10 min)"
+sandbox_tree=$(git -C "$root" rev-parse HEAD:infra/sandbox)
+remote "if [ \"\$(cat /var/lib/autodeploy/sandbox-tree 2>/dev/null)\" = '$sandbox_tree' ] && sudo docker image inspect autodeploy-build:node24 autodeploy-validator:latest >/dev/null 2>&1; then echo '  up to date'; else sudo bash $dir/src/infra/sandbox/build-images.sh && echo '$sandbox_tree' | sudo tee /var/lib/autodeploy/sandbox-tree >/dev/null; fi"
 
 step "app images @ $tag (built on the VM; no registry needed)"
 remote "cd $dir/src && for spec in api:apps/api/Dockerfile:. worker:apps/worker/Dockerfile:. egress:infra/sandbox/egress/Dockerfile:infra/sandbox/egress; do \

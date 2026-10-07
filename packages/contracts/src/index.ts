@@ -211,6 +211,18 @@ export const Deployment = z.object({
   screenshotUrl: z.string().nullable(),
   errorSummary: z.string().nullable(),
   recoveredBy: z.enum(['rule', 'ai']).nullable(),
+  /** 'ssr': runs as a server that wakes on demand (ADR 0008). */
+  mode: z.enum(['static', 'ssr']),
+  runtime: z
+    .object({
+      status: z.enum(['starting', 'running', 'stopped', 'failed']),
+      lastRequestAt: Timestamp.nullable(),
+      coldStartMs: z.number().nullable(),
+      requests: z.number(),
+      error: z.string().nullable(),
+    })
+    .nullable()
+    .describe('SSR only: the server process, if it has ever been started'),
   attempts: z.array(Attempt),
   createdAt: Timestamp,
   updatedAt: Timestamp,

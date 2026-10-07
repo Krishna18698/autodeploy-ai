@@ -13,6 +13,7 @@ export const RESERVED_LABELS = new Set([
   'admin',
   'mail',
   'ssh',
+  'run',
 ]);
 
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;

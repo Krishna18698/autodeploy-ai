@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  ANALYSIS_VERSION,
   type Analysis,
   analyze,
   type BuildConfig,
@@ -10,7 +11,6 @@ import {
   type DeploymentStatus,
   routeKey,
 } from '@autodeploy/core';
-import { decrypt } from '@autodeploy/crypto';
 import { activate, recordEvent, transition } from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
 import { enqueue } from '@autodeploy/queue';
@@ -23,6 +23,8 @@ import type { Executor } from '../executors/types.js';
 import { metrics } from '../metrics.js';
 import { storeArtifact } from '../pipeline/artifact.js';
 import { LogSink } from '../pipeline/logs.js';
+import { assembleSsr, packRuntimeBundle, uploadRuntimeBundle } from '../pipeline/runtime-bundle.js';
+import { loadSecrets } from '../pipeline/secrets.js';
 import { cleanupWorkspace, fetchSource, workspaceFor } from '../pipeline/source.js';
 import { validateSite } from '../pipeline/validate.js';
 import type { JobContext } from '../runner.js';
@@ -81,7 +83,7 @@ export async function prepareDeployment(deps: Deps, ctx: JobContext): Promise<vo
     const dir = await mkdtemp(join(await ensureDir(join(deps.env.WORK_DIR, 'analyze')), 'a-'));
     let analysis: Analysis;
     try {
-      const cacheKey = `analysis:v1:${d.repo_full_name}:${d.commit_sha}:${d.root_dir}`;
+      const cacheKey = `analysis:v${ANALYSIS_VERSION}:${d.repo_full_name}:${d.commit_sha}:${d.root_dir}`;
       const cached = d.repo_url.startsWith('file://') ? null : await deps.valkey.get(cacheKey);
       if (cached) {
         analysis = JSON.parse(cached) as Analysis;
@@ -296,6 +298,21 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
         }
 
         // ---- validate, store, publish ----
+        // Server builds: split into static assets + a runtime bundle (ADR 0008).
+        const ssr =
+          config.mode === 'ssr' && result.serverDir && result.projectRoot
+            ? await assembleSsr(
+                result.serverDir,
+                result.projectRoot,
+                config.outputDir,
+                join(ws.out, 'ssr'),
+              )
+            : null;
+        const packed = ssr ? await packRuntimeBundle(ssr.bundleDir) : null;
+        if (ssr && packed)
+          log.stage(
+            `server bundle ${(packed.bytes / 1024 / 1024).toFixed(1)} MB · starting it for validation`,
+          );
         log.stage('validating in headless Chromium');
         await log.close();
         await deps.sql.begin(async (tx) => {
@@ -307,7 +324,13 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
           });
         });
 
-        const validation = await validateSite(deps, result.outputDir, ws.out, ctx.signal);
+        const validation = await validateSite(
+          deps,
+          ssr ? ssr.bundleDir : result.outputDir,
+          join(ws.out, 'validation'),
+          ctx.signal,
+          ssr ? { ssr: true, env: secrets } : undefined,
+        );
         if (!validation.ok) {
           for (const e of [
             ...validation.pageErrors,
@@ -352,13 +375,20 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
         }
 
         // Object storage blips shouldn't cost a rebuild: retry the upload in place.
-        const artifact = await retry(() => storeArtifact(deps, result.outputDir), {
+        const uploadRetry = {
           attempts: 6,
           baseMs: 1_000,
           capMs: 15_000,
-          onRetry: (err, n, delay) =>
+          onRetry: (err: unknown, n: number, delay: number) =>
             deps.log.warn({ err, attempt: n, delay }, 'artifact upload failed; retrying'),
-        });
+        };
+        const artifact = await retry(
+          () => storeArtifact(deps, ssr ? ssr.assetsDir : result.outputDir),
+          uploadRetry,
+        );
+        const runtime = packed
+          ? { ...packed, reused: await retry(() => uploadRuntimeBundle(deps, packed), uploadRetry) }
+          : null;
         let screenshotKey: string | null = null;
         if (validation.screenshotPath) {
           screenshotKey = `screenshots/${deploymentId}.png`;
@@ -374,7 +404,11 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
           number: d.number,
           artifactSha: artifact.sha256,
           projectSlug: d.slug,
+          ...(runtime && { mode: 'ssr' as const }),
         };
+        const modeColumns = runtime
+          ? { mode: 'ssr' as const, runtime_sha: runtime.sha256, runtime_node: config.nodeVersion }
+          : {};
         await deps.routes.put(
           routeKey({ kind: 'deployment', slug: d.slug, number: d.number }),
           value,
@@ -402,6 +436,9 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
                 bytes: artifact.bytes,
                 reused: artifact.reused,
               },
+              ...(runtime && {
+                runtime: { sha256: runtime.sha256, bytes: runtime.bytes, reused: runtime.reused },
+              }),
             },
           );
           const rule = await tx<{ id: string }[]>`update repair_attempts set status = 'validated'
@@ -414,7 +451,7 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
             await transition(tx, {
               deploymentId,
               to: 'AWAITING_APPROVAL',
-              set: { artifact_id: artifact.id, screenshot_key: screenshotKey },
+              set: { artifact_id: artifact.id, screenshot_key: screenshotKey, ...modeColumns },
               payload: { repairId: payload.repairId ?? null },
             });
             return;
@@ -425,6 +462,7 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
             set: {
               artifact_id: artifact.id,
               screenshot_key: screenshotKey,
+              ...modeColumns,
               ...(rule.length > 0 && { recovered_by: 'rule' as const }),
             },
             payload: {
@@ -479,22 +517,6 @@ async function finishFailed(
       { orgId: d.org_id, idempotencyKey: `recover:${attempt.id}` },
     );
   });
-}
-
-async function loadSecrets(deps: Deps, projectId: string): Promise<Record<string, string>> {
-  const rows = await deps.sql<
-    { key: string; ciphertext: Buffer; dek_ciphertext: Buffer; key_version: number }[]
-  >`
-    select key, ciphertext, dek_ciphertext, key_version from env_vars where project_id = ${projectId}`;
-  const out: Record<string, string> = {};
-  for (const r of rows) {
-    out[r.key] = decrypt(
-      deps.keyring,
-      { ciphertext: r.ciphertext, dekCiphertext: r.dek_ciphertext, keyVersion: r.key_version },
-      `env:${projectId}:${r.key}`,
-    );
-  }
-  return out;
 }
 
 // ----------------------------------------------------------------- activate

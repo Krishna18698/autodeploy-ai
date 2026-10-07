@@ -20,8 +20,8 @@ systemctl restart docker
 docker run --rm --runtime=runsc hello-world >/dev/null && echo "gVisor OK"
 
 # Directories (same path inside the worker container and on the host)
-mkdir -p /var/lib/autodeploy/work
-chown 1000:1000 /var/lib/autodeploy/work
+mkdir -p /var/lib/autodeploy/work /var/lib/autodeploy/runtimes
+chown 1000:1000 /var/lib/autodeploy/work /var/lib/autodeploy/runtimes
 
 # No inbound ports at all: the Cloudflare Tunnel dials out.
 # The OCI security list is the real gate (no ingress except a temporary

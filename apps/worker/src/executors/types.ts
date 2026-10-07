@@ -13,7 +13,15 @@ export type ExecuteInput = {
 };
 
 export type ExecuteResult =
-  | { ok: true; outputDir: string; durationMs: number }
+  | {
+      ok: true;
+      outputDir: string;
+      durationMs: number;
+      /** SSR builds: the directory holding the standalone server.js. */
+      serverDir?: string;
+      /** SSR builds: the app's root inside the workspace (for .next/static and public). */
+      projectRoot?: string;
+    }
   | {
       ok: false;
       exitCode: number | null;

@@ -170,6 +170,12 @@ export default function NewProjectPage() {
                 ))}
               </dl>
             </Panel>
+            {a.mode.value === 'ssr' && a.supported && (
+              <p className="rounded-md border border-run/40 bg-run/10 px-3 py-2 text-[13px] text-fg/90">
+                Runs as a server (Next.js standalone): pages and API routes are rendered on request.
+                It sleeps after 15 minutes without visitors and wakes on the next one (≈1–3 s).
+              </p>
+            )}
             {a.envVars.value.length > 0 && (
               <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
                 References {a.envVars.value.join(', ')} — set them in project settings if the site

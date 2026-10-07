@@ -41,7 +41,12 @@ export const deploymentRoutes =
     async function load(orgId: string, id: string) {
       return withOrg(deps.sql, orgId, async (tx) => {
         const [d] = await tx<DeploymentRow[]>`
-          select d.*, p.slug as project_slug from deployments d join projects p on p.id = d.project_id where d.id = ${id}`;
+          select d.*, p.slug as project_slug,
+                 ri.status as runtime_status, ri.last_request_at as runtime_last_request_at,
+                 ri.cold_start_ms as runtime_cold_start_ms, ri.requests as runtime_requests, ri.error as runtime_error
+          from deployments d join projects p on p.id = d.project_id
+          left join runtime_instances ri on ri.deployment_id = d.id
+          where d.id = ${id}`;
         if (!d) throw notFound('Deployment');
         const attempts = await tx<AttemptRow[]>`
           select id, attempt_no, executor, status, build_config, error_code, error_signature, started_at, finished_at
