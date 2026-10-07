@@ -9,6 +9,8 @@ coverage/
 # secrets — only .env.example is committed
 .env
 .env.*
+# API token the production smoke suite signs in with
+infra/deploy/.e2e-token
 !.env.example
 
 # terraform

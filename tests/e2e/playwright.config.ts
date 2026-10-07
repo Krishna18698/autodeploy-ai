@@ -4,6 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 // The dashboard is built and served in production mode by webServer below.
 export default defineConfig({
   testDir: '.',
+  testIgnore: ['smoke.spec.ts', 'fixtures/**'],
   timeout: 240_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,

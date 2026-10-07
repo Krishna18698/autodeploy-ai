@@ -1,0 +1,8 @@
+{
+  "name": "e2e-needs-env",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

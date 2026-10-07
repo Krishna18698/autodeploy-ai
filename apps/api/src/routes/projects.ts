@@ -12,9 +12,10 @@ import {
   SlugAvailability,
   UpdateProjectBody,
 } from '@autodeploy/contracts';
-import { isValidSlug, RESERVED_LABELS } from '@autodeploy/core';
+import { isValidSlug, RESERVED_LABELS, routeKey } from '@autodeploy/core';
 import { encrypt, previewSecret } from '@autodeploy/crypto';
 import { withOrg } from '@autodeploy/db';
+import { enqueue } from '@autodeploy/queue';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
@@ -55,6 +56,8 @@ export const projectRoutes =
         const repos = (
           await Promise.all(mine.map((i) => deps.installations?.repositories(i.id) ?? []))
         ).flat();
+        // Imported at the repo root: the picker links to it. Projects in a
+        // subdirectory leave the repo pickable, for a monorepo's other apps.
         const imported = new Map(
           (
             await withOrg(
@@ -63,7 +66,7 @@ export const projectRoutes =
               (tx) =>
                 tx<
                   { id: string; repo_full_name: string }[]
-                >`select id, repo_full_name from projects`,
+                >`select id, repo_full_name from projects where root_dir in ('.', '')`,
             )
           ).map((p) => [p.repo_full_name.toLowerCase(), p.id]),
         );
@@ -112,15 +115,20 @@ export const projectRoutes =
       },
       async (req) => {
         const slug = req.params.slug.toLowerCase();
-        if (RESERVED_LABELS.has(slug)) return { slug, available: false, reason: 'reserved' };
+        const domain = deps.env.PLATFORM_DOMAIN;
+        if (RESERVED_LABELS.has(slug))
+          return { slug, domain, available: false, reason: 'reserved' };
         if (!isValidSlug(slug))
           return {
             slug,
+            domain,
             available: false,
             reason: 'use 1–40 lowercase letters, digits and single hyphens',
           };
         const [taken] = await deps.sql`select 1 from projects where slug = ${slug}`;
-        return taken ? { slug, available: false, reason: 'taken' } : { slug, available: true };
+        return taken
+          ? { slug, domain, available: false, reason: 'taken' }
+          : { slug, domain, available: true };
       },
     );
 
@@ -322,8 +330,25 @@ export const projectRoutes =
         schema: { tags: ['projects'], params: z.object({ id: z.uuid() }) },
       },
       async (req, reply) => {
-        const deleted = await withOrg(deps.sql, authOf(req).orgId, async (tx) => {
+        const orgId = authOf(req).orgId;
+        const deleted = await withOrg(deps.sql, orgId, async (tx) => {
           await tx`select set_config('app.allow_event_delete', 'on', true)`;
+          // The edge keeps serving whatever KV points at, so take every
+          // hostname this project ever had off the edge too (in this transaction).
+          const rows = await tx<{ slug: string; number: number; pr_number: number | null }[]>`
+            select p.slug, d.number, d.pr_number from projects p
+            left join deployments d on d.project_id = p.id where p.id = ${req.params.id}`;
+          const slug = rows[0]?.slug;
+          if (slug) {
+            const keys = new Set([routeKey({ kind: 'production', slug })]);
+            for (const r of rows) {
+              if (r.number != null)
+                keys.add(routeKey({ kind: 'deployment', slug, number: r.number }));
+              if (r.pr_number != null)
+                keys.add(routeKey({ kind: 'preview', slug, pr: r.pr_number }));
+            }
+            for (const key of keys) await enqueue(tx, 'routes.remove', { key }, { orgId });
+          }
           return tx`delete from projects where id = ${req.params.id} returning id`;
         });
         if (deleted.length === 0) throw notFound('Project');

@@ -22,6 +22,7 @@
     "chaos": "tsx tests/chaos/run.ts",
     "load": "tsx tests/load/run.ts",
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "test:smoke": "playwright test -c tests/e2e/smoke.config.ts",
     "github-app": "node scripts/github-app.mjs"
   },
   "devDependencies": {

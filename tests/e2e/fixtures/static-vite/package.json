@@ -1,0 +1,11 @@
+{
+  "name": "e2e-static-vite",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
+  }
+}

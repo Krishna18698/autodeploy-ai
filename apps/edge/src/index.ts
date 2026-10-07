@@ -120,6 +120,8 @@ async function serveApp(request: Request, env: Env & { APP_ORIGIN: string }, hos
   const headers = new Headers(request.headers);
   headers.delete('host');
   headers.set('x-forwarded-host', host);
+  // Tells the dashboard this came through us, so it doesn't redirect here.
+  headers.set('x-autodeploy-edge', '1');
   const client = request.headers.get('cf-connecting-ip');
   if (client) headers.set('x-forwarded-for', client);
   const res = await fetch(new URL(url.pathname + url.search, origin), {

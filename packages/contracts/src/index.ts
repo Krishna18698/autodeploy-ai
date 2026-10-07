@@ -89,7 +89,7 @@ export const GitHubRepos = z.object({
       pushedAt: Timestamp.nullable(),
       url: z.string(),
       imported: z.boolean(),
-      /** Already a project here: the picker links to it instead of importing again. */
+      /** Already a project at the repo root: the picker links to it instead of importing again. */
       projectId: Id.nullable(),
     }),
   ),
@@ -162,6 +162,7 @@ export const SlugAvailability = z.object({
   slug: z.string(),
   available: z.boolean(),
   reason: z.string().optional(),
+  domain: z.string().describe('Sites are served at <slug>.<domain>'),
 });
 
 // --- env vars ---------------------------------------------------------------

@@ -24,18 +24,28 @@ export default function NewProjectPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [slug, setSlug] = useState('');
   const [slugState, setSlugState] = useState<{ available: boolean; reason?: string } | null>(null);
+  const [domain, setDomain] = useState<string | null>(null);
   const [busy, setBusy] = useState<'analyze' | 'deploy' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!slug) return setSlugState(null);
+    // Until this slug is checked, show nothing (and keep Deploy disabled).
+    setSlugState(null);
+    if (!slug) return;
+    // A check still in flight for an earlier slug must not land afterwards.
+    let current = true;
     const t = setTimeout(async () => {
-      const r = await api<{ available: boolean; reason?: string }>(
+      const r = await api<{ available: boolean; reason?: string; domain: string }>(
         `/api/v1/slugs/${encodeURIComponent(slug)}`,
       ).catch(() => null);
+      if (!current) return;
       setSlugState(r);
+      if (r) setDomain(r.domain);
     }, 300);
-    return () => clearTimeout(t);
+    return () => {
+      current = false;
+      clearTimeout(t);
+    };
   }, [slug]);
 
   const analyze = async (url: string) => {
@@ -201,7 +211,7 @@ export default function NewProjectPage() {
                     onChange={(e) => setSlug(e.target.value.toLowerCase())}
                     className="w-40 rounded border border-line bg-bg px-2 py-1 text-fg outline-none focus:border-run/60"
                   />
-                  <span className="text-muted">.autodeploy</span>
+                  <span className="text-muted">{domain ? `.${domain}` : ''}</span>
                 </label>
                 <span
                   className={`font-mono text-[12px] ${slugState?.available ? 'text-ok' : 'text-fail'}`}
