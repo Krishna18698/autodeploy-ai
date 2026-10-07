@@ -3,6 +3,7 @@ import { access, readdir } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Env } from '../env.js';
+import { proxyByAddress } from './proxy-address.js';
 import type { ExecuteInput, ExecuteResult, Executor } from './types.js';
 
 // Runs untrusted `install && build` in a locked-down container:
@@ -78,7 +79,10 @@ export class SandboxExecutor implements Executor {
     const { config, log, signal } = input;
     const started = Date.now();
     const name = `ad-build-${input.attemptId}`;
-    const proxy = this.env.SANDBOX_PROXY;
+    const proxy =
+      this.env.SANDBOX_RUNTIME === 'runsc'
+        ? await proxyByAddress(this.env.SANDBOX_PROXY, this.env.SANDBOX_NETWORK)
+        : this.env.SANDBOX_PROXY;
     const env: Record<string, string> = {
       ...input.secrets,
       ...config.env,

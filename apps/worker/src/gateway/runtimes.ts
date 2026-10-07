@@ -9,6 +9,7 @@ import type { Sql } from '@autodeploy/db';
 import type { Storage } from '@autodeploy/storage';
 import type { Logger } from '@autodeploy/telemetry';
 import type { Env } from '../env.js';
+import { proxyByAddress } from '../executors/proxy-address.js';
 import { runProcess } from '../executors/sandbox.js';
 import { runtimeKey } from '../pipeline/runtime-bundle.js';
 import { loadSecrets } from '../pipeline/secrets.js';
@@ -89,6 +90,10 @@ export class RuntimeManager {
     const secrets = await loadSecrets(this.d, dep.project_id);
     const container = `ad-run-${deploymentId.slice(0, 8)}-${randomBytes(3).toString('hex')}`;
     const e = this.d.env;
+    const proxy =
+      e.SANDBOX_RUNTIME === 'runsc'
+        ? await proxyByAddress(e.RUNTIME_PROXY, e.RUNTIME_NETWORK)
+        : e.RUNTIME_PROXY;
     const env: Record<string, string> = {
       ...secrets,
       NODE_ENV: 'production',
@@ -97,8 +102,8 @@ export class RuntimeManager {
       NEXT_TELEMETRY_DISABLED: '1',
       // Outbound HTTP(S) only through the SSRF-guarded public proxy.
       ...(e.RUNTIME_REACH === 'network' && {
-        HTTP_PROXY: e.RUNTIME_PROXY,
-        HTTPS_PROXY: e.RUNTIME_PROXY,
+        HTTP_PROXY: proxy,
+        HTTPS_PROXY: proxy,
         NO_PROXY: 'localhost,127.0.0.1',
         NODE_USE_ENV_PROXY: '1',
         NODE_OPTIONS: '--disable-warning=UNDICI-EHPA',
