@@ -81,6 +81,9 @@ services:
     environment:
       <<: *app-env
       OTEL_SERVICE_NAME: autodeploy-api
+      # Only the worker mounts /var/lib/autodeploy; the API (non-root) analyzes
+      # repos in a scratch dir inside its own container.
+      WORK_DIR: /tmp/autodeploy
       ALLOWED_GITHUB_LOGINS: ${ALLOWED_GITHUB_LOGINS}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
@@ -96,6 +99,7 @@ services:
     environment:
       <<: *app-env
       OTEL_SERVICE_NAME: autodeploy-api
+      WORK_DIR: /tmp/autodeploy
       MIGRATE_ON_START: "false"
       ALLOWED_GITHUB_LOGINS: ${ALLOWED_GITHUB_LOGINS}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
