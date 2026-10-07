@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { z } from 'zod';
+import { RepoPicker } from '@/components/app/repo-picker';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
@@ -37,13 +38,12 @@ export default function NewProjectPage() {
     return () => clearTimeout(t);
   }, [slug]);
 
-  const analyzeRepo = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const analyze = async (url: string) => {
     setBusy('analyze');
     setError(null);
     setResult(null);
     try {
-      const r = await post<Result>('/api/v1/analyze', { repoUrl: repoUrl.trim(), rootDir });
+      const r = await post<Result>('/api/v1/analyze', { repoUrl: url.trim(), rootDir });
       setResult(r);
       setSlug(r.suggestedSlug);
     } catch (err) {
@@ -51,6 +51,16 @@ export default function NewProjectPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const analyzeRepo = (e: React.FormEvent) => {
+    e.preventDefault();
+    void analyze(repoUrl);
+  };
+
+  const pick = (url: string) => {
+    setRepoUrl(url);
+    void analyze(url);
   };
 
   const deploy = async () => {
@@ -92,8 +102,9 @@ export default function NewProjectPage() {
     <>
       <PageHeader
         title="Import a repository"
-        sub="Public GitHub repositories work today; private ones need the GitHub App."
+        sub="Pick a repository the AutoDeploy GitHub App can see, or paste any public repository URL."
       />
+      <RepoPicker selected={repoUrl} onPick={pick} />
       <form onSubmit={analyzeRepo} className="flex flex-col gap-3 sm:flex-row">
         <label className="sr-only" htmlFor="repo">
           Repository URL

@@ -77,6 +77,22 @@ export const Analysis = z.object({
   warnings: z.array(z.string()),
 });
 
+export const GitHubRepos = z.object({
+  configured: z.boolean().describe('false when the server has no GitHub App'),
+  installUrl: z.string().nullable().describe('Where to give the App access to more repos'),
+  accounts: z.array(z.string()),
+  repos: z.array(
+    z.object({
+      fullName: z.string(),
+      private: z.boolean(),
+      defaultBranch: z.string(),
+      pushedAt: Timestamp.nullable(),
+      url: z.string(),
+      imported: z.boolean(),
+    }),
+  ),
+});
+
 export const AnalyzeBody = z.object({
   repoUrl: z.url().describe('Public GitHub repository URL, e.g. https://github.com/owner/repo'),
   ref: z.string().max(200).optional(),

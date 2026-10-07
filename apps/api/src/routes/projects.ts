@@ -4,6 +4,7 @@ import {
   CreateProjectBody,
   EnvVar,
   EnvVarKey,
+  GitHubRepos,
   Page,
   PageQuery,
   Project,
@@ -28,6 +29,51 @@ export const projectRoutes =
   async (app) => {
     const domain = deps.env.PLATFORM_DOMAIN;
     const heavy = { rateLimit: { limit: 20, windowMs: 60_000 } };
+
+    // The repo picker: repositories the GitHub App can see *for this user* —
+    // installations on their own account or claimed by their org, never
+    // another tenant's (same rule as resolving a source).
+    app.get(
+      '/api/v1/github/repos',
+      {
+        preHandler: requireRole('member'),
+        config: heavy,
+        schema: { tags: ['projects'], response: { 200: GitHubRepos } },
+      },
+      async (req) => {
+        const a = authOf(req);
+        const slug = deps.env.GITHUB_APP_SLUG;
+        const installUrl = slug ? `https://github.com/apps/${slug}/installations/new` : null;
+        if (!deps.installations) return { configured: false, installUrl, accounts: [], repos: [] };
+        const claimed = await deps.sql<{ id: string }[]>`
+          select id from github_installations where org_id = ${a.orgId}`;
+        const mine = (await deps.installations.list()).filter(
+          (i) =>
+            i.account.toLowerCase() === a.login.toLowerCase() ||
+            claimed.some((c) => Number(c.id) === i.id),
+        );
+        const repos = (
+          await Promise.all(mine.map((i) => deps.installations?.repositories(i.id) ?? []))
+        ).flat();
+        const imported = new Set(
+          (
+            await withOrg(
+              deps.sql,
+              a.orgId,
+              (tx) => tx<{ repo_full_name: string }[]>`select repo_full_name from projects`,
+            )
+          ).map((p) => p.repo_full_name.toLowerCase()),
+        );
+        return {
+          configured: true,
+          installUrl,
+          accounts: mine.map((i) => i.account),
+          repos: repos
+            .map((r) => ({ ...r, imported: imported.has(r.fullName.toLowerCase()) }))
+            .sort((x, y) => (y.pushedAt ?? '').localeCompare(x.pushedAt ?? '')),
+        };
+      },
+    );
 
     app.post(
       '/api/v1/analyze',

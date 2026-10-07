@@ -368,6 +368,13 @@ export function createAppJwt(
 }
 
 export type RepoInstallation = { id: number; account: string };
+export type InstalledRepo = {
+  fullName: string;
+  private: boolean;
+  defaultBranch: string;
+  pushedAt: string | null;
+  url: string;
+};
 
 /** Caches installation tokens until 5 minutes before they expire. */
 export class InstallationTokens {
@@ -400,6 +407,48 @@ export class InstallationTokens {
     const hit = { id: body.id, account: body.account.login };
     this.repos.set(key, { hit, at: Date.now() });
     return hit;
+  }
+
+  /** Every account the App is installed on (App JWT). */
+  async list(): Promise<RepoInstallation[]> {
+    const res = await fetch('https://api.github.com/app/installations?per_page=100', {
+      headers: {
+        authorization: `Bearer ${createAppJwt(this.app.appId, this.app.privateKey)}`,
+        accept: 'application/vnd.github+json',
+        'user-agent': 'autodeploy',
+      },
+    });
+    if (!res.ok) throw await toError(res);
+    const body = (await res.json()) as Array<{ id: number; account: { login: string } }>;
+    return body.map((i) => ({ id: i.id, account: i.account.login }));
+  }
+
+  /** The repositories an installation was given access to. */
+  async repositories(installationId: number): Promise<InstalledRepo[]> {
+    const res = await fetch('https://api.github.com/installation/repositories?per_page=100', {
+      headers: {
+        authorization: `Bearer ${await this.get(installationId)}`,
+        accept: 'application/vnd.github+json',
+        'user-agent': 'autodeploy',
+      },
+    });
+    if (!res.ok) throw await toError(res);
+    const body = (await res.json()) as {
+      repositories: Array<{
+        full_name: string;
+        private: boolean;
+        default_branch: string;
+        pushed_at: string | null;
+        html_url: string;
+      }>;
+    };
+    return body.repositories.map((r) => ({
+      fullName: r.full_name,
+      private: r.private,
+      defaultBranch: r.default_branch,
+      pushedAt: r.pushed_at,
+      url: r.html_url,
+    }));
   }
 
   async get(installationId: number): Promise<string> {
