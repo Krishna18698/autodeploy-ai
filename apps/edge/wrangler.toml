@@ -26,6 +26,7 @@ workers_dev = false
 PLATFORM_DOMAIN = "autodeploy.dpdns.org"
 ROUTE_MODE = "kv"
 API_URL = "https://api.autodeploy.dpdns.org"
+APP_ORIGIN = "https://autodeploy-zeta.vercel.app"
 S3_ENDPOINT = "https://s3.us-east-005.backblazeb2.com"
 S3_BUCKET = "autodeploy-ks-artifacts"
 S3_REGION = "us-east-005"

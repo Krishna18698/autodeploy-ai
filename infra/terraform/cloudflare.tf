@@ -50,12 +50,15 @@ resource "cloudflare_dns_record" "ssh" {
   ttl     = 1
 }
 
+# The dashboard: served by the edge Worker (pages from Vercel, /api and /auth
+# from the API). Vercel can't attach a subdomain of dpdns.org itself (it treats
+# dpdns.org as another account's apex), so the record only needs to be proxied.
 resource "cloudflare_dns_record" "app" {
   zone_id = data.cloudflare_zone.platform.zone_id
   name    = "app"
-  type    = "CNAME"
-  content = "cname.vercel-dns.com"
-  proxied = false
+  type    = "AAAA"
+  content = "100::" # discard prefix: the Worker answers, there is no origin
+  proxied = true
   ttl     = 1
 }
 

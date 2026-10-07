@@ -99,12 +99,15 @@ export const authRoutes =
           );
         }
         const state = randomToken(18);
+        // Sign-in starts on the app's host but GitHub returns to the API's
+        // host, so the state cookie must be shared like the session cookie.
         reply.setCookie(STATE_COOKIE, state, {
           httpOnly: true,
           sameSite: 'lax',
           path: '/auth',
           maxAge: 600,
           secure: deps.env.NODE_ENV === 'production',
+          ...(deps.env.SESSION_COOKIE_DOMAIN && { domain: deps.env.SESSION_COOKIE_DOMAIN }),
         });
         const url = new URL('https://github.com/login/oauth/authorize');
         url.searchParams.set('client_id', deps.env.GITHUB_APP_CLIENT_ID ?? '');
@@ -122,7 +125,10 @@ export const authRoutes =
       },
       async (req, reply) => {
         const expected = req.cookies[STATE_COOKIE];
-        reply.clearCookie(STATE_COOKIE, { path: '/auth' });
+        reply.clearCookie(STATE_COOKIE, {
+          path: '/auth',
+          ...(deps.env.SESSION_COOKIE_DOMAIN && { domain: deps.env.SESSION_COOKIE_DOMAIN }),
+        });
         if (!expected || expected !== req.query.state)
           throw forbidden('OAuth state mismatch; start sign-in again');
         const token = await exchangeOAuthCode(

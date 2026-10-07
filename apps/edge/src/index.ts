@@ -19,6 +19,8 @@ export interface Env {
   S3_REGION: string;
   S3_ACCESS_KEY_ID: string;
   S3_SECRET_ACCESS_KEY: string;
+  /** Where the dashboard's pages are built and hosted (Vercel); served as app.<domain>. */
+  APP_ORIGIN?: string;
 }
 
 type RouteValue = {
@@ -100,6 +102,35 @@ function forBrowser(res: Response): Response {
   return new Response(res.body, { status: res.status, headers });
 }
 
+/**
+ * app.<domain>: the dashboard. Vercel can't attach a subdomain of dpdns.org
+ * (it treats dpdns.org as someone else's apex), so the edge serves it: API and
+ * sign-in calls go straight to the API (no extra hop, SSE streams untouched),
+ * pages come from Vercel. The browser only ever sees app.<domain>, so cookies
+ * and the API's origin check work as if it were one site.
+ */
+async function serveApp(request: Request, env: Env & { APP_ORIGIN: string }, host: string) {
+  const url = new URL(request.url);
+  const toApi = url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/');
+  const origin = toApi ? env.API_URL : env.APP_ORIGIN;
+  const headers = new Headers(request.headers);
+  headers.delete('host');
+  headers.set('x-forwarded-host', host);
+  const client = request.headers.get('cf-connecting-ip');
+  if (client) headers.set('x-forwarded-for', client);
+  const res = await fetch(new URL(url.pathname + url.search, origin), {
+    method: request.method,
+    headers,
+    body: request.method === 'GET' || request.method === 'HEAD' ? null : request.body,
+    redirect: 'manual',
+  });
+  const location = res.headers.get('location');
+  if (!location?.startsWith(env.APP_ORIGIN)) return res;
+  const out = new Response(res.body, res);
+  out.headers.set('location', `https://${host}${location.slice(env.APP_ORIGIN.length)}`);
+  return out;
+}
+
 function notFound(message: string, status = 404) {
   const html = `<!doctype html><meta charset="utf-8"><title>${status}</title><style>body{background:#0a0c0f;color:#e8ebf0;font:15px/1.5 system-ui;display:grid;place-items:center;height:100vh;margin:0}p{color:#8a93a3}</style><div><h1>${status}</h1><p>${message}</p></div>`;
   return new Response(html, {
@@ -114,6 +145,12 @@ function notFound(message: string, status = 404) {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const appHost = `app.${env.PLATFORM_DOMAIN}`;
+    const reqHost = (request.headers.get('host') ?? new URL(request.url).host)
+      .toLowerCase()
+      .replace(/:\d+$/, '');
+    if (env.APP_ORIGIN && reqHost === appHost)
+      return serveApp(request, env as Env & { APP_ORIGIN: string }, appHost);
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
     }
