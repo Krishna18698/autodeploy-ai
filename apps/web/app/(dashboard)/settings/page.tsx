@@ -149,6 +149,16 @@ function Tokens() {
   const [name, setName] = useState('');
   const [scope, setScope] = useState('deploy');
   const [created, setCreated] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!created) return;
+    try {
+      await navigator.clipboard.writeText(created);
+      setCopied(true);
+    } catch {
+      toast('Could not copy: select the token and copy it by hand', 'fail');
+    }
+  };
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -158,6 +168,7 @@ function Tokens() {
         expiresInDays: 90,
       });
       setCreated(t.token);
+      setCopied(false);
       setName('');
       await tokens.refetch();
     } catch (err) {
@@ -192,9 +203,14 @@ function Tokens() {
       {created && (
         <div className="mb-4 rounded-md border border-warn/40 bg-warn/10 p-3 text-[13px]">
           <p className="mb-2 text-warn">Copy it now — it will not be shown again.</p>
-          <code className="block break-all rounded bg-bg px-2 py-1.5 font-mono text-[12px] text-fg">
-            {created}
-          </code>
+          <div className="flex items-start gap-2">
+            <code className="block min-w-0 flex-1 break-all rounded bg-bg px-2 py-1.5 font-mono text-[12px] text-fg">
+              {created}
+            </code>
+            <Button size="sm" onClick={copy} aria-label="Copy token">
+              {copied ? 'Copied ✓' : 'Copy'}
+            </Button>
+          </div>
         </div>
       )}
       <ul className="divide-y divide-line">
