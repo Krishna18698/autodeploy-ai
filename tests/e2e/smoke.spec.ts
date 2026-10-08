@@ -91,6 +91,7 @@ async function site(
       body: init.body,
       headers: init.body ? { 'content-type': 'application/json' } : {},
       redirect: 'manual',
+      signal: AbortSignal.timeout(60_000),
     });
     return { status: r.status, body: await r.text() };
   }
@@ -115,6 +116,7 @@ async function site(
       },
     );
     req.on('error', reject);
+    req.setTimeout(60_000, () => req.destroy(new Error(`site ${target.host} timed out`)));
     req.end(init.body);
   });
 }
@@ -341,3 +343,40 @@ test('deleting a project takes its site off the edge', async ({ page }) => {
   }
   expect(status, 'site still served after delete').toBe(404);
 });
+
+// Navigating by clicking (client-side), not by loading URLs: the page
+// transition once stalled here and left pages invisible.
+for (const width of [977, 390]) {
+  test(`clicking through the sidebar never leaves a blank page (${width}px)`, async ({
+    browser,
+  }) => {
+    const ctx = await browser.newContext({
+      baseURL: test.info().project.use.baseURL,
+      extraHTTPHeaders: test.info().project.use.extraHTTPHeaders,
+      viewport: { width, height: 800 },
+    });
+    const page = await ctx.newPage();
+    if (!REMOTE)
+      await page.request.post('/auth/dev-login', { data: { login: `e2e-smoke-${RUN}` } });
+    const problems = watch(page);
+    await page.goto('/overview', { waitUntil: 'networkidle' });
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    const menu = page.getByRole('button', { name: 'Open menu' });
+    const route = ['Settings', 'Projects', 'Overview', 'Settings', 'Analytics', 'Deployments'];
+    for (const name of [...route, ...route]) {
+      const link = nav.getByRole('link', { name, exact: true });
+      if (await menu.isVisible())
+        await expect(async () => {
+          if (!(await link.isVisible())) await menu.click();
+          await expect(link).toBeVisible({ timeout: 1000 });
+        }).toPass({ timeout: 15_000 });
+      await link.click();
+      await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+      await page.waitForTimeout(400);
+      const opacity = await page.locator('main').evaluate((m) => getComputedStyle(m).opacity);
+      expect(opacity, `${name} faded in`).toBe('1');
+    }
+    expect(problems).toEqual([]);
+    await ctx.close();
+  });
+}

@@ -75,6 +75,17 @@ html.lenis body {
   }
 }
 
+/* Page enter. No fill-mode: if it never runs, the page is simply visible. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.page-in {
+  animation: page-in 180ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

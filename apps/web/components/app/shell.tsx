@@ -1,7 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -174,19 +174,17 @@ export function Shell({ children }: { children: ReactNode }) {
             Sign out
           </button>
         </header>
-        <AnimatePresence mode="wait">
-          <motion.main
-            id="main"
-            key={pathname}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8"
-          >
-            {children}
-          </motion.main>
-        </AnimatePresence>
+        {/* A CSS fade, restarted per page by the key. It used to be a motion
+            exit/enter pair (AnimatePresence mode="wait"), whose exit could stall
+            on client-side navigation and leave the new page at opacity 0: a
+            blank screen. A CSS animation always ends visible. */}
+        <main
+          id="main"
+          key={pathname}
+          className="page-in mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8"
+        >
+          {children}
+        </main>
       </div>
       <CommandPalette />
     </div>
