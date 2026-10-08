@@ -1,5 +1,6 @@
 import { IllegalTransitionError } from '@autodeploy/core';
 import { StaleTransitionError } from '@autodeploy/db';
+import { GitHubError } from '@autodeploy/github';
 import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify';
 import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod';
 import { AppError } from '../lib/errors.js';
@@ -60,6 +61,22 @@ export function registerErrorHandling(app: FastifyInstance) {
         err.message,
         err.extra?.errors ? { errors: err.extra.errors } : {},
       );
+    }
+    // GitHub said no: say why, instead of a bare 500.
+    if (err instanceof GitHubError) {
+      if (err.status === 404)
+        return sendProblem(
+          reply,
+          404,
+          'repo_not_found',
+          'AutoDeploy can\'t see this repository or branch. If it\'s private, give the AutoDeploy GitHub App access to it ("Add repositories on GitHub" above), then try again.',
+        );
+      if (err.retryAfterMs !== undefined || err.status === 429) {
+        reply.header('retry-after', String(Math.ceil((err.retryAfterMs ?? 60_000) / 1000)));
+        return sendProblem(reply, 503, 'github_rate_limited', err.message);
+      }
+      req.log.warn({ err }, 'github request failed');
+      return sendProblem(reply, 502, 'github_error', `GitHub request failed: ${err.message}`);
     }
     if (err instanceof IllegalTransitionError || err instanceof StaleTransitionError) {
       return sendProblem(reply, 409, 'invalid_state', err.message);

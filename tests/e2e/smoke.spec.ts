@@ -380,3 +380,11 @@ for (const width of [977, 390]) {
     await ctx.close();
   });
 }
+
+test('a repository AutoDeploy cannot see gets a clear way forward, not a 500', async ({ page }) => {
+  await page.goto('/projects/new');
+  await page.getByLabel('Repository URL').fill('https://github.com/Krishna18698/no-such-repo-e2e');
+  await page.getByRole('button', { name: 'Analyze' }).click();
+  await expect(page.getByText(/can't see this repository/)).toBeVisible();
+  await expect(page.getByText(/Something went wrong/)).toHaveCount(0);
+});

@@ -10,7 +10,10 @@ export class ApiError extends Error {
     readonly status: number,
     readonly problem: Partial<Problem>,
   ) {
-    super(problem.detail ?? problem.title ?? `Request failed (${status})`);
+    const id = (problem as { requestId?: string }).requestId;
+    const text = problem.detail ?? problem.title ?? `Request failed (${status})`;
+    // Server errors name a request id; show it so it can be found in the logs.
+    super(id ? `${text} (request id ${id})` : text);
     this.name = 'ApiError';
   }
 }
