@@ -20,7 +20,7 @@ export type Inference<T> = { value: T; evidence: Evidence[] };
  * Bump whenever analyze() reaches different conclusions for the same repo, so
  * cached analyses (API and worker, keyed by commit) are recomputed. v2: SSR.
  */
-export const ANALYSIS_VERSION = 2;
+export const ANALYSIS_VERSION = 3;
 
 export type Framework = 'next' | 'vite' | 'astro' | 'cra' | 'static' | 'unknown';
 export type PackageManager = 'pnpm' | 'yarn' | 'npm' | 'bun' | 'none';
@@ -188,7 +188,13 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
     ['bun.lock', 'bun'],
     ['package-lock.json', 'npm'],
   ];
-  const foundLocks = lockfiles.filter(([f]) => fileSet.has(join(rootDir, f)) || fileSet.has(f));
+  // A directory with its own lockfile is its own project (a monorepo can hold
+  // an npm app beside a pnpm workspace); only a workspace member without one
+  // inherits the repository root's.
+  const own = lockfiles
+    .filter(([f]) => fileSet.has(join(rootDir, f)))
+    .map(([f, m]): [string, PackageManager] => [join(rootDir, f), m]);
+  const foundLocks = own.length > 0 ? own : lockfiles.filter(([f]) => fileSet.has(f));
   if (declared?.[1] && declared[2]) {
     pm = declared[1] as PackageManager;
     pmVersion = declared[2];

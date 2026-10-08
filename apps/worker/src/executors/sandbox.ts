@@ -23,7 +23,12 @@ export function buildScript(
 ): string {
   const cd = rootDir && rootDir !== '.' ? `cd ${sh(rootDir)}\n` : '';
   const step = (label: string, cmd: string) => `echo ${sh(`▸ ${label}: ${cmd}`)}\n${cmd}\n`;
-  return `set -e\n${cd}echo "▸ node $(node --version) on $(uname -m)"\n${installCommand ? step('install', installCommand) : ''}${buildCommand ? step('build', buildCommand) : ''}`;
+  // The image bakes common pnpm/yarn versions into a read-only /opt/corepack.
+  // A project pinning another version (packageManager: pnpm@10.21.0) makes
+  // corepack download it, so give it a writable home seeded with the baked ones.
+  const corepack =
+    'mkdir -p /tmp/corepack && cp -R /opt/corepack/. /tmp/corepack/ 2>/dev/null || true\n';
+  return `set -e\n${corepack}${cd}echo "▸ node $(node --version) on $(uname -m)"\n${installCommand ? step('install', installCommand) : ''}${buildCommand ? step('build', buildCommand) : ''}`;
 }
 
 function run(
@@ -99,6 +104,8 @@ export class SandboxExecutor implements Executor {
       YARN_ENABLE_TELEMETRY: '0',
       COREPACK_ENABLE_STRICT: '0',
       COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
+      // The image's corepack home is read-only; the script seeds this copy.
+      COREPACK_HOME: '/tmp/corepack',
       HTTP_PROXY: proxy,
       HTTPS_PROXY: proxy,
       NO_PROXY: 'localhost,127.0.0.1',

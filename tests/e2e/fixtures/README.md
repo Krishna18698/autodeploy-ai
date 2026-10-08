@@ -4,6 +4,8 @@ Small real apps that `tests/e2e/prod-smoke.spec.ts` imports into a running
 AutoDeploy (by repository URL plus root directory) and checks live:
 
 - `static-vite`: a Vite build served from the edge.
+- `static-pnpm`: pins `pnpm@10.21.0`, a version the build image doesn't bake
+  in, so corepack has to fetch it during the build.
 - `ssr-next`: server-rendered Next.js; a page rendered per request, a POST
   API route, and outbound requests (public allowed, cloud metadata refused).
 - `needs-env`: fails until `E2E_GREETING` is set, to exercise the

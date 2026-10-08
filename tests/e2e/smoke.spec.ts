@@ -22,6 +22,7 @@ function source(fixture: string) {
 
 type Deployment = {
   id: string;
+  errorCode?: string | null;
   number: number;
   status: string;
   url: string | null;
@@ -72,10 +73,23 @@ async function waitSettled(req: APIRequestContext, id: string, minutes = 10): Pr
     const d = await api<Deployment>(req, `/api/v1/deployments/${id}`);
     if (d.status !== last) console.log(`  #${d.number} ${d.status}`);
     last = d.status;
-    if (SETTLED.has(d.status)) return d;
+    if (SETTLED.has(d.status)) {
+      if (d.status !== 'ACTIVE') await printLogTail(req, d);
+      return d;
+    }
     if (Date.now() > until) throw new Error(`deployment ${id} stuck in ${d.status}`);
     await new Promise((r) => setTimeout(r, 3000));
   }
+}
+
+/** On a failed deployment, show why (the project is deleted at the end, logs with it). */
+async function printLogTail(req: APIRequestContext, d: Deployment) {
+  const r = await req.get(`/api/v1/deployments/${d.id}/logs`);
+  const lines = r.ok() ? ((await r.json()) as { lines: { text: string }[] }).lines : [];
+  console.log(
+    `  #${d.number} ended ${d.status} (${d.errorCode ?? 'no error code'}); last log lines:`,
+  );
+  for (const l of lines.slice(-40)) console.log(`    | ${l.text}`);
 }
 
 /** Fetches a deployed site with no dashboard credentials (locally via the edge, by Host). */
@@ -216,6 +230,15 @@ test('a static site builds, goes live and is served by the edge', async ({ page 
   expect((await site(d.url ?? '', js)).body).toContain('e2e static ok');
   staticSite = { projectId: d.projectId, url: d.url ?? '' };
   expect(problems).toEqual([]);
+});
+
+test('a pnpm project pinned to a version the build image lacks still builds', async ({ page }) => {
+  const id = await importFixture(page, 'static-pnpm', `e2e-pnpm-${RUN}`);
+  const d = await waitSettled(page.request, id);
+  expect(d.status).toBe('ACTIVE');
+  const home = await site(d.url ?? '');
+  const js = home.body.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
+  expect((await site(d.url ?? '', js)).body).toContain('e2e pnpm ok');
 });
 
 test('a server-rendered app runs on demand: pages, POST, guarded egress', async ({ page }) => {

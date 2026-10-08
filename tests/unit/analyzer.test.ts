@@ -113,6 +113,28 @@ describe('analyzer', () => {
     expect(none.supported).toBe(false);
   });
 
+  it("uses a subdirectory's own lockfile over the repository root's", () => {
+    const repo = {
+      'package.json': { packageManager: 'pnpm@10.21.0', private: true },
+      'pnpm-lock.yaml': '',
+      'pnpm-workspace.yaml': 'packages:\n  - apps/*\n',
+      'tools/site/package.json': {
+        scripts: { build: 'vite build' },
+        devDependencies: { vite: '7.0.0' },
+      },
+      'tools/site/package-lock.json': '{}',
+      'apps/web/package.json': {
+        scripts: { build: 'vite build' },
+        devDependencies: { vite: '7.0.0' },
+      },
+    };
+    const own = analyze(tree(repo), 'tools/site');
+    expect(own.packageManager.value).toBe('npm');
+    expect(own.installCommand.value).toBe('npm ci');
+    // A workspace member without a lockfile still installs with the workspace's manager.
+    expect(analyze(tree(repo), 'apps/web').packageManager.value).toBe('pnpm');
+  });
+
   it('builds a config where project overrides win', () => {
     const a = analyze(
       tree({

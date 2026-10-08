@@ -1,0 +1,12 @@
+{
+  "name": "e2e-static-pnpm",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.21.0",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
+  }
+}
