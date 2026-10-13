@@ -78,12 +78,25 @@ API docs: http://localhost:4000/docs.
 ## Tests
 
 ```bash
-pnpm test               # 63 unit tests (pure domain code)
-pnpm test:integration   # 24 tests on real Postgres / Valkey / Kafka (Testcontainers)
+pnpm test               # 91 unit tests (pure domain code)
+pnpm test:integration   # 26 tests on real Postgres / Valkey / Kafka (Testcontainers)
 pnpm test:e2e           # 8 Playwright tests against the running stack
+pnpm test:smoke         # 12 end-to-end checks of what a user does (see below)
 pnpm corpus --mode ai   # 38 labelled repos deployed for real (also --mode rules)
 pnpm chaos              # kill the worker, Kafka, DB connections, storage mid-deploy
 pnpm load               # k6: 100 concurrent deploys + polling dashboards
+```
+
+The smoke suite imports real apps from [`tests/e2e/fixtures`](tests/e2e/fixtures)
+through the UI (a Vite site, a pnpm project pinned to a version the build image
+lacks, a server-rendered Next.js app, and one that fails until an env var is
+set), checks each one live, clicks through every dashboard page at desktop and
+phone widths, and deletes what it created. It runs locally with dev sign-in,
+or against production with an API token:
+
+```bash
+# token from Settings → API tokens (scope: admin), saved to the git-ignored file
+E2E_BASE_URL=https://app.autodeploy.dpdns.org pnpm test:smoke   # reads infra/deploy/.e2e-token
 ```
 
 Results and the bugs they caught: [`docs/measurements.md`](docs/measurements.md).
@@ -100,6 +113,16 @@ tests/     fixtures (failure corpus)
 
 ## Status
 
-Built and verified locally end to end. Production accounts (Oracle Cloud,
-Cloudflare, Backblaze, Vercel, GitHub App, AI providers) are not connected
-yet; see `infra/deploy/.env.prod.example` and `docs/runbooks/deploy.md`.
+**Live** at [app.autodeploy.dpdns.org](https://app.autodeploy.dpdns.org)
+(invite-only beta; sites are served at `<name>.autodeploy.dpdns.org`):
+
+- API, worker, SSR gateway, Postgres, Valkey and Kafka on one Oracle Cloud
+  Always Free VM (Ampere A1), reached only through a Cloudflare Tunnel.
+- Sites served by a Cloudflare Worker from Backblaze B2; the dashboard on Vercel,
+  served on the app hostname by the same Worker.
+- GitHub App sign-in and private repositories.
+- The production smoke suite passes 12/12.
+
+Not connected yet: the AI providers (NVIDIA, OpenRouter; repairs fall back to
+rules only), email (Resend), Grafana Cloud telemetry, and Sentry. See
+`infra/deploy/.env.prod.example` and [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md).

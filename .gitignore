@@ -40,3 +40,6 @@ playwright-report/
 tests/demo/out/
 apps/web/AGENTS.md
 apps/web/CLAUDE.md
+
+# Personal notes and generated overviews (never committed)
+docs/private/
