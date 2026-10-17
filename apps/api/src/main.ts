@@ -1,9 +1,11 @@
 import { migrate } from '@autodeploy/db';
+import { initErrorReporting } from '@autodeploy/telemetry';
 import { buildApp } from './app.js';
 import { createDeps } from './deps.js';
 import { loadEnv } from './env.js';
 
 const env = loadEnv();
+initErrorReporting('api', env.SENTRY_DSN);
 const deps = createDeps(env);
 
 // Schema first: the migrator holds an advisory lock, so concurrent replicas

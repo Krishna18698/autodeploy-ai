@@ -20,6 +20,8 @@ const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+    // Errors go to Sentry when set (and nowhere else otherwise).
+    SENTRY_DSN: z.url().optional(),
     API_PORT: z.coerce.number().int().positive().default(4000),
     PLATFORM_DOMAIN: z.string().min(1),
     APP_URL: z.url().default('http://localhost:3000'),

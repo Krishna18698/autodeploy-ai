@@ -37,6 +37,7 @@ export const Me = z.object({
     login: z.string(),
     name: z.string().nullable(),
     avatarUrl: z.string().nullable(),
+    email: z.string().nullable().describe('Where failure and approval emails go'),
   }),
   org: z.object({ id: Id, slug: z.string(), name: z.string(), role: Role }),
   orgs: z.array(z.object({ id: Id, slug: z.string(), name: z.string(), role: Role })),

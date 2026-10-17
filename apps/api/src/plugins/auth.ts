@@ -115,7 +115,11 @@ export const authPlugin = fp(async (app: FastifyInstance, deps: Deps) => {
 
     // CSRF: cookie-authenticated writes must carry the session's token and,
     // when the browser sends one, an Origin we serve.
-    if (req.auth?.via === 'session' && UNSAFE.has(req.method)) {
+    if (
+      req.auth?.via === 'session' &&
+      UNSAFE.has(req.method) &&
+      req.routeOptions.config?.csrf !== false
+    ) {
       const origin = req.headers.origin;
       if (origin && origin !== deps.env.APP_URL && origin !== deps.env.API_PUBLIC_URL) {
         throw forbidden('Cross-origin request rejected');

@@ -39,3 +39,14 @@ variable "vm_memory_gb" {
   type    = number
   default = 12
 }
+
+variable "email_dns_records" {
+  description = "DNS records Resend needs to send from the platform domain (written by scripts/resend-domain.ts)"
+  type = list(object({
+    type     = string
+    name     = string
+    content  = string
+    priority = optional(number)
+  }))
+  default = []
+}

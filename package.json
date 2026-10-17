@@ -23,6 +23,7 @@
     "load": "tsx tests/load/run.ts",
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "test:smoke": "playwright test -c tests/e2e/smoke.config.ts",
+    "keys:check": "tsx scripts/check-keys.ts",
     "github-app": "node scripts/github-app.mjs"
   },
   "devDependencies": {

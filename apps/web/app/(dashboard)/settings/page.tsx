@@ -10,7 +10,7 @@ import { ApiError, del, patch, post } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useAudit, useDeliveries, useMe, useMembers, useTokens, useWebhooks } from '@/lib/queries';
 
-type TabId = 'team' | 'tokens' | 'webhooks' | 'audit';
+type TabId = 'team' | 'notifications' | 'tokens' | 'webhooks' | 'audit';
 const EVENTS = [
   'deployment.created',
   'deployment.succeeded',
@@ -36,6 +36,7 @@ export default function SettingsPage() {
         onChange={setTab}
         tabs={[
           { id: 'team', label: 'Team' },
+          { id: 'notifications', label: 'Notifications' },
           { id: 'tokens', label: 'API tokens' },
           ...(admin
             ? [
@@ -47,6 +48,7 @@ export default function SettingsPage() {
       />
       <div className="mt-5">
         {tab === 'team' && <Team canEdit={Boolean(admin)} />}
+        {tab === 'notifications' && <Notifications />}
         {tab === 'tokens' && <Tokens />}
         {tab === 'webhooks' && <Webhooks />}
         {tab === 'audit' && <Audit />}
@@ -139,6 +141,51 @@ function Team({ canEdit }: { canEdit: boolean }) {
           </li>
         ))}
       </ul>
+    </Panel>
+  );
+}
+
+function Notifications() {
+  const me = useMe();
+  const toast = useToast();
+  const [email, setEmail] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const current = me.data?.user.email ?? '';
+  const value = email ?? current;
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await patch('/api/v1/me', { email: value.trim() || null });
+      await me.refetch();
+      setEmail(null);
+      toast(value.trim() ? `Notifications go to ${value.trim()}` : 'Email notifications off', 'ok');
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not save', 'fail');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Panel title="Email notifications">
+      <p className="mb-3 text-[13px] text-muted">
+        Failed deployments, missing environment variables and repairs waiting for your approval are
+        emailed here. GitHub only shares public emails, so set it yourself; leave it empty to turn
+        emails off.
+      </p>
+      <form onSubmit={save} className="flex flex-col gap-2 sm:flex-row">
+        <input
+          type="email"
+          value={value}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+          aria-label="Notification email"
+          className={`${input} flex-1`}
+        />
+        <Button type="submit" variant="primary" loading={saving} disabled={value === current}>
+          Save
+        </Button>
+      </form>
     </Panel>
   );
 }

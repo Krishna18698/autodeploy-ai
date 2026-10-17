@@ -4,7 +4,7 @@ import { createServer, request as httpRequest, type IncomingHttpHeaders } from '
 import { parseKeyring } from '@autodeploy/crypto';
 import { createSql } from '@autodeploy/db';
 import { Storage } from '@autodeploy/storage';
-import { createLogger } from '@autodeploy/telemetry';
+import { createLogger, initErrorReporting, reportError } from '@autodeploy/telemetry';
 import { loadEnv } from './env.js';
 import { RuntimeManager, RuntimeUnavailable } from './gateway/runtimes.js';
 
@@ -17,6 +17,7 @@ const env = loadEnv();
 if (!env.INTERNAL_TOKEN) throw new Error('INTERNAL_TOKEN is required for the gateway');
 const token = Buffer.from(env.INTERNAL_TOKEN);
 const log = createLogger('gateway', env.LOG_LEVEL);
+initErrorReporting('gateway', env.SENTRY_DSN);
 const sql = createSql(env.DATABASE_URL, { max: 4, application: 'autodeploy-gateway' });
 const storage = new Storage({
   endpoint: env.S3_ENDPOINT,
@@ -72,8 +73,10 @@ const server = createServer(async (req, res) => {
     inst = await runtimes.ensure(id);
   } catch (err) {
     const status = err instanceof RuntimeUnavailable ? err.status : 502;
-    if (!(err instanceof RuntimeUnavailable))
+    if (!(err instanceof RuntimeUnavailable)) {
       log.error({ err, deploymentId: id }, 'runtime start failed');
+      reportError(err, { tags: { deploymentId: id } });
+    }
     res.writeHead(status, {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',

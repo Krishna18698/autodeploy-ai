@@ -1,6 +1,7 @@
 import { IllegalTransitionError } from '@autodeploy/core';
 import { StaleTransitionError } from '@autodeploy/db';
 import { GitHubError } from '@autodeploy/github';
+import { reportError } from '@autodeploy/telemetry';
 import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify';
 import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod';
 import { AppError } from '../lib/errors.js';
@@ -96,6 +97,10 @@ export function registerErrorHandling(app: FastifyInstance) {
       return sendProblem(reply, fe.statusCode, fe.code?.toLowerCase() ?? 'bad_request', fe.message);
     }
     req.log.error({ err }, 'unhandled error');
+    reportError(err, {
+      tags: { route: req.routeOptions.url ?? 'unknown', method: req.method },
+      extra: { requestId: req.id },
+    });
     return sendProblem(
       reply,
       500,

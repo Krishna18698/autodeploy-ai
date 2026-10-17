@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { context, propagation, type Span, SpanStatusCode, trace } from '@opentelemetry/api';
 import pino from 'pino';
 
+export * from './errors.js';
+
 export type Logger = pino.Logger;
 
 export function createLogger(service: string, level = process.env.LOG_LEVEL ?? 'info'): Logger {

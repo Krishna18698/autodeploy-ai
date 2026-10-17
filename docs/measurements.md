@@ -31,6 +31,10 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | SSR runtime (the owner's real portfolio, Next.js 16) | built + validated in **36 s**; cold start **2.7 s** (first: fetch + unpack bundle), **0.94 s** after idle (bundle cached), warm **14–22 ms**; stopped after 2 min idle (test setting), woken by the next request; POST API routes and per-request rendering verified | local stack, `ok-next-ssr` corpus case |
 | SSR egress (SSRF guard) | public hosts allowed; metadata, private, loopback and `localhost` all **refused and logged** | `tests/unit/ssr.test.ts`, proxy in public mode |
 | Dashboard accessibility | **0** serious/critical axe violations on 7 pages | `pnpm test:e2e` |
+| Production smoke (real user flows on the live stack) | **12/12** on 2026-10-08: static site, pinned pnpm, server-rendered app (POST, egress, metadata refused), env var → Deploy again, clicked navigation at 977/390 px, delete → site off the edge in ~30 s; everything created was deleted | `E2E_BASE_URL=https://app.autodeploy.dpdns.org pnpm test:smoke` |
+| SSR runtime on the production VM (gVisor, arm64) | build + validation passed; cold start **4.0 s**; outbound HTTPS allowed, metadata refused; **63 MB** of its 256 MB limit | VM three-stage check (build → validator → runtime) |
+| Push to deploy in production | a real repository's pushes deployed on their own (3 of 3) | GitHub App webhook → production |
+| Landing after the header and phone wipe changes | performance **89** (2 warm runs; a cold first run scored 59, as before), accessibility **100**, CLS **0** | `npx lighthouse http://127.0.0.1:3100/ --skip-audits=bf-cache` |
 
 ## Bugs the tests found (and fixed)
 
@@ -53,3 +57,11 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | SSR bring-up | Analysis cache keys weren't versioned: an old "unsupported" verdict would have been served for 7 days (now `ANALYSIS_VERSION`) |
 | SSR bring-up | `next/font/google` downloads fonts during `next build`; the build egress allowlist blocked Google Fonts, failing most Next.js apps |
 | SSR bring-up | Sites using Vercel Analytics/Speed Insights failed validation on `/_vercel/*` 404s (platform-only paths, now skipped) |
+| owner's screenshot | Dashboard pages stayed invisible after a click: the page transition's exit could stall at opacity 0 (now a CSS fade; the smoke suite clicks through every page) |
+| production smoke | An npm app in a pnpm monorepo was installed with pnpm (the repository root's lockfile won) |
+| production smoke | A pinned pnpm/yarn version crashed the build: corepack wrote into the read-only image (`EROFS`) |
+| production smoke | A repository the GitHub App can't see returned a bare 500 instead of "give the App access" |
+| review | Deleting a project left its sites served from the edge (KV routes were never removed) |
+| production check | Server-rendered sites turned into 404s up to 10 minutes after going live: the KV re-sync dropped the route's mode (now one route builder and an integration test) |
+| production check | A mistyped site address hung and showed Cloudflare's 522 instead of a 404 |
+| production smoke | A missing server-side env var (no `VITE_`-style prefix) ended as FAILED instead of "needs input" |

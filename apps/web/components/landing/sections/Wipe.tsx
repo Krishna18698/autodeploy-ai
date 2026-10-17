@@ -8,7 +8,8 @@ import { useRef } from 'react';
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
 // The one full-screen colour moment: a cyan panel sweeps across with the
-// mark, then clears to reveal the measured numbers.
+// mark, then clears to reveal the measured numbers. On phones a full screen of
+// flat cyan read as an empty block, so there it is a band with the wordmark.
 export function Wipe() {
   const root = useRef<HTMLElement>(null);
   useGSAP(
@@ -39,17 +40,20 @@ export function Wipe() {
     { scope: root },
   );
   return (
-    <section ref={root} aria-hidden className="relative h-[70vh]">
+    <section ref={root} aria-hidden className="relative h-[28svh] md:h-[70vh]">
       <div
         data-panel
-        className="sticky top-0 grid h-[70vh] place-items-center bg-run [clip-path:inset(0_100%_0_0)] motion-reduce:hidden"
+        className="sticky top-0 flex h-[28svh] items-center justify-center gap-4 bg-run [clip-path:inset(0_100%_0_0)] motion-reduce:hidden md:h-[70vh]"
       >
         <div
           data-mark
-          className="grid size-20 place-items-center rounded-2xl bg-bg text-3xl text-run"
+          className="grid size-14 place-items-center rounded-2xl bg-bg text-2xl text-run md:size-20 md:text-3xl"
         >
           ◆
         </div>
+        <span className="text-[28px] font-semibold tracking-tight text-bg md:hidden">
+          AutoDeploy
+        </span>
       </div>
     </section>
   );

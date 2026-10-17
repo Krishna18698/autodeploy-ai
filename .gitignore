@@ -20,6 +20,7 @@ infra/deploy/.e2e-token
 tfplan
 *.tfplan
 *.tfvars
+*.tfvars.json
 !example.tfvars
 
 # the original blueprint stays local

@@ -62,6 +62,27 @@ describe('error signatures', () => {
     expect(classify(['> build', line, 'exit 1']).code).toBe(code);
   });
 
+  it.each([
+    ['Error: E2E_GREETING is missing. Set it in the project environment.', 'E2E_GREETING'],
+    ['Error: Missing environment variable: DATABASE_URL', 'DATABASE_URL'],
+    ['Environment variable GOOGLE_API_KEY is not set', 'GOOGLE_API_KEY'],
+    ['Error: process.env.STRIPE_SECRET is undefined', 'STRIPE_SECRET'],
+    ['[config] SUPABASE_URL is required', 'SUPABASE_URL'],
+    ["❌ Invalid environment variables: { DATABASE_URL: [ 'Required' ] }", 'DATABASE_URL'],
+  ])('server-side env wording "%s" needs input (%s)', (line, name) => {
+    const sig = classify(['> build', line, 'exit 1']);
+    expect(sig.code).toBe('MISSING_ENV');
+    expect(sig.captures.name).toBe(name);
+  });
+
+  it.each([
+    'ReferenceError: MAX_SIZE is not defined',
+    "src/a.ts(3,1): error TS2304: Cannot find name 'API_KEY'.",
+    'TypeError: Cannot read properties of undefined (reading MAX_RETRIES)',
+  ])('a code error is not mistaken for a missing env var: %s', (line) => {
+    expect(classify(['> build', line, 'exit 1']).code).not.toBe('MISSING_ENV');
+  });
+
   it('is stable across runs: timestamps, paths, positions and hashes are normalized', () => {
     const a = classify([
       '2026-10-02T10:00:00Z /home/a/x/src/a.ts(4,26): error TS2339: nope 3f9a1c2d',

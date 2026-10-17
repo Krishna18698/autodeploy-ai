@@ -229,7 +229,8 @@ export function decideRecovery(
   if (UNSUPPORTED.has(signature.code)) {
     return {
       kind: 'give_up',
-      reason: 'This app needs a server at runtime; V1 deploys static sites only.',
+      reason:
+        "This app needs a server, but next.config sets output: 'export'. Remove that line and AutoDeploy runs it as a server-rendered app.",
     };
   }
   for (const rule of RULES) {

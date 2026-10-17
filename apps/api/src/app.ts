@@ -18,6 +18,7 @@ import { registerErrorHandling } from './plugins/errors.js';
 import { idempotencyPlugin } from './plugins/idempotency.js';
 import { rateLimitPlugin } from './plugins/rate-limit.js';
 import { authRoutes } from './routes/auth.js';
+import { clientErrorRoutes } from './routes/client-errors.js';
 import { deploymentRoutes } from './routes/deployments.js';
 import { githubWebhookRoutes } from './routes/github-webhooks.js';
 import { healthRoutes } from './routes/health.js';
@@ -128,6 +129,7 @@ export async function buildApp(deps: Deps) {
   await app.register(deploymentRoutes(deps));
   await app.register(orgRoutes(deps));
   await app.register(internalRoutes(deps));
+  await app.register(clientErrorRoutes(deps));
   // Encapsulated so its raw-body JSON parser doesn't affect other routes.
   await app.register(async (scope) => githubWebhookRoutes(scope, deps));
 

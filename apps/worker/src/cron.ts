@@ -1,6 +1,7 @@
 import { rewrap } from '@autodeploy/crypto';
 import { reconcileRoutes, transition } from '@autodeploy/db';
 import { reapExpiredLeases, stats } from '@autodeploy/queue';
+import { reportError } from '@autodeploy/telemetry';
 import type { Deps } from './deps.js';
 import { metrics } from './metrics.js';
 
@@ -183,9 +184,10 @@ export function startCron(deps: Deps): { stop: () => Promise<void> } {
           for (const t of TASKS) {
             if (t.last && now - t.last < t.everyMs) continue;
             t.last = now;
-            await t
-              .run(deps)
-              .catch((err) => deps.log.error({ err, task: t.name }, 'maintenance task failed'));
+            await t.run(deps).catch((err) => {
+              deps.log.error({ err, task: t.name }, 'maintenance task failed');
+              reportError(err, { tags: { task: t.name } });
+            });
           }
         }
       } catch (err) {

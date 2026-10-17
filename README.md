@@ -78,10 +78,10 @@ API docs: http://localhost:4000/docs.
 ## Tests
 
 ```bash
-pnpm test               # 91 unit tests (pure domain code)
+pnpm test               # 105 unit tests (pure domain code)
 pnpm test:integration   # 25 tests on real Postgres / Valkey / Kafka (Testcontainers)
 pnpm test:e2e           # 8 Playwright tests against the running stack
-pnpm test:smoke         # 12 end-to-end checks of what a user does (see below)
+pnpm test:smoke         # 16 end-to-end checks of what a user does (see below)
 pnpm corpus --mode ai   # 38 labelled repos deployed for real (also --mode rules)
 pnpm chaos              # kill the worker, Kafka, DB connections, storage mid-deploy
 pnpm load               # k6: 100 concurrent deploys + polling dashboards

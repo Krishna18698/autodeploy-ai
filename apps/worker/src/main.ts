@@ -1,5 +1,6 @@
 import { migrate } from '@autodeploy/db';
 import { dlqTopic, ensureTopics } from '@autodeploy/events';
+import { initErrorReporting } from '@autodeploy/telemetry';
 import { GROUPS, type RunningConsumer, startConsumer } from './consumers/index.js';
 import { startCron } from './cron.js';
 import { createDeps } from './deps.js';
@@ -17,6 +18,7 @@ import { startRelay } from './relay.js';
 import { Runner } from './runner.js';
 
 const env = loadEnv();
+initErrorReporting('worker', env.SENTRY_DSN);
 const deps = createDeps(env);
 const { log } = deps;
 

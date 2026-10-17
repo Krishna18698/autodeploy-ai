@@ -30,6 +30,8 @@ declare module 'fastify' {
     rateLimit?: RateLimitConfig | false;
     audit?: string;
     idempotent?: boolean;
+    /** false: a cookie-authenticated write that needs no CSRF token (it only records). */
+    csrf?: false;
   }
 }
 

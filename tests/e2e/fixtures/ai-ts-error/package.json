@@ -1,0 +1,11 @@
+{
+  "name": "e2e-ai-ts-error",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc && node build.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

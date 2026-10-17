@@ -38,7 +38,7 @@ export async function upsertUserWithOrg(
       values (${u.githubId}, ${u.login}, ${u.name}, ${u.email}, ${u.avatarUrl})
       on conflict (login) do update set
         github_id = coalesce(excluded.github_id, users.github_id),
-        name = excluded.name, email = coalesce(excluded.email, users.email), avatar_url = excluded.avatar_url
+        name = excluded.name, email = coalesce(users.email, excluded.email), avatar_url = excluded.avatar_url
       returning id`;
     if (!user) throw new Error('user upsert failed');
     const [existing] = await tx<
@@ -206,9 +206,15 @@ export const authRoutes =
       async (req) => {
         const a = authOf(req);
         const [user] = await deps.sql<
-          { id: string; login: string; name: string | null; avatar_url: string | null }[]
+          {
+            id: string;
+            login: string;
+            name: string | null;
+            avatar_url: string | null;
+            email: string | null;
+          }[]
         >`
-        select id, login, name, avatar_url from users where id = ${a.userId}`;
+        select id, login, name, avatar_url, email from users where id = ${a.userId}`;
         const orgs = await deps.sql<
           {
             id: string;
@@ -222,11 +228,37 @@ export const authRoutes =
         const org = orgs.find((o) => o.id === a.orgId) ?? orgs[0];
         if (!user || !org) throw forbidden();
         return {
-          user: { id: user.id, login: user.login, name: user.name, avatarUrl: user.avatar_url },
+          user: {
+            id: user.id,
+            login: user.login,
+            name: user.name,
+            avatarUrl: user.avatar_url,
+            email: user.email,
+          },
           org,
           orgs,
           csrfToken: a.csrfToken ?? null,
         };
+      },
+    );
+
+    // GitHub only shares public emails, so people set where notifications go.
+    // Sign-in never overwrites it (a missing GitHub email keeps this one).
+    app.patch(
+      '/api/v1/me',
+      {
+        preHandler: requireRole(),
+        config: { audit: 'user.update' },
+        schema: {
+          tags: ['auth'],
+          body: z.object({ email: z.email().max(254).nullable() }),
+        },
+      },
+      async (req, reply) => {
+        const a = authOf(req);
+        await deps.sql`update users set email = ${req.body.email} where id = ${a.userId}`;
+        req.auditTarget = { type: 'user', id: a.userId };
+        return reply.code(204).send();
       },
     );
 

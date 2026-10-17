@@ -105,3 +105,17 @@ resource "cloudflare_workers_route" "bypass" {
 
 output "kv_namespace_id" { value = cloudflare_workers_kv_namespace.routes.id }
 output "tunnel_id" { value = cloudflare_zero_trust_tunnel_cloudflared.api.id }
+
+# Email sending (Resend): SPF, bounce and DKIM records for the platform domain.
+# scripts/resend-domain.ts fetches them from Resend into email.auto.tfvars.json;
+# until then the list is empty and nothing is created.
+resource "cloudflare_dns_record" "email" {
+  for_each = { for r in var.email_dns_records : "${r.type}:${r.name}" => r }
+  zone_id  = data.cloudflare_zone.platform.zone_id
+  name     = each.value.name
+  type     = each.value.type
+  content  = each.value.content
+  priority = each.value.priority
+  proxied  = false
+  ttl      = 1
+}

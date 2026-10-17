@@ -294,6 +294,24 @@ test('a server-rendered app runs on demand: pages, POST, guarded egress', async 
   expect(problems).toEqual([]);
 });
 
+test('a type error is repaired by AI, approved by a person, and goes live', async ({ page }) => {
+  // Needs real AI providers; production has them once the keys are in.
+  test.skip(!process.env.E2E_AI, 'set E2E_AI=1 when AI providers are configured');
+  const id = await importFixture(page, 'ai-ts-error', `e2e-ai-${RUN}`);
+  const waiting = await waitSettled(page.request, id, 15);
+  expect(waiting.status, 'the AI patch waits for approval').toBe('AWAITING_APPROVAL');
+
+  await expectRendered(page, `/deployments/${id}`);
+  await page.getByRole('tab', { name: /Recovery/ }).click();
+  await expect(page.getByText(/within patch policy/)).toBeVisible();
+  await expect(page.getByText('src/config.ts').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Approve & deploy' }).click();
+
+  const live = await waitSettled(page.request, id);
+  expect(live.status).toBe('ACTIVE');
+  expect((await site(live.url ?? '')).body).toContain('e2e ai ok');
+});
+
 test('a failed build is never a dead end: set the env var, deploy again, live', async ({
   page,
 }) => {
@@ -423,6 +441,37 @@ for (const width of [977, 390]) {
     await ctx.close();
   });
 }
+
+test('a dashboard crash can be reported, and only from the dashboard', async ({ page }) => {
+  const report = {
+    kind: 'error',
+    name: 'SmokeTest',
+    message: '[smoke] synthetic dashboard error, ignore',
+    path: '/smoke',
+  };
+  const ok = await page.request.post('/api/v1/client-errors', { data: report });
+  expect(ok.status()).toBe(204);
+  const foreign = await page.request.post('/api/v1/client-errors', {
+    data: report,
+    headers: { origin: 'https://evil.example' },
+  });
+  expect(foreign.status()).toBe(403);
+});
+
+test('the notification email can be read and saved', async ({ page }) => {
+  const me = await api<{ user: { email: string | null } }>(page.request, '/api/v1/me');
+  expect(me.user).toHaveProperty('email');
+  // Saving the same value proves the endpoint without changing anything.
+  const { csrfToken } = await api<{ csrfToken: string | null }>(page.request, '/api/v1/me');
+  const r = await page.request.patch('/api/v1/me', {
+    data: { email: me.user.email },
+    headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
+  });
+  expect(r.status()).toBe(204);
+  await expectRendered(page, '/settings');
+  await page.getByRole('tab', { name: 'Notifications' }).click();
+  await expect(page.getByLabel('Notification email')).toHaveValue(me.user.email ?? '');
+});
 
 test('a repository AutoDeploy cannot see gets a clear way forward, not a 500', async ({ page }) => {
   await page.goto('/projects/new');

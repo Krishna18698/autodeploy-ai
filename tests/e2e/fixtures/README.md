@@ -8,6 +8,8 @@ AutoDeploy (by repository URL plus root directory) and checks live:
   in, so corepack has to fetch it during the build.
 - `ssr-next`: server-rendered Next.js; a page rendered per request, a POST
   API route, and outbound requests (public allowed, cloud metadata refused).
+- `ai-ts-error`: a real TypeScript type error; with AI keys configured,
+  `E2E_AI=1` checks the AI proposes a patch, it is approved, and the site goes live.
 - `needs-env`: fails until `E2E_GREETING` is set, to exercise the
   failure → environment variable → deploy again path.
 

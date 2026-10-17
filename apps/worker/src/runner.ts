@@ -1,4 +1,5 @@
 import { claim, complete, fail, heartbeat, type Job, NOTIFY_CHANNEL } from '@autodeploy/queue';
+import { reportError } from '@autodeploy/telemetry';
 import type { Deps } from './deps.js';
 import { metrics } from './metrics.js';
 
@@ -153,6 +154,8 @@ export class Runner {
         });
         metrics.jobsFinished.inc({ type: job.type, outcome });
         jlog[outcome === 'dead' ? 'error' : 'warn']({ err, outcome }, 'job failed');
+        // Retries are routine; a job that gave up for good is a platform bug.
+        if (outcome === 'dead') reportError(err, { tags: { job: job.type } });
       }
     } finally {
       clearInterval(beat);

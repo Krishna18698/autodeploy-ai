@@ -84,6 +84,13 @@ const MATCHERS: Matcher[] = [
     re: /\b(?<name>(?:VITE|NEXT_PUBLIC|PUBLIC|REACT_APP)_[A-Z0-9_]+)\b.*\b(is not defined|is undefined|is missing|must be set|required)/,
     keep: ['name'],
   },
+  // Server-side variables have no telltale prefix, so match how apps say it,
+  // never a bare "X is not defined" (that is a ReferenceError in the code).
+  {
+    code: 'MISSING_ENV',
+    re: /(?:\bprocess\.env\.(?<name2>[A-Z][A-Z0-9_]*) is (?:undefined|not set|missing)|\b[Mm]issing (?:required )?env(?:ironment)?(?: var(?:iable)?s?)?:? ['"`]?(?<name3>[A-Z][A-Z0-9_]*)|\benv(?:ironment)? var(?:iable)? ['"`]?(?<name4>[A-Z][A-Z0-9_]*)['"`]? (?:is )?(?:missing|not set|required|undefined)|Invalid environment variables:?.*?\b(?<name5>[A-Z][A-Z0-9]*_[A-Z0-9_]+)\b|\b(?<name6>[A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9])\b['"`]? (?:is missing|must be set|is not set|is required|was not set|was not provided))/,
+    keep: ['name'],
+  },
   {
     code: 'MODULE_NOT_FOUND',
     re: /(?:Cannot find module '(?<mod>[^']+)'|Module not found: (?:Error: )?Can't resolve '(?<mod2>[^']+)'|Failed to resolve import "(?<mod3>[^"]+)"|Could not resolve "(?<mod4>[^"]+)")/,
