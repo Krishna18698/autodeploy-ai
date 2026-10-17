@@ -1,4 +1,9 @@
-import { parseSiteHost, routeKey, type SiteRoute } from '@autodeploy/core/hostnames';
+import {
+  parseSiteHost,
+  RESERVED_LABELS,
+  routeKey,
+  type SiteRoute,
+} from '@autodeploy/core/hostnames';
 import { AwsClient } from 'aws4fetch';
 
 // The edge router. Every request to <label>.<domain> lands here:
@@ -200,8 +205,15 @@ export default {
       return serveApp(request, env as Env & { APP_ORIGIN: string }, appHost);
     const url = new URL(request.url);
     const route = parseSiteHost(reqHost, env.PLATFORM_DOMAIN);
-    // app/api/www and unknown hosts are not ours to serve: pass through to origin.
-    if (!route) return fetch(request);
+    if (!route) {
+      // app/api/www and the bare domain have origins of their own: pass through.
+      // Anything else under the domain is a mistyped site address; answer it
+      // here instead of passing it on to an origin that doesn't exist (a 522).
+      const suffix = `.${env.PLATFORM_DOMAIN}`;
+      const label = reqHost.endsWith(suffix) ? reqHost.slice(0, -suffix.length) : '';
+      if (!label || RESERVED_LABELS.has(label)) return fetch(request);
+      return notFound('No site lives at this address.');
+    }
     const isRead = request.method === 'GET' || request.method === 'HEAD';
 
     const target = await resolveRoute(env, reqHost, route);

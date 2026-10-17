@@ -216,6 +216,26 @@ test('every dashboard page renders, including each project and its latest deploy
   expect(problems).toEqual([]);
 });
 
+test("every live site answers at its address as it does at its deployment's own address", async ({
+  page,
+}) => {
+  // Both hostnames resolve through different edge routes. If they disagree, the
+  // production route has drifted from the deployment (a server-rendered site
+  // once became a static one, and every page 404'd).
+  const { items } = await api<{
+    items: { slug: string; url: string; activeDeploymentId: string | null }[];
+  }>(page.request, '/api/v1/projects?limit=50');
+  const live = items.filter((p) => p.activeDeploymentId);
+  for (const p of live) {
+    const d = await api<Deployment>(page.request, `/api/v1/deployments/${p.activeDeploymentId}`);
+    const pinned = p.url.replace(`://${p.slug}.`, `://d${d.number}--${p.slug}.`);
+    const [main, own] = [await site(p.url), await site(pinned)];
+    console.log(`  ${p.slug}: ${main.status} (pinned #${d.number}: ${own.status})`);
+    expect(main.status, `${p.url} vs ${pinned}`).toBe(own.status);
+    expect(main.status, p.url).toBeLessThan(500);
+  }
+});
+
 test('a static site builds, goes live and is served by the edge', async ({ page }) => {
   const problems = watch(page);
   const id = await importFixture(page, 'static-vite', `e2e-static-${RUN}`);

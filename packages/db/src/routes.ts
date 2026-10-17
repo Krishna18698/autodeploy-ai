@@ -11,6 +11,27 @@ export type RouteValue = {
   mode?: 'ssr';
 };
 
+/**
+ * The edge route for a deployment. Every writer goes through this: a
+ * server-rendered deployment written without its mode is served as a static
+ * site, which has no index.html, so every page 404s.
+ */
+export function routeValue(d: {
+  deploymentId: string;
+  number: number;
+  artifactSha: string;
+  projectSlug: string;
+  mode?: 'static' | 'ssr' | null;
+}): RouteValue {
+  return {
+    deploymentId: d.deploymentId,
+    number: d.number,
+    artifactSha: d.artifactSha,
+    projectSlug: d.projectSlug,
+    ...(d.mode === 'ssr' && { mode: 'ssr' as const }),
+  };
+}
+
 export interface RouteStore {
   readonly name: string;
   put(key: string, value: RouteValue): Promise<void>;

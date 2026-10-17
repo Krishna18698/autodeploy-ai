@@ -2,7 +2,7 @@ import { routeKey } from '@autodeploy/core';
 import type { Sql, Tx } from './client.js';
 import { transition } from './deployments.js';
 import { appendOutbox } from './outbox.js';
-import type { RouteStore, RouteValue } from './routes.js';
+import { type RouteStore, type RouteValue, routeValue } from './routes.js';
 
 export type ActivationResult = { activatedId: string; previousId: string | null; ms: number };
 
@@ -72,13 +72,16 @@ export async function activate(
       await transition(tx, { deploymentId: dep.id, to: 'ACTIVE', payload: { mode, actor } });
 
       key = routeKey({ kind: 'production', slug: project.slug });
-      await routes.put(key, {
-        deploymentId: dep.id,
-        number: dep.number,
-        artifactSha: artifact.sha256,
-        projectSlug: project.slug,
-        ...(dep.mode === 'ssr' && { mode: 'ssr' as const }),
-      });
+      await routes.put(
+        key,
+        routeValue({
+          deploymentId: dep.id,
+          number: dep.number,
+          artifactSha: artifact.sha256,
+          projectSlug: project.slug,
+          mode: dep.mode,
+        }),
+      );
 
       const updated =
         await tx`update projects set active_deployment_id = ${dep.id}, version = version + 1, updated_at = now()
@@ -101,6 +104,31 @@ export async function activate(
   }
 }
 
+/**
+ * Rewrites every project's production route from the database, the source of
+ * truth (a KV write can fail after a commit, or be edited by hand). Returns how
+ * many routes were written.
+ */
+export async function reconcileRoutes(sql: Sql, routes: RouteStore): Promise<number> {
+  const rows = await sql<
+    { slug: string; id: string; number: number; sha256: string; mode: 'static' | 'ssr' }[]
+  >`
+    select p.slug, d.id, d.number, a.sha256, d.mode from projects p
+    join deployments d on d.id = p.active_deployment_id join artifacts a on a.id = d.artifact_id`;
+  for (const r of rows)
+    await routes.put(
+      routeKey({ kind: 'production', slug: r.slug }),
+      routeValue({
+        deploymentId: r.id,
+        number: r.number,
+        artifactSha: r.sha256,
+        projectSlug: r.slug,
+        mode: r.mode,
+      }),
+    );
+  return rows.length;
+}
+
 async function currentRoute(
   tx: Tx,
   deploymentId: string,
@@ -109,12 +137,12 @@ async function currentRoute(
   const [r] = await tx<{ number: number; sha256: string; mode: 'static' | 'ssr' }[]>`
     select d.number, a.sha256, d.mode from deployments d join artifacts a on a.id = d.artifact_id where d.id = ${deploymentId}`;
   return r
-    ? {
+    ? routeValue({
         deploymentId,
         number: r.number,
         artifactSha: r.sha256,
         projectSlug: slug,
-        ...(r.mode === 'ssr' && { mode: 'ssr' as const }),
-      }
+        mode: r.mode,
+      })
     : null;
 }

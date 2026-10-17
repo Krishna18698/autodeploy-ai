@@ -11,7 +11,7 @@ import {
   type DeploymentStatus,
   routeKey,
 } from '@autodeploy/core';
-import { activate, recordEvent, transition } from '@autodeploy/db';
+import { activate, recordEvent, routeValue, transition } from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
 import { enqueue } from '@autodeploy/queue';
 import { retry } from '@autodeploy/resilience';
@@ -399,13 +399,13 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
           );
         }
         // Immutable per-deployment URL (and the PR preview URL) are routable as soon as the build is good.
-        const value = {
+        const value = routeValue({
           deploymentId,
           number: d.number,
           artifactSha: artifact.sha256,
           projectSlug: d.slug,
-          ...(runtime && { mode: 'ssr' as const }),
-        };
+          mode: runtime ? 'ssr' : 'static',
+        });
         const modeColumns = runtime
           ? { mode: 'ssr' as const, runtime_sha: runtime.sha256, runtime_node: config.nodeVersion }
           : {};

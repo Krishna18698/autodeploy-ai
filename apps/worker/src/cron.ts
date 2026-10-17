@@ -1,6 +1,5 @@
-import { routeKey } from '@autodeploy/core';
 import { rewrap } from '@autodeploy/crypto';
-import { transition } from '@autodeploy/db';
+import { reconcileRoutes, transition } from '@autodeploy/db';
 import { reapExpiredLeases, stats } from '@autodeploy/queue';
 import type { Deps } from './deps.js';
 import { metrics } from './metrics.js';
@@ -70,17 +69,7 @@ const TASKS: Task[] = [
     everyMs: 10 * 60_000,
     run: async (deps) => {
       if (deps.routes.name === 'postgres') return; // DB is the route table already
-      const rows = await deps.sql<{ slug: string; id: string; number: number; sha256: string }[]>`
-        select p.slug, d.id, d.number, a.sha256 from projects p
-        join deployments d on d.id = p.active_deployment_id join artifacts a on a.id = d.artifact_id`;
-      for (const r of rows) {
-        await deps.routes.put(routeKey({ kind: 'production', slug: r.slug }), {
-          deploymentId: r.id,
-          number: r.number,
-          artifactSha: r.sha256,
-          projectSlug: r.slug,
-        });
-      }
+      await reconcileRoutes(deps.sql, deps.routes);
     },
   },
 ];

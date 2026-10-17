@@ -3,6 +3,7 @@ import {
   createSql,
   type RouteStore,
   type RouteValue,
+  reconcileRoutes,
   type Sql,
   transition,
   withOrg,
@@ -98,6 +99,27 @@ describe('database guarantees', () => {
       (tx) => tx`update projects set name = 'pwned' where id = ${pb.id} returning id`,
     );
     expect(updated).toHaveLength(0);
+  });
+
+  it('every route writer keeps a server-rendered deployment server-rendered', async () => {
+    // The periodic KV re-sync once rewrote production routes without the mode,
+    // so server-rendered sites turned into 404s within 10 minutes of going live.
+    const org = await makeOrg(sql);
+    const p = await makeProject(sql, org);
+    const routes = new MemoryRoutes();
+    const d = await makeDeployment(sql, org, p.id, 'CREATED', 1);
+    const [a] = await sql<
+      { id: string }[]
+    >`insert into artifacts (sha256, storage_prefix, file_count, bytes) values (${`sha-${d}`}, 'x', 1, 1) returning id`;
+    await sql`update deployments set artifact_id = ${a!.id}, mode = 'ssr' where id = ${d}`;
+    for (const s of ['ANALYZING', 'QUEUED', 'BUILDING', 'VALIDATING', 'READY'])
+      await sql`update deployments set status = ${s} where id = ${d}`;
+
+    await activate(sql, routes, d, 'promote');
+    expect(routes.map.get(`route:${p.slug}`)?.mode).toBe('ssr');
+    routes.map.clear();
+    expect(await reconcileRoutes(sql, routes)).toBeGreaterThan(0);
+    expect(routes.map.get(`route:${p.slug}`)).toMatchObject({ deploymentId: d, mode: 'ssr' });
   });
 
   it('activation and rollback flip one pointer; concurrent activations serialize', async () => {
