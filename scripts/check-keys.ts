@@ -20,7 +20,12 @@ const timed = async (fn: () => Promise<Response>) => {
 const short = async (r: Response) =>
   (await r.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160);
 
-async function chat(base: string, key: string, model: string): Promise<Result> {
+async function chat(
+  base: string,
+  key: string,
+  model: string,
+  extra: Record<string, unknown> = {},
+): Promise<Result> {
   const { r, ms } = await timed(() =>
     fetch(`${base}/chat/completions`, {
       method: 'POST',
@@ -29,6 +34,7 @@ async function chat(base: string, key: string, model: string): Promise<Result> {
         model,
         max_tokens: 5,
         messages: [{ role: 'user', content: 'Say OK' }],
+        ...extra,
       }),
       signal: AbortSignal.timeout(60_000),
     }),
@@ -45,7 +51,9 @@ const checks: Record<string, () => Promise<Result>> = {
     return chat(
       'https://integrate.api.nvidia.com/v1',
       key,
-      get('NVIDIA_MODEL') ?? 'deepseek-ai/deepseek-v4.1-flash',
+      get('NVIDIA_MODEL') ?? 'nvidia/nemotron-3-super-120b-a12b',
+      // As the worker calls it (NVIDIA_THINKING defaults to off).
+      { chat_template_kwargs: { enable_thinking: get('NVIDIA_THINKING') === 'on' } },
     );
   },
   'OpenRouter (AI fallback)': async () => {

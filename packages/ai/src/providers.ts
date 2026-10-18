@@ -130,9 +130,17 @@ export class OpenAICompatibleProvider implements Provider {
   }
 }
 
-export const nvidia = (apiKey: string, model: string) =>
+/**
+ * NVIDIA's reasoning models think before answering; with thinking on, a short
+ * budget (the 300-token classifier) can run out before the answer starts.
+ * 'default' leaves the model's own setting (for models without the switch).
+ */
+export const nvidia = (apiKey: string, model: string, thinking: 'on' | 'off' | 'default' = 'off') =>
   new OpenAICompatibleProvider('nvidia', 'https://integrate.api.nvidia.com/v1', apiKey, model, {
     structuredOutput: 'json_object',
+    ...(thinking !== 'default' && {
+      extraBody: { chat_template_kwargs: { enable_thinking: thinking === 'on' } },
+    }),
   });
 
 export const openrouter = (apiKey: string, model: string) =>

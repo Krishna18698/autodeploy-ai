@@ -45,7 +45,7 @@ function providersFrom(env: Env, log: Logger): Provider[] {
     .map((s) => s.trim())
     .filter(Boolean)) {
     if (name === 'nvidia' && env.NVIDIA_API_KEY)
-      out.push(nvidia(env.NVIDIA_API_KEY, env.NVIDIA_MODEL));
+      out.push(nvidia(env.NVIDIA_API_KEY, env.NVIDIA_MODEL, env.NVIDIA_THINKING));
     else if (name === 'openrouter' && env.OPENROUTER_API_KEY)
       out.push(openrouter(env.OPENROUTER_API_KEY, env.OPENROUTER_MODEL));
     else if (name === 'mock') out.push(new MockProvider());
