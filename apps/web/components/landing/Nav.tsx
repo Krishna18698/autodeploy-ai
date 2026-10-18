@@ -39,7 +39,7 @@ export function Nav() {
             all systems normal
           </span>
           <a
-            href="#start"
+            href="/login"
             className="rounded-full bg-run px-3.5 py-1.5 text-[13px] font-medium text-bg transition-transform hover:scale-[1.03] active:scale-[0.98]"
           >
             Start free

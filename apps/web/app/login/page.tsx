@@ -6,6 +6,10 @@ import { Providers } from '@/components/app/providers';
 import { Button } from '@/components/ui/button';
 import { ApiError, post } from '@/lib/api';
 
+// Local development and the local e2e build only; never shown in production.
+const DEV_LOGIN =
+  process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_DEV_LOGIN === '1';
+
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -48,9 +52,11 @@ function LoginInner() {
           >
             Continue with GitHub
           </a>
-          <Button variant="secondary" loading={loading} onClick={devLogin} className="h-10">
-            Developer sign-in (local only)
-          </Button>
+          {DEV_LOGIN && (
+            <Button variant="secondary" loading={loading} onClick={devLogin} className="h-10">
+              Developer sign-in (local only)
+            </Button>
+          )}
         </div>
         {error && (
           <p

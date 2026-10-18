@@ -63,6 +63,8 @@ const EnvSchema = z.object({
   BUILD_TIMEOUT_S: z.coerce.number().int().min(30).default(900),
   VALIDATOR: z.enum(['docker', 'skip']).default('docker'),
   VALIDATOR_IMAGE: z.string().default('autodeploy-validator:latest'),
+  // A validation takes well under a minute (a server start is capped at 30 s inside).
+  VALIDATE_TIMEOUT_S: z.coerce.number().int().min(30).default(180),
 
   // AI providers (all optional; with none set, recovery is rules-only)
   AI_PROVIDERS: z

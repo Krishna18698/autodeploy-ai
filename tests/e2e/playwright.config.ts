@@ -22,7 +22,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'pnpm --filter @autodeploy/web build && pnpm --filter @autodeploy/web start',
+    command:
+      'NEXT_PUBLIC_DEV_LOGIN=1 pnpm --filter @autodeploy/web build && pnpm --filter @autodeploy/web start',
     url: 'http://localhost:3000/login',
     reuseExistingServer: true,
     timeout: 240_000,

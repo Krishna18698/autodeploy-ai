@@ -11,8 +11,9 @@ import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import { chromium } from 'playwright-core';
 
-const SITE = '/site';
-const OUT = '/out';
+// Overridable so the validator can be exercised outside its container.
+const SITE = process.env.VALIDATOR_SITE ?? '/site';
+const OUT = process.env.VALIDATOR_OUT ?? '/out';
 const TYPES = {
   '.html': 'text/html',
   '.js': 'text/javascript',
@@ -58,7 +59,12 @@ let child = null;
 const serverLog = [];
 if (SSR) {
   const cwd = join(SITE, normalize(process.env.WORKDIR ?? '.').replace(/^(\.\.(\/|$))+/, ''));
-  child = spawn('sh', ['-c', process.env.START_COMMAND || 'node server.js'], {
+  const command = process.env.START_COMMAND || 'node server.js';
+  // exec a simple command so the server is the shell's replacement, and give it
+  // its own process group: stopping must reach the server, not just a shell
+  // (an orphaned server once kept this process, and the deploy, waiting forever).
+  child = spawn('sh', ['-c', /[;&|]/.test(command) ? command : `exec ${command}`], {
+    detached: true,
     cwd,
     env: {
       ...process.env,
@@ -139,9 +145,14 @@ try {
       result.pageErrors.push(
         `server exited (${child.exitCode}): ${serverLog.slice(-3).join(' | ').slice(0, 300)}`,
       );
-    child.kill('SIGTERM');
+    try {
+      process.kill(-child.pid, 'SIGTERM'); // the whole group: shell, server, its children
+    } catch {}
   } else server.close();
   if (SSR) result.serverLog = serverLog.slice(-20);
   result.durationMs = Date.now() - started;
   await writeFile(join(OUT, 'result.json'), JSON.stringify(result, null, 2));
 }
+// The result is written: nothing left behind (a server ignoring SIGTERM, its
+// open pipes) may keep the validator, and so the deployment, waiting.
+process.exit(0);

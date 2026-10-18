@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { chmod, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Deps } from '../deps.js';
@@ -54,11 +55,21 @@ export async function validateSite(
         `WORKDIR=${opts.workdir ?? '.'}`,
       ]
     : [];
+  // A hard limit on top of the job's own cancellation: a validator that never
+  // exits (it once waited forever on an orphaned server) must not hold the build
+  // slot. On either, the named container is removed outright.
+  const name = `ad-validate-${randomBytes(4).toString('hex')}`;
+  const timeout = AbortSignal.timeout(deps.env.VALIDATE_TIMEOUT_S * 1000);
+  const stop = AbortSignal.any([signal, timeout]);
+  const kill = () => void runProcess('docker', ['rm', '-f', name], () => {});
+  stop.addEventListener('abort', kill, { once: true });
   const code = await runProcess(
     'docker',
     [
       'run',
       '--rm',
+      '--name',
+      name,
       '--network',
       'none',
       '--cpus',
@@ -81,8 +92,17 @@ export async function validateSite(
       deps.env.VALIDATOR_IMAGE,
     ],
     (l) => deps.log.debug({ validator: l }),
-    signal,
-  );
+    stop,
+  ).finally(() => stop.removeEventListener('abort', kill));
+  if (timeout.aborted) {
+    deps.log.warn({ name }, 'validator timed out; container removed');
+    return {
+      ...skipped,
+      ok: false,
+      skipped: false,
+      pageErrors: [`validation did not finish within ${deps.env.VALIDATE_TIMEOUT_S} s`],
+    };
+  }
   const raw = await readFile(join(outDir, 'result.json'), 'utf8').catch(() => null);
   if (!raw) {
     deps.log.warn({ code }, 'validator produced no result (image missing?); skipping validation');
