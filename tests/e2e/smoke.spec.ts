@@ -306,6 +306,12 @@ test('a type error is repaired by AI, approved by a person, and goes live', asyn
   await expect(page.getByText(/within patch policy/)).toBeVisible();
   await expect(page.getByText('src/config.ts').first()).toBeVisible();
   await page.getByRole('button', { name: 'Approve & deploy' }).click();
+  // AWAITING_APPROVAL counts as settled, so first wait for the approval to land.
+  await expect
+    .poll(async () => (await api<Deployment>(page.request, `/api/v1/deployments/${id}`)).status, {
+      timeout: 60_000,
+    })
+    .not.toBe('AWAITING_APPROVAL');
 
   const live = await waitSettled(page.request, id);
   expect(live.status).toBe('ACTIVE');
