@@ -63,7 +63,7 @@ export function Architecture() {
       <p className="mt-4 max-w-2xl text-[15px] text-muted">
         Jobs live in Postgres, where leases and retries belong. Events fan out through Kafka to
         independent consumers. Static files are served from the edge; server-rendered apps wake on
-        demand in sandboxed containers. Runs on ₹0 of free tiers.
+        demand in sandboxed containers.
       </p>
       <div className="glass mt-12 overflow-x-auto rounded-[12px] p-4">
         <svg
