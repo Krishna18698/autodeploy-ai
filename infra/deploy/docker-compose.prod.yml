@@ -126,7 +126,10 @@ services:
       CF_KV_NAMESPACE_ID: ${CF_KV_NAMESPACE_ID:-}
       CF_KV_API_TOKEN: ${CF_KV_API_TOKEN:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: AutoDeploy <deploys@${PLATFORM_DOMAIN}>
+      # Resend refuses free domains (dpdns.org, eu.org), so by default mail goes
+      # from Resend's own address, which only delivers to the Resend account's
+      # owner. Set EMAIL_FROM once a domain you own is verified in Resend.
+      EMAIL_FROM: ${EMAIL_FROM:-AutoDeploy <onboarding@resend.dev>}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
     # The worker starts sibling build containers. The socket is root-equivalent,

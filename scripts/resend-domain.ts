@@ -1,4 +1,6 @@
 // Sets up the platform domain for sending email through Resend.
+// Note: Resend refuses free domains (dpdns.org, eu.org); this is for a domain
+// you own. Without one, mail goes from onboarding@resend.dev to the account owner.
 //
 //   pnpm tsx scripts/resend-domain.ts            # status + DNS records (read only)
 //   pnpm tsx scripts/resend-domain.ts --create   # add the domain to Resend first
