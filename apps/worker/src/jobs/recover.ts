@@ -16,6 +16,7 @@ import { readTree } from '@autodeploy/github';
 import { enqueue } from '@autodeploy/queue';
 import { currentTraceparent, withSpan } from '@autodeploy/telemetry';
 import type { Deps } from '../deps.js';
+import { inside } from '../executors/paths.js';
 import { metrics } from '../metrics.js';
 import { fetchSource } from '../pipeline/source.js';
 import type { JobContext } from '../runner.js';
@@ -181,9 +182,9 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
   try {
     await aiContext.run({ orgId: d.org_id, repairId: repair.id }, async () => {
       await fetchSource(deps, d.repo_url, d.commit_sha ?? 'HEAD', dir, d.installation_id);
-      const tree = await readTree(
-        join(dir, failed.build_config.rootDir === '.' ? '' : failed.build_config.rootDir),
-      );
+      // inside(): a root directory pointing out of the checkout would put host
+      // files in the prompt sent to the AI provider.
+      const tree = await readTree(await inside(dir, failed.build_config.rootDir));
       const first = buildFailureContext(signature, tree);
 
       const classification = await deps.ai.classify(first.text).catch(() => null);

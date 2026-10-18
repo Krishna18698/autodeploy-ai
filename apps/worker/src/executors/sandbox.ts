@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { access, readdir } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { join, posix, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Env } from '../env.js';
+import { inside, PathEscapeError } from './paths.js';
 import { proxyByAddress } from './proxy-address.js';
 import type { ExecuteInput, ExecuteResult, Executor } from './types.js';
 
@@ -198,32 +199,33 @@ export class SandboxExecutor implements Executor {
       log.write(`autodeploy: build exceeded ${this.env.BUILD_TIMEOUT_S}s and was stopped`);
       return { ok: false, exitCode, reason: 'timeout', durationMs, indexDirs: [] };
     }
-    const projectRoot =
-      config.rootDir && config.rootDir !== '.' ? join(input.srcDir, config.rootDir) : input.srcDir;
     if (exitCode !== 0) {
       if (exitCode === 137)
         log.write('autodeploy: the build was killed (exit code 137): likely out of memory');
       return { ok: false, exitCode, reason: 'failed', durationMs, indexDirs: [] };
     }
+    // Resolved on the host after the build ran: refuse anything outside the checkout.
+    let projectRoot: string;
+    let outputDir: string;
+    try {
+      projectRoot = await inside(input.srcDir, config.rootDir);
+      outputDir = await inside(input.srcDir, posix.join(config.rootDir || '.', config.outputDir));
+    } catch (err) {
+      if (!(err instanceof PathEscapeError)) throw err;
+      log.write(`autodeploy: ${err.message}; nothing was published`);
+      return { ok: false, exitCode, reason: 'failed', durationMs, indexDirs: [] };
+    }
     if (config.mode === 'ssr') {
-      const serverDir = await findStandaloneServer(
-        join(projectRoot, config.outputDir, 'standalone'),
-      );
+      const standalone = await inside(outputDir, 'standalone').catch(() => null);
+      const serverDir = standalone ? await findStandaloneServer(standalone) : null;
       if (!serverDir) {
         log.write(
           `autodeploy: the build did not produce a standalone server (${config.outputDir}/standalone/server.js)`,
         );
         return { ok: false, exitCode, reason: 'output_missing', durationMs, indexDirs: [] };
       }
-      return {
-        ok: true,
-        outputDir: join(projectRoot, config.outputDir),
-        durationMs,
-        serverDir,
-        projectRoot,
-      };
+      return { ok: true, outputDir, durationMs, serverDir, projectRoot };
     }
-    const outputDir = join(projectRoot, config.outputDir);
     const hasIndex = await access(join(outputDir, 'index.html')).then(
       () => true,
       () => false,

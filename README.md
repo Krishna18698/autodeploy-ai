@@ -78,7 +78,7 @@ API docs: http://localhost:4000/docs.
 ## Tests
 
 ```bash
-pnpm test               # 126 unit tests (pure domain code)
+pnpm test               # 151 unit tests (pure domain code)
 pnpm test:integration   # 25 tests on real Postgres / Valkey / Kafka (Testcontainers)
 pnpm test:e2e           # 8 Playwright tests against the running stack
 pnpm test:smoke         # 16 end-to-end checks of what a user does (see below)

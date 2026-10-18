@@ -18,6 +18,7 @@ import { retry } from '@autodeploy/resilience';
 import { currentTraceparent, withSpan } from '@autodeploy/telemetry';
 import type { Deps } from '../deps.js';
 import { GitHubActionsExecutor } from '../executors/github-actions.js';
+import { inside } from '../executors/paths.js';
 import { applyPatch, SandboxExecutor } from '../executors/sandbox.js';
 import type { Executor } from '../executors/types.js';
 import { metrics } from '../metrics.js';
@@ -253,7 +254,9 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
         await fetchSource(deps, d.repo_url, d.commit_sha ?? 'HEAD', ws.src, d.installation_id);
         if (config.patch) {
           log.stage('applying proposed repair');
-          const applied = await applyPatch(ws.src, config.patch);
+          // Patch paths are relative to the project's root directory (the files
+          // the AI was shown), not the repository root.
+          const applied = await applyPatch(await inside(ws.src, config.rootDir), config.patch);
           if (!applied.ok) {
             log.write(`autodeploy: the proposed patch did not apply cleanly: ${applied.output}`);
             await finishFailed(deps, d, attempt, log, null, [], 'patch did not apply');

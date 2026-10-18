@@ -96,10 +96,19 @@ export const GitHubRepos = z.object({
   ),
 });
 
+/** A directory inside the repository: relative, without ".." or absolute paths. */
+export const RepoDir = z
+  .string()
+  .max(200)
+  .regex(
+    /^(?:\.|(?:\.\/)?(?!\.\.?(?:\/|$))[\w@+.-]+(?:\/(?!\.\.?(?:\/|$))[\w@+.-]+)*\/?)$/,
+    'a path inside the repository, like apps/web or dist',
+  );
+
 export const AnalyzeBody = z.object({
   repoUrl: z.url().describe('Public GitHub repository URL, e.g. https://github.com/owner/repo'),
   ref: z.string().max(200).optional(),
-  rootDir: z.string().max(200).default('.'),
+  rootDir: RepoDir.default('.'),
 });
 export const AnalyzeResult = z.object({
   repo: z.object({ fullName: z.string(), ref: z.string(), commitSha: z.string() }),
@@ -112,8 +121,8 @@ export const BuildSettings = z.object({
   nodeVersion: z.number().int().nullable(),
   installCommand: z.string().max(500).nullable(),
   buildCommand: z.string().max(500).nullable(),
-  outputDir: z.string().max(200).nullable(),
-  rootDir: z.string().max(200),
+  outputDir: RepoDir.nullable(),
+  rootDir: RepoDir,
 });
 
 export const Project = z.object({
@@ -146,7 +155,7 @@ export const CreateProjectBody = z.object({
   repoUrl: z.url(),
   name: z.string().min(1).max(80).optional(),
   slug: z.string().min(1).max(40).optional(),
-  rootDir: z.string().max(200).default('.'),
+  rootDir: RepoDir.default('.'),
   deploy: z.boolean().default(true),
 });
 

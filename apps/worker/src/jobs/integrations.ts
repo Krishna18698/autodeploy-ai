@@ -1,12 +1,13 @@
 import { lookup } from 'node:dns/promises';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { isIP } from 'node:net';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { parseUnifiedDiff } from '@autodeploy/core';
 import { decrypt, hmacSha256Hex } from '@autodeploy/crypto';
 import { GitHubClient, parseRepoUrl } from '@autodeploy/github';
 import { withTimeout } from '@autodeploy/resilience';
 import type { Deps } from '../deps.js';
+import { inside } from '../executors/paths.js';
 import { applyPatch } from '../executors/sandbox.js';
 import { fetchSource } from '../pipeline/source.js';
 import { type JobContext, PermanentError } from '../runner.js';
@@ -156,21 +157,24 @@ export async function openRepairPr(deps: Deps, ctx: JobContext): Promise<void> {
       installation_id: number | null;
       number: number;
       pr_url: string | null;
+      root_dir: string;
     }[]
   >`
-    select r.diff, r.title, r.explanation, r.deployment_id, d.commit_sha, p.repo_url, p.default_branch, p.installation_id, d.number, r.pr_url
+    select r.diff, r.title, r.explanation, r.deployment_id, d.commit_sha, p.repo_url, p.default_branch, p.installation_id, d.number, r.pr_url, p.root_dir
     from repair_attempts r join deployments d on d.id = r.deployment_id join projects p on p.id = d.project_id where r.id = ${repairId}`;
   if (!r || r.pr_url) return;
   const gh = await installationClient(deps, r.installation_id);
   const dir = await mkdtemp(join(deps.env.WORK_DIR, 'pr-'));
   try {
     await fetchSource(deps, r.repo_url, r.commit_sha, dir, r.installation_id);
-    const applied = await applyPatch(dir, r.diff);
+    // The diff is relative to the project's root directory; the PR is not.
+    const root = r.root_dir && r.root_dir !== '.' ? r.root_dir : '';
+    const applied = await applyPatch(await inside(dir, root), r.diff);
     if (!applied.ok) throw new PermanentError(`patch no longer applies: ${applied.output}`);
     const files = await Promise.all(
       parseUnifiedDiff(r.diff).map(async (f) => ({
-        path: f.path,
-        content: await readFile(join(dir, f.path), 'utf8'),
+        path: root ? posix.join(root, f.path) : f.path,
+        content: await readFile(await inside(dir, posix.join(root || '.', f.path)), 'utf8'),
       })),
     );
     const url = await gh.openPullRequest(parseRepoUrl(r.repo_url), {
