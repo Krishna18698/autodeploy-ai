@@ -1,5 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { context, propagation, type Span, SpanStatusCode, trace } from '@opentelemetry/api';
+import {
+  context,
+  type Meter,
+  metrics,
+  propagation,
+  type Span,
+  SpanStatusCode,
+  trace,
+} from '@opentelemetry/api';
 import pino from 'pino';
 
 export * from './errors.js';
@@ -67,4 +75,12 @@ export async function withSpan<T>(
       }
     }),
   );
+}
+
+/**
+ * The OpenTelemetry meter, exported over OTLP when an endpoint is set. Ask for
+ * it at record time: before register.ts starts the SDK it is a no-op meter.
+ */
+export function meter(): Meter {
+  return metrics.getMeter('autodeploy');
 }

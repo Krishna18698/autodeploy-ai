@@ -1,7 +1,18 @@
 import { createServer, type Server } from 'node:http';
+import { meter } from '@autodeploy/telemetry';
+
+type Meter = ReturnType<typeof meter>;
+type OtelCounter = ReturnType<Meter['createCounter']>;
+type OtelGauge = ReturnType<Meter['createGauge']>;
+type OtelHistogram = ReturnType<Meter['createHistogram']>;
 
 // A tiny Prometheus registry (counters, gauges, histograms) so the worker's
 // behaviour is observable without pulling in a metrics library.
+//
+// Every value is also recorded through OpenTelemetry, which pushes it to
+// Grafana Cloud over OTLP: nothing scrapes /metrics in production. The names
+// come out the same, because the OTLP → Prometheus translation adds _total to
+// counters and _bucket/_sum/_count to histograms.
 
 type Labels = Record<string, string>;
 const key = (l: Labels) =>
@@ -16,9 +27,14 @@ class Counter {
     readonly name: string,
     readonly help: string,
   ) {}
+  private otel?: OtelCounter;
   inc(labels: Labels = {}, by = 1) {
     const k = key(labels);
     this.values.set(k, (this.values.get(k) ?? 0) + by);
+    this.otel ??= meter().createCounter(this.name.replace(/_total$/, ''), {
+      description: this.help,
+    });
+    this.otel.add(by, labels);
   }
   render() {
     return [
@@ -35,8 +51,11 @@ class Gauge {
     readonly name: string,
     readonly help: string,
   ) {}
+  private otel?: OtelGauge;
   set(labels: Labels, v: number) {
     this.values.set(key(labels), v);
+    this.otel ??= meter().createGauge(this.name, { description: this.help });
+    this.otel.record(v, labels);
   }
   render() {
     return [
@@ -54,7 +73,13 @@ class Histogram {
     readonly help: string,
     readonly bounds: number[],
   ) {}
+  private otel?: OtelHistogram;
   observe(labels: Labels, v: number) {
+    this.otel ??= meter().createHistogram(this.name, {
+      description: this.help,
+      advice: { explicitBucketBoundaries: this.bounds },
+    });
+    this.otel.record(v, labels);
     const k = key(labels);
     const s = this.series.get(k) ?? { buckets: this.bounds.map(() => 0), sum: 0, count: 0 };
     this.bounds.forEach((b, i) => {
