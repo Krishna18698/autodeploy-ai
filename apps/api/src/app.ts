@@ -92,7 +92,7 @@ export async function buildApp(deps: Deps) {
       info: {
         title: 'AutoDeploy API',
         version: '1.0.0',
-        description: 'Self-healing static-site deployments.',
+        description: 'Self-healing deployments for static sites and server-rendered Next.js apps.',
       },
       servers: [{ url: env.API_PUBLIC_URL }],
       components: {

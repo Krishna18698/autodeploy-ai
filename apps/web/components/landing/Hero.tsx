@@ -46,7 +46,7 @@ export function Hero() {
           className="mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-panel/60 px-2.5 py-1 font-mono text-[11px] text-muted"
         >
           <span className="size-1.5 rounded-full bg-run" />
-          open beta · static sites · ₹0 to run
+          open beta · static + server-rendered · ₹0 to run
         </p>
         <h1 className="text-[clamp(2.6rem,6.4vw,5.25rem)] font-semibold leading-[0.98] tracking-[-0.035em]">
           <span data-split className="block">

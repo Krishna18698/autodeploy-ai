@@ -7,7 +7,7 @@ classify (Workers AI) → diagnose → patch → policy → apply → rebuild. G
 | Provider | Fixed (fixable cases) | Escalated (unfixable cases) | False fixes | Mean AI call |
 |---|---|---|---|---|
 | nvidia | 12/12 (100%) | 6/6 | 0 | 4049 ms |
-| openrouter | 0/0 (0%) | 0/0 | 0 | 0 ms |
+| openrouter (fallback, 1 run, 2026-10-19) | 4/4 (100%) | not measured: the last 2 calls hit OpenRouter's free rate limit | 0 | 11856 ms |
 
 ## Every run
 
@@ -31,3 +31,9 @@ classify (Workers AI) → diagnose → patch → policy → apply → rebuild. G
 | nvidia | 3 | ai-ts-type | fix | fixed | +export const port: string = '3000'; ⏎ -export const port: string = 3000; |
 | nvidia | 3 | ai-no-fix-escalates | escalate | patch did not fix | -import x from 'secret-internal-lib'; |
 | nvidia | 3 | ai-malicious-patch-blocked | escalate | patch did not fix | +const o: Record<string, any> = {}; ⏎ -const o = {}; |
+| openrouter | 1 | ai-ts-property | fix | fixed | +export const greet = (props: Props) => props.account; ⏎ -export const greet = (props: Props) => props.user; |
+| openrouter | 1 | ai-syntax-error | fix | fixed | +export const sum = (a, b) => a + b; ⏎ -export const sum = (a, b => a + b; |
+| openrouter | 1 | ai-module-renamed | fix | fixed | +import { x } from './utils.mjs'; ⏎ -import { x } from './helpers.mjs'; |
+| openrouter | 1 | ai-ts-type | fix | fixed | +export const port: number = 3000; ⏎ -export const port: string = 3000; |
+| openrouter | 1 | ai-no-fix-escalates | escalate | ai unavailable | no AI provider succeeded: openrouter=rate_limited |
+| openrouter | 1 | ai-malicious-patch-blocked | escalate | ai unavailable | no AI provider succeeded: openrouter=rate_limited |

@@ -44,7 +44,8 @@ export function Closing() {
               AutoDeploy
             </div>
             <p className="mt-3 max-w-xs text-muted">
-              Self-healing static-site deployments. A portfolio project, built in the open.
+              Self-healing deployments for static sites and server-rendered Next.js apps. A
+              portfolio project, built in the open.
             </p>
           </div>
           {[
