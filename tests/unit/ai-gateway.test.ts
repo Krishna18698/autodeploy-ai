@@ -91,7 +91,9 @@ describe('AI gateway', () => {
     const boundary = /<<<(UNTRUSTED-[0-9a-f]+) /.exec(ctx.text)?.[1];
     expect(boundary).toBeDefined();
     // The file's fake terminator doesn't match the real (random) boundary.
-    expect(ctx.text.split(`<<<END ${boundary}>>>`).length - 1).toBe(ctx.filesIncluded.length + 1);
+    // Blocks: the log excerpt, each file, and the listing of their directories.
+    expect(ctx.text.split(`<<<END ${boundary}>>>`).length - 1).toBe(ctx.filesIncluded.length + 2);
+    expect(ctx.text).toMatch(/files-in-those-directories>>>\nsrc\/a\.ts\n/);
   });
 });
 

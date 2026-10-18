@@ -27,7 +27,7 @@ import {
   type UsageRecord,
   workersAi,
 } from '@autodeploy/ai';
-import { checkPatch, classify } from '@autodeploy/core';
+import { checkPatch, classify, editsToDiff } from '@autodeploy/core';
 import { readTree } from '@autodeploy/github';
 import { readEnvProd } from '../../scripts/env-prod';
 import { CASES } from '../corpus/generate';
@@ -68,6 +68,12 @@ const CONFIGS: { label: string; provider: () => Provider; runs: number }[] = [
 
 const AI_CASES = CASES.filter((c) => c.name.startsWith('ai-'));
 const TOOLING = /^(build\.mjs|package\.json)$/;
+// The TypeScript fixtures fake the compiler with a string check that accepts one
+// exact fix; real models find others (number instead of '3000'), so the real
+// compiler is the judge for them.
+const TSC = resolve(import.meta.dirname, '../../node_modules/typescript/bin/tsc');
+const tsc = (dir: string, files: string[]) =>
+  run('node', [TSC, '--noEmit', '--strict', '--skipLibCheck', '--target', 'es2022', ...files], dir);
 
 function run(cmd: string, args: string[], cwd: string, input?: string) {
   return new Promise<{ code: number; out: string }>((done) => {
@@ -122,11 +128,16 @@ async function evaluate(c: (typeof CASES)[number], provider: Provider) {
       const diagnosis = await gateway.diagnose(ctx.text);
       const withFiles = buildFailureContext(signature, tree, diagnosis.value.filesToRead);
       const proposal = await gateway.proposePatch(withFiles.text, diagnosis.value);
-      const diff = proposal.value.diff;
-      if (!diff.trim()) return done('no patch');
+      if (proposal.value.edits.length === 0) return done('no patch');
+      const built = editsToDiff((p) => tree.read(p), proposal.value.edits);
+      if (!built.ok) return done('patch did not apply', { error: built.error });
+      const diff = built.diff;
       const policy = checkPatch(diff);
       if (!policy.allowed) return done('blocked by policy', { diff });
       const touchesTooling = policy.files.some((f) => TOOLING.test(f.path));
+      // None of these failures needs a new file; inventing one (a missing module
+      // with a made-up value) only hides the error.
+      const createsFiles = policy.files.some((f) => f.isNew);
       const applied = await run(
         'git',
         ['apply', '--whitespace=nowarn', '--recount', '-'],
@@ -134,9 +145,13 @@ async function evaluate(c: (typeof CASES)[number], provider: Provider) {
         diff,
       );
       if (applied.code !== 0) return done('patch did not apply', { diff });
-      const again = await run('npm', ['run', 'build', '--silent'], dir);
+      const tsFiles = Object.keys(c.files).filter((f) => f.endsWith('.ts'));
+      const again =
+        tsFiles.length > 0 && c.expect === 'ai'
+          ? await tsc(dir, tsFiles)
+          : await run('npm', ['run', 'build', '--silent'], dir);
       if (again.code !== 0) return done('patch did not fix', { diff });
-      const falseFix = c.expect !== 'ai' || touchesTooling;
+      const falseFix = c.expect !== 'ai' || touchesTooling || createsFiles;
       return done(falseFix ? 'false fix' : 'fixed', { diff });
     } catch (err) {
       return done('ai unavailable', { error: (err as Error).message.slice(0, 160) });
@@ -171,7 +186,16 @@ for (const cfg of CONFIGS) {
         if (res.outcome !== 'false fix' && res.outcome !== 'fixed') escalated++;
       }
       if (res.outcome === 'false fix') falseFixes++;
-      const line = `| ${cfg.label} | ${r} | ${c.name} | ${c.expect === 'ai' ? 'fix' : 'escalate'} | ${res.outcome} |`;
+      const detail =
+        'error' in res && res.error
+          ? String(res.error)
+          : 'diff' in res && res.diff
+            ? String(res.diff)
+                .split('\n')
+                .filter((l) => /^[-+][^-+]/.test(l))
+                .join(' ⏎ ')
+            : '';
+      const line = `| ${cfg.label} | ${r} | ${c.name} | ${c.expect === 'ai' ? 'fix' : 'escalate'} | ${res.outcome} | ${detail.replaceAll('|', '\\|').slice(0, 160)} |`;
       rows.push(line);
       console.log(line);
     }
@@ -192,8 +216,8 @@ ${summary.join('\n')}
 
 ## Every run
 
-| Provider | Run | Case | Expected | Outcome |
-|---|---|---|---|---|
+| Provider | Run | Case | Expected | Outcome | Detail |
+|---|---|---|---|---|---|
 ${rows.join('\n')}
 `;
 const out = resolve(import.meta.dirname, 'repair-report.md');

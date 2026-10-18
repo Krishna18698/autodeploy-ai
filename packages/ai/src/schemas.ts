@@ -26,12 +26,23 @@ export const Diagnosis = z.object({
 });
 export type Diagnosis = z.infer<typeof Diagnosis>;
 
+// Edits, not a diff: models copy text reliably but mangle diff formatting (lost
+// line breaks, wrong hunk counts). AutoDeploy computes the real diff from them.
 export const PatchProposal = z.object({
   explanation: z.string().min(1).max(800),
-  diff: z
-    .string()
-    .max(20_000)
-    .describe('Unified diff with a/ and b/ prefixes; empty if no safe fix'),
+  edits: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(300).describe('Repo-relative path of a file shown above'),
+        find: z
+          .string()
+          .max(4000)
+          .describe('Exact text now in the file, copied verbatim, long enough to occur once'),
+        replace: z.string().max(4000).describe('What the found text becomes'),
+      }),
+    )
+    .max(10)
+    .describe('Empty when there is no safe fix'),
 });
 export type PatchProposal = z.infer<typeof PatchProposal>;
 

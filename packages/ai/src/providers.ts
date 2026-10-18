@@ -1,3 +1,4 @@
+import { diffToEdits } from '@autodeploy/core';
 import { TimeoutError, withTimeout } from '@autodeploy/resilience';
 
 // Providers all speak the OpenAI chat-completions dialect, so one adapter
@@ -137,7 +138,8 @@ export class OpenAICompatibleProvider implements Provider {
  */
 export const nvidia = (apiKey: string, model: string, thinking: 'on' | 'off' | 'default' = 'off') =>
   new OpenAICompatibleProvider('nvidia', 'https://integrate.api.nvidia.com/v1', apiKey, model, {
-    structuredOutput: 'json_object',
+    // json_object only promises JSON, so models invented their own field names.
+    structuredOutput: 'json_schema',
     ...(thinking !== 'default' && {
       extraBody: { chat_template_kwargs: { enable_thinking: thinking === 'on' } },
     }),
@@ -212,8 +214,11 @@ export class MockProvider implements Provider {
           user,
         );
       content = m?.[1]
-        ? { explanation: 'Applied the fix described by the repository fixture.', diff: m[1] }
-        : { explanation: 'The mock provider has no fix for this repository.', diff: '' };
+        ? {
+            explanation: 'Applied the fix described by the repository fixture.',
+            edits: diffToEdits(m[1]),
+          }
+        : { explanation: 'The mock provider has no fix for this repository.', edits: [] };
     } else {
       throw new ProviderError('mock', 400, `unknown schema ${schema}`);
     }

@@ -133,7 +133,9 @@ export function classify(logLines: readonly string[], exitCode?: number): ErrorS
         code: m.code,
         signature: hashSignature(m.code, keyLine),
         keyLine,
-        excerpt: clean.slice(Math.max(0, i - 3), i + 4),
+        // Node prints the failing file four lines above a SyntaxError
+        // (path, code, caret, blank), so look a little further back.
+        excerpt: clean.slice(Math.max(0, i - 5), i + 4),
         captures,
       };
     }

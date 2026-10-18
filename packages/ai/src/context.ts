@@ -7,14 +7,31 @@ import type { ErrorSignature, FileTree } from '@autodeploy/core';
 
 export const MAX_CONTEXT_CHARS = 24_000;
 const MAX_FILE_CHARS = 8_000;
+const MAX_NEARBY = 40;
 
-const PATH_IN_LOG =
-  /(?:^|[\s(])((?:\.\/)?(?:src|app|pages|components|lib|utils|hooks)\/[\w./-]+\.(?:m?[jt]sx?|vue|svelte|astro|css))(?::\d+)?/g;
+const SOURCE_DIRS = new Set(['src', 'app', 'pages', 'components', 'lib', 'utils', 'hooks']);
+const SOURCE_FILE = /\.(?:c?m?[jt]sx?|vue|svelte|astro|css)$/;
 
+/**
+ * Repo-relative source paths an error points at. Logs often print absolute
+ * paths (`file:///workspace/src/a.mjs:1`, `/tmp/x/src/a.ts`), so every suffix
+ * starting at a source directory is a candidate; callers keep the ones that
+ * exist in the repository.
+ */
 export function filesMentioned(excerpt: readonly string[]): string[] {
   const out = new Set<string>();
   for (const line of excerpt) {
-    for (const m of line.matchAll(PATH_IN_LOG)) if (m[1]) out.add(m[1].replace(/^\.\//, ''));
+    for (const raw of line.split(/[\s()'"`,]+/)) {
+      const token = raw
+        .replace(/^file:\/\//, '')
+        .replace(/(?::\d+)+:?$/, '')
+        .replace(/^\.\//, '');
+      if (!SOURCE_FILE.test(token)) continue;
+      const parts = token.split('/');
+      parts.forEach((part, i) => {
+        if (SOURCE_DIRS.has(part)) out.add(parts.slice(i).join('/'));
+      });
+    }
   }
   return [...out];
 }
@@ -61,6 +78,12 @@ export function buildFailureContext(
     blocks.push({ label: `file:${path}`, content: clipped });
     included.push(path);
   }
+  // What else is in those directories: a fix for "cannot find './helpers'" is
+  // usually a sibling (utils.mjs) the model can't know about otherwise.
+  const dirs = new Set(wanted.filter((p) => p.includes('/')).map((p) => p.replace(/\/[^/]+$/, '')));
+  const nearby = tree.files.filter((f) => dirs.has(f.replace(/\/[^/]+$/, ''))).slice(0, MAX_NEARBY);
+  if (nearby.length > 0)
+    blocks.push({ label: 'files-in-those-directories', content: nearby.join('\n') });
   const { text } = fence(blocks);
   return {
     text: `Error code: ${sig.code}\nNormalized key line: ${sig.keyLine}\n\n${text}`,

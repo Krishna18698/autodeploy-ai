@@ -1,5 +1,6 @@
 export * from './analyzer.js';
 export * from './build-config.js';
+export * from './edits.js';
 export * from './hostnames.js';
 export * from './patch-policy.js';
 export * from './redact.js';

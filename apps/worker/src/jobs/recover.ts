@@ -9,6 +9,7 @@ import {
   diffConfig,
   type ErrorCode,
   type ErrorSignature,
+  editsToDiff,
 } from '@autodeploy/core';
 import { recordEvent, transition } from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
@@ -206,18 +207,31 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
         model: diagnosis.model,
       };
       const proposal = await deps.ai.proposePatch(ctxWithFiles.text, diagnosis.value);
-      if (!proposal.value.diff.trim()) {
+      if (proposal.value.edits.length === 0) {
         await stopAi(deps, ref, repair.id, proposal.value.explanation, diag);
         return;
       }
-      const policy = checkPatch(proposal.value.diff);
+      // The model proposes edits; the diff is computed from the files themselves.
+      const built = editsToDiff((p) => tree.read(p), proposal.value.edits);
+      if (!built.ok) {
+        await stopAi(
+          deps,
+          ref,
+          repair.id,
+          `The AI's fix did not fit the code: ${built.error}.`,
+          diag,
+        );
+        return;
+      }
+      const diff = built.diff;
+      const policy = checkPatch(diff);
       const policyView = {
         allowed: policy.allowed,
         violations: policy.violations,
         approvalReasons: policy.approvalReasons,
       };
       if (!policy.allowed) {
-        await deps.sql`update repair_attempts set diagnosis = ${deps.sql.json(diag as never)}, diff = ${proposal.value.diff},
+        await deps.sql`update repair_attempts set diagnosis = ${deps.sql.json(diag as never)}, diff = ${diff},
           policy = ${deps.sql.json(policyView as never)}, status = 'failed', title = 'AI patch rejected by policy',
           explanation = ${policy.violations.map((v) => `${v.path ?? ''} ${v.detail}`.trim()).join('; ')} where id = ${repair.id}`;
         await deps.sql.begin(async (tx) => {
@@ -235,11 +249,11 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
       }
       const config: BuildConfig = {
         ...failed.build_config,
-        patch: proposal.value.diff,
+        patch: diff,
         requiresApproval: true,
       };
       await deps.sql.begin(async (tx) => {
-        await tx`update repair_attempts set diagnosis = ${tx.json(diag as never)}, diff = ${proposal.value.diff},
+        await tx`update repair_attempts set diagnosis = ${tx.json(diag as never)}, diff = ${diff},
           policy = ${tx.json(policyView as never)}, title = ${diag.summary.slice(0, 200)}, explanation = ${proposal.value.explanation},
           status = 'applied' where id = ${repair.id}`;
         await recordEvent(tx, ref, 'repair_proposed', {
