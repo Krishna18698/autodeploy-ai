@@ -11,6 +11,8 @@ coverage/
 .env.*
 # API token the production smoke suite signs in with
 infra/deploy/.e2e-token
+# Full-access Resend key for domain setup only (never shipped)
+infra/deploy/.resend-setup-key
 !.env.example
 
 # terraform

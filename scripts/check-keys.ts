@@ -78,6 +78,18 @@ const checks: Record<string, () => Promise<Result>> = {
     const r = await fetch('https://api.resend.com/domains', {
       headers: { authorization: `Bearer ${key}` },
     });
+    if (r.status === 401 && (await short(r)).includes('restricted')) {
+      // Sending-only key (what the server should have). An empty send proves the
+      // key authenticates without sending anything: 422 = valid key, bad body.
+      const s = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      return s.status === 422
+        ? { ok: true, detail: 'sending-only key accepted (domain status needs the setup key)' }
+        : { ok: false, detail: `send check: HTTP ${s.status} ${await short(s)}` };
+    }
     if (!r.ok) return { ok: false, detail: `HTTP ${r.status} ${await short(r)}` };
     const domain = get('PLATFORM_DOMAIN') ?? 'autodeploy.dpdns.org';
     const { data = [] } = (await r.json()) as { data?: { name: string; status: string }[] };

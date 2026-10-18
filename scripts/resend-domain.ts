@@ -8,16 +8,20 @@
 // so `terraform plan/apply` in infra/terraform creates them in Cloudflare.
 // Reads RESEND_API_KEY and PLATFORM_DOMAIN from infra/deploy/.env.prod.
 
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { readEnvProd } from './env-prod';
 
 const root = resolve(import.meta.dirname, '..');
 const get = readEnvProd();
-const key = get('RESEND_API_KEY');
+// A full-access key can manage every domain in the Resend account, so setup
+// uses one kept only on this machine (infra/deploy/.resend-setup-key, never
+// shipped); the server gets a sending-only key limited to the platform domain.
+const setupFile = resolve(root, 'infra/deploy/.resend-setup-key');
+const key = existsSync(setupFile) ? readFileSync(setupFile, 'utf8').trim() : get('RESEND_API_KEY');
 const domain = get('PLATFORM_DOMAIN') ?? 'autodeploy.dpdns.org';
 if (!key) {
-  console.error('RESEND_API_KEY is not set in infra/deploy/.env.prod');
+  console.error('No Resend key: save a full-access one to infra/deploy/.resend-setup-key');
   process.exit(1);
 }
 
