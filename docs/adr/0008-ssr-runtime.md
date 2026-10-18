@@ -58,3 +58,25 @@ and starts on its next request.
 - User code runs persistently, so isolation matters more than for builds; the
   limits above and the SSRF-guarded egress are the boundary.
 - Per-org quota: 3 SSR projects.
+
+## Amendment, 2026-10-19: any Node server, not only Next.js
+
+The Next.js-only scope above was narrower than what was asked for (server-rendered
+apps in general) and wasn't called out at the time. The runtime now takes a
+server spec per deployment instead of assuming `node server.js`:
+
+| Bundle | Used for | Start command (in the bundle) |
+|---|---|---|
+| `next-standalone` | Next.js | `node server.js` (unchanged) |
+| `output-dir` | Nuxt, SolidStart (Nitro's self-contained `.output/`) | `node server/index.mjs` |
+| `project` | SvelteKit (adapter-node), Astro (@astrojs/node), Remix, React Router, Vite SSR, any Node server | the framework's server, or the app's `start` script |
+
+A `project` bundle is the built checkout with its `node_modules` (caches and
+`.git` left out), started in the project's root directory with its binaries on
+`PATH`, `PORT`/`HOST`/`HOSTNAME` set, read-only, as before. Static files the
+framework emits (`build/client`, `dist/client`, `.output/public`) are served
+from the edge. Bundles are capped (`RUNTIME_BUNDLE_MAX_MB`, 300 MB compressed)
+because free storage is 10 GB in all. Apps without a usable server (SvelteKit
+with adapter-auto, Astro without an adapter, Vite SSR without a start script)
+get a message naming the one change that makes them deployable.
+

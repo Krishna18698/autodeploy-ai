@@ -1,0 +1,11 @@
+{
+  "name": "e2e-ssr-nuxt",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build"
+  },
+  "dependencies": {
+    "nuxt": "^4.4.5"
+  }
+}

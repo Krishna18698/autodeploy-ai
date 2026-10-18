@@ -1,0 +1,12 @@
+{
+  "name": "e2e-ssr-astro",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "astro build"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.8",
+    "astro": "^7.4.0"
+  }
+}

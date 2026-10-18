@@ -46,3 +46,11 @@ apps/web/CLAUDE.md
 
 # Personal notes and generated overviews (never committed)
 docs/private/
+
+# Build output of the end-to-end fixture apps (they are built locally to check them)
+tests/e2e/fixtures/*/build/
+tests/e2e/fixtures/*/dist/
+tests/e2e/fixtures/*/.output/
+tests/e2e/fixtures/*/.nuxt/
+tests/e2e/fixtures/*/.svelte-kit/
+tests/e2e/fixtures/*/.astro/

@@ -21,6 +21,8 @@ export type ExecuteResult =
       serverDir?: string;
       /** SSR builds: the app's root inside the workspace (for .next/static and public). */
       projectRoot?: string;
+      /** Non-Next servers: what becomes the runtime bundle (an output dir or the checkout). */
+      bundleDir?: string;
     }
   | {
       ok: false;

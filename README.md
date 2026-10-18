@@ -33,9 +33,10 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
 - **Validates** in headless Chromium with no network, and keeps a screenshot.
 - **Ships** content-addressed artifacts; going live or rolling back moves one
   pointer (measured 11.7 ms).
-- **Runs server-rendered Next.js apps** (API routes, server actions) as
-  gVisor containers that wake on the first request and sleep after 15 idle
-  minutes, so one free VM hosts many of them ([ADR 0008](docs/adr/0008-ssr-runtime.md)).
+- **Runs server-rendered apps** (Next.js, Nuxt, SvelteKit, Astro, Remix, React
+  Router, SolidStart, or any Node server with a start script) as gVisor
+  containers that wake on the first request and sleep after 15 idle minutes, so
+  one free VM hosts many of them ([ADR 0008](docs/adr/0008-ssr-runtime.md)).
 - **Streams** build logs and status over SSE (resumable), via Kafka.
 
 ## Backend concepts, and where they live
@@ -90,7 +91,8 @@ pnpm load               # k6: 100 concurrent deploys + polling dashboards
 
 The smoke suite imports real apps from [`tests/e2e/fixtures`](tests/e2e/fixtures)
 through the UI (a Vite site, a pnpm project pinned to a version the build image
-lacks, a server-rendered Next.js app, and one that fails until an env var is
+lacks, server-rendered Next.js and Node apps (SvelteKit, Astro and Nuxt with
+`E2E_FRAMEWORKS=1`), and one that fails until an env var is
 set), checks each one live, clicks through every dashboard page at desktop and
 phone widths, and deletes what it created. It runs locally with dev sign-in,
 or against production with an API token:

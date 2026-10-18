@@ -20,9 +20,37 @@ export type Inference<T> = { value: T; evidence: Evidence[] };
  * Bump whenever analyze() reaches different conclusions for the same repo, so
  * cached analyses (API and worker, keyed by commit) are recomputed. v2: SSR.
  */
-export const ANALYSIS_VERSION = 3;
+export const ANALYSIS_VERSION = 4; // v4: server frameworks beyond Next.js
 
-export type Framework = 'next' | 'vite' | 'astro' | 'cra' | 'static' | 'unknown';
+export type Framework =
+  | 'next'
+  | 'nuxt'
+  | 'sveltekit'
+  | 'remix'
+  | 'react-router'
+  | 'solid-start'
+  | 'astro'
+  | 'vite'
+  | 'cra'
+  | 'node'
+  | 'static'
+  | 'unknown';
+
+/**
+ * How a server-rendered app is packaged and started (ADR 0008):
+ * - next-standalone: Next's traced standalone server (smallest bundle);
+ * - output-dir: a self-contained build directory (Nuxt/SolidStart's .output);
+ * - project: the built project as it is, with its node_modules.
+ * The start command must listen on $PORT; it runs in the bundle's project root.
+ */
+export type ServerSpec = {
+  bundle: 'next-standalone' | 'output-dir' | 'project';
+  /** For output-dir: the directory bundled, relative to the project root. */
+  dir?: string;
+  start: string;
+  /** Static files the edge serves without waking the server (project-relative). */
+  assets?: string;
+};
 export type PackageManager = 'pnpm' | 'yarn' | 'npm' | 'bun' | 'none';
 export type DeployMode = 'static' | 'ssr' | 'unknown';
 
@@ -35,6 +63,8 @@ export type Analysis = {
   buildCommand: Inference<string | null>;
   outputDir: Inference<string>;
   mode: Inference<DeployMode>;
+  /** How the server runs, when mode is 'ssr'. */
+  server?: Inference<ServerSpec>;
   basePath?: string;
   envVars: Inference<string[]>;
   monorepo: boolean;
@@ -42,6 +72,19 @@ export type Analysis = {
   unsupportedReason?: string;
   warnings: string[];
 };
+
+const SERVER_LIBS = [
+  'express',
+  'fastify',
+  'hono',
+  '@hono/node-server',
+  'koa',
+  '@nestjs/core',
+  'h3',
+  'polka',
+  'restify',
+  'elysia',
+];
 
 type PackageJson = {
   name?: string;
@@ -147,10 +190,28 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
   const vite = depVersion(pkg, 'vite');
   const astro = depVersion(pkg, 'astro');
   const cra = depVersion(pkg, 'react-scripts');
+  // Meta-frameworks first: SvelteKit, Remix and React Router projects contain vite too.
+  const meta: Array<[Framework, string]> = [
+    ['nuxt', 'nuxt'],
+    ['solid-start', '@solidjs/start'],
+    ['sveltekit', '@sveltejs/kit'],
+    ['remix', '@remix-run/dev'],
+    ['remix', '@remix-run/node'],
+    ['react-router', '@react-router/dev'],
+  ];
+  const metaHit = meta.find(([, dep]) => depVersion(pkg, dep));
+  const serverLib = SERVER_LIBS.find((d) => depVersion(pkg, d));
   if (next) {
     framework = 'next';
     fwVersion = next;
     fwEvidence.push({ source: 'package.json', detail: `next@${next} in dependencies` });
+  } else if (metaHit) {
+    framework = metaHit[0];
+    fwVersion = depVersion(pkg, metaHit[1]);
+    fwEvidence.push({
+      source: 'package.json',
+      detail: `${metaHit[1]}@${fwVersion} in dependencies`,
+    });
   } else if (astro) {
     framework = 'astro';
     fwVersion = astro;
@@ -163,6 +224,15 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
     framework = 'cra';
     fwVersion = cra;
     fwEvidence.push({ source: 'package.json', detail: `react-scripts@${cra} in dependencies` });
+  } else if (pkg?.scripts?.start && (serverLib || !pkg.scripts.build)) {
+    // A plain Node server: Express, Fastify, Hono, … or anything with a start script.
+    framework = 'node';
+    fwEvidence.push({
+      source: 'package.json',
+      detail: serverLib
+        ? `${serverLib} in dependencies, scripts.start "${pkg.scripts.start}"`
+        : `scripts.start "${pkg.scripts.start}" and no build script`,
+    });
   } else if (!pkg && fileSet.has(join(rootDir, 'index.html'))) {
     framework = 'static';
     fwEvidence.push({ source: 'index.html', detail: 'no package.json; plain static site' });
@@ -301,6 +371,8 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
   };
   let basePath: string | undefined;
   let unsupportedReason: string | undefined;
+  let server: Inference<ServerSpec> | undefined;
+  const startScript = pkg?.scripts?.start;
 
   if (framework === 'next') {
     const cfgPath = firstExisting(tree, rootDir, [
@@ -339,7 +411,123 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
         value: '.next',
         evidence: [{ source: 'next', detail: 'standalone server in .next/standalone' }],
       };
+      server = {
+        value: { bundle: 'next-standalone', start: 'node server.js' },
+        evidence: [{ source: 'next', detail: 'standalone build: .next/standalone/server.js' }],
+      };
     }
+  } else if (framework === 'nuxt' || framework === 'solid-start') {
+    const name = framework === 'nuxt' ? 'Nuxt' : 'SolidStart';
+    if (/\b(nuxt|nuxi) generate\b/.test(pkg?.scripts?.build ?? '')) {
+      mode = {
+        value: 'static',
+        evidence: [{ source: 'package.json', detail: 'build runs nuxt generate' }],
+      };
+      outputDir = {
+        value: '.output/public',
+        evidence: [{ source: 'nuxt', detail: 'generate writes .output/public/' }],
+      };
+    } else {
+      mode = {
+        value: 'ssr',
+        evidence: [{ source: 'package.json', detail: `${name} builds a Nitro server` }],
+      };
+      outputDir = {
+        value: '.output',
+        evidence: [{ source: 'nitro', detail: 'self-contained server in .output/' }],
+      };
+      server = {
+        value: {
+          bundle: 'output-dir',
+          dir: '.output',
+          start: 'node server/index.mjs',
+          assets: '.output/public',
+        },
+        evidence: [{ source: 'nitro', detail: 'node-server preset: .output/server/index.mjs' }],
+      };
+    }
+  } else if (framework === 'sveltekit') {
+    // SvelteKit 3 takes its config in vite.config (sveltekit({ adapter })); 2 used svelte.config.
+    const cfgPath =
+      [
+        firstExisting(tree, rootDir, ['vite.config.ts', 'vite.config.js', 'vite.config.mjs']),
+        firstExisting(tree, rootDir, ['svelte.config.js', 'svelte.config.mjs', 'svelte.config.ts']),
+      ].find((p) => p && /@sveltejs\/adapter-/.test(tree.read(p) ?? '')) ?? undefined;
+    const cfg = cfgPath ? (tree.read(cfgPath) ?? '') : '';
+    const adapter = /@sveltejs\/adapter-([\w-]+)/.exec(cfg)?.[1];
+    const source = cfgPath ?? 'svelte.config';
+    if (adapter === 'static') {
+      const pages = /pages\s*:\s*['"`]([^'"`]+)['"`]/.exec(cfg)?.[1] ?? 'build';
+      mode = { value: 'static', evidence: [{ source, detail: '@sveltejs/adapter-static' }] };
+      outputDir = {
+        value: pages,
+        evidence: [{ source, detail: `adapter-static writes ${pages}/` }],
+      };
+    } else if (adapter === 'node') {
+      mode = { value: 'ssr', evidence: [{ source, detail: '@sveltejs/adapter-node' }] };
+      outputDir = { value: 'build', evidence: [{ source, detail: 'adapter-node writes build/' }] };
+      server = {
+        value: { bundle: 'project', start: 'node build', assets: 'build/client' },
+        evidence: [{ source, detail: 'adapter-node server: node build' }],
+      };
+    } else {
+      unsupportedReason = `This SvelteKit app uses ${adapter ? `@sveltejs/adapter-${adapter}` : 'an adapter AutoDeploy cannot find'}. Use @sveltejs/adapter-node to run it as a server, or @sveltejs/adapter-static for a static site.`;
+    }
+  } else if (framework === 'remix' || framework === 'react-router') {
+    const cfgPath = firstExisting(tree, rootDir, [
+      'react-router.config.ts',
+      'react-router.config.js',
+    ]);
+    const spa = cfgPath !== undefined && /\bssr\s*:\s*false/.test(tree.read(cfgPath) ?? '');
+    if (spa) {
+      mode = {
+        value: 'static',
+        evidence: [{ source: cfgPath ?? '', detail: 'ssr: false (SPA mode)' }],
+      };
+      outputDir = {
+        value: 'build/client',
+        evidence: [{ source: 'react-router', detail: 'SPA mode writes build/client/' }],
+      };
+    } else {
+      const fallback =
+        framework === 'remix'
+          ? 'remix-serve ./build/server/index.js'
+          : 'react-router-serve ./build/server/index.js';
+      mode = {
+        value: 'ssr',
+        evidence: [
+          {
+            source: 'package.json',
+            detail: `${framework === 'remix' ? 'Remix' : 'React Router'} server rendering`,
+          },
+        ],
+      };
+      outputDir = {
+        value: 'build',
+        evidence: [{ source: framework, detail: 'build/server and build/client' }],
+      };
+      server = {
+        value: { bundle: 'project', start: startScript ?? fallback, assets: 'build/client' },
+        evidence: [
+          startScript
+            ? { source: 'package.json', detail: `scripts.start "${startScript}"` }
+            : { source: framework, detail: `default server: ${fallback}` },
+        ],
+      };
+    }
+  } else if (framework === 'node') {
+    mode = {
+      value: 'ssr',
+      evidence: [{ source: 'package.json', detail: 'a Node server started by scripts.start' }],
+    };
+    outputDir = {
+      value: '.',
+      evidence: [{ source: 'package.json', detail: 'runs from the project' }],
+    };
+    server = {
+      value: { bundle: 'project', start: startScript ?? 'npm start' },
+      evidence: [{ source: 'package.json', detail: `scripts.start "${startScript}"` }],
+    };
   } else if (framework === 'vite') {
     const cfgPath = firstExisting(tree, rootDir, [
       'vite.config.ts',
@@ -367,9 +555,14 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
       };
     else
       outputDir = { value: 'dist', evidence: [{ source: 'vite', detail: 'default outDir dist/' }] };
-    if (ssr)
+    if (ssr && startScript)
+      server = {
+        value: { bundle: 'project', start: startScript },
+        evidence: [{ source: 'package.json', detail: `scripts.start "${startScript}"` }],
+      };
+    else if (ssr)
       unsupportedReason =
-        'This Vite app is configured for server-side rendering. V1 serves static sites only.';
+        'This Vite app renders on a server, but package.json has no "start" script to run it. Add one that starts the server on $PORT.';
   } else if (framework === 'astro') {
     const cfgPath = firstExisting(tree, rootDir, [
       'astro.config.mjs',
@@ -377,20 +570,25 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
       'astro.config.js',
     ]);
     const cfg = cfgPath ? (tree.read(cfgPath) ?? '') : '';
-    const server = /output\s*:\s*['"`](server|hybrid)['"`]/.exec(cfg)?.[1];
+    const astroOutput = /output\s*:\s*['"`](server|hybrid)['"`]/.exec(cfg)?.[1];
     basePath = /\bbase\s*:\s*['"`]([^'"`]+)['"`]/.exec(cfg)?.[1];
-    mode = server
+    mode = astroOutput
       ? {
           value: 'ssr',
-          evidence: [{ source: cfgPath ?? 'astro.config', detail: `output: '${server}'` }],
+          evidence: [{ source: cfgPath ?? 'astro.config', detail: `output: '${astroOutput}'` }],
         }
       : {
           value: 'static',
           evidence: [{ source: cfgPath ?? 'astro', detail: 'default static output' }],
         };
     outputDir = { value: 'dist', evidence: [{ source: 'astro', detail: 'default outDir dist/' }] };
-    if (server)
-      unsupportedReason = `This Astro app uses output: '${server}' and needs a server. V1 serves static sites only.`;
+    if (astroOutput && depVersion(pkg, '@astrojs/node'))
+      server = {
+        value: { bundle: 'project', start: 'node ./dist/server/entry.mjs', assets: 'dist/client' },
+        evidence: [{ source: 'package.json', detail: '@astrojs/node standalone server' }],
+      };
+    else if (astroOutput)
+      unsupportedReason = `This Astro app uses output: '${astroOutput}', which needs a server adapter. Add @astrojs/node with mode: 'standalone'.`;
   } else if (framework === 'cra') {
     mode = {
       value: 'static',
@@ -469,6 +667,7 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
     buildCommand,
     outputDir,
     mode,
+    ...(server && mode.value === 'ssr' && { server }),
     ...(basePath !== undefined && { basePath }),
     envVars: { value: [...envNames].sort(), evidence: envEvidence },
     monorepo,

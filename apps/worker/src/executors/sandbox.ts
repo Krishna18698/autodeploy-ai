@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { access, readdir } from 'node:fs/promises';
 import { join, posix, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline';
+import { NEXT_SERVER } from '@autodeploy/core';
 import type { Env } from '../env.js';
 import { inside, PathEscapeError } from './paths.js';
 import { proxyByAddress } from './proxy-address.js';
@@ -120,7 +121,8 @@ export class SandboxExecutor implements Executor {
     // (--disable-warning needs Node 20.11+; Node 18 builds keep the warning.)
     // Server builds: Next's own switch for standalone output, so the user's
     // next.config is never edited (ADR 0008).
-    if (config.mode === 'ssr') env.NEXT_PRIVATE_STANDALONE = '1';
+    const server = config.mode === 'ssr' ? (config.server ?? NEXT_SERVER) : null;
+    if (server?.bundle === 'next-standalone') env.NEXT_PRIVATE_STANDALONE = '1';
     if (config.nodeVersion >= 20) {
       env.NODE_OPTIONS = [env.NODE_OPTIONS, '--disable-warning=UNDICI-EHPA']
         .filter(Boolean)
@@ -215,7 +217,26 @@ export class SandboxExecutor implements Executor {
       log.write(`autodeploy: ${err.message}; nothing was published`);
       return { ok: false, exitCode, reason: 'failed', durationMs, indexDirs: [] };
     }
-    if (config.mode === 'ssr') {
+    if (server && server.bundle !== 'next-standalone') {
+      // Other servers: a self-contained output directory (Nuxt's .output) or the
+      // built checkout itself becomes the runtime bundle.
+      const bundleDir =
+        server.bundle === 'output-dir'
+          ? await inside(projectRoot, server.dir ?? '.output').catch(() => null)
+          : input.srcDir;
+      const exists = bundleDir
+        ? await access(bundleDir).then(
+            () => true,
+            () => false,
+          )
+        : false;
+      if (!bundleDir || !exists) {
+        log.write(`autodeploy: the build did not produce ${server.dir ?? 'its server'}`);
+        return { ok: false, exitCode, reason: 'output_missing', durationMs, indexDirs: [] };
+      }
+      return { ok: true, outputDir: projectRoot, durationMs, projectRoot, bundleDir };
+    }
+    if (server) {
       const standalone = await inside(outputDir, 'standalone').catch(() => null);
       const serverDir = standalone ? await findStandaloneServer(standalone) : null;
       if (!serverDir) {

@@ -61,6 +61,13 @@ const Evidence = z.object({ source: z.string(), detail: z.string() });
 const Inference = <T extends z.ZodType>(v: T) =>
   z.object({ value: v, evidence: z.array(Evidence) });
 
+export const ServerSpec = z.object({
+  bundle: z.enum(['next-standalone', 'output-dir', 'project']),
+  dir: z.string().optional(),
+  start: z.string().describe('Starts the server; it must listen on $PORT'),
+  assets: z.string().optional(),
+});
+
 export const Analysis = z.object({
   rootDir: z.string(),
   framework: Inference(z.string()).extend({ version: z.string().optional() }),
@@ -70,6 +77,7 @@ export const Analysis = z.object({
   buildCommand: Inference(z.string().nullable()),
   outputDir: Inference(z.string()),
   mode: Inference(z.enum(['static', 'ssr', 'unknown'])),
+  server: Inference(ServerSpec).optional(),
   basePath: z.string().optional(),
   envVars: Inference(z.array(z.string())),
   monorepo: z.boolean(),
@@ -199,6 +207,8 @@ export const BuildConfig = z.object({
   env: z.record(z.string(), z.string()),
   patch: z.string().optional(),
   requiresApproval: z.boolean().optional(),
+  mode: z.enum(['static', 'ssr']).optional(),
+  server: ServerSpec.optional(),
 });
 
 export const Attempt = z.object({

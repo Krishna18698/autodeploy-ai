@@ -40,6 +40,8 @@ export type TransitionInput = {
     mode: 'static' | 'ssr';
     runtime_sha: string | null;
     runtime_node: number | null;
+    runtime_command: string | null;
+    runtime_workdir: string | null;
   }>;
   /** Only transition if the current status is one of these (optimistic guard). */
   expectFrom?: readonly DeploymentStatus[];

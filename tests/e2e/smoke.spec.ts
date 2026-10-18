@@ -294,6 +294,53 @@ test('a server-rendered app runs on demand: pages, POST, guarded egress', async 
   expect(problems).toEqual([]);
 });
 
+// Server-rendered apps beyond Next.js: each runs from its own start command.
+// Production allows 3 server projects per org, so each test deletes its own.
+const SERVER_APPS: { fixture: string; marker: string; always?: boolean }[] = [
+  { fixture: 'ssr-node', marker: 'e2e node ok at', always: true },
+  { fixture: 'ssr-sveltekit', marker: 'e2e sveltekit ok at' },
+  { fixture: 'ssr-astro', marker: 'e2e astro ok at' },
+  { fixture: 'ssr-nuxt', marker: 'e2e nuxt ok at' },
+];
+for (const app of SERVER_APPS) {
+  test(`a server-rendered ${app.fixture.replace('ssr-', '')} app runs from its own start command`, async ({
+    page,
+  }) => {
+    test.skip(
+      !app.always && !process.env.E2E_FRAMEWORKS,
+      'set E2E_FRAMEWORKS=1 for every framework',
+    );
+    const id = await importFixture(
+      page,
+      app.fixture,
+      `e2e-${app.fixture.replace('ssr-', '')}-${RUN}`,
+    );
+    try {
+      const d = await waitSettled(page.request, id, 15);
+      expect(d.status).toBe('ACTIVE');
+      const first = await site(d.url ?? '');
+      expect(first.status).toBe(200);
+      expect(first.body).toContain(app.marker);
+      const again = await site(d.url ?? '');
+      expect(again.body, 'rendered per request').not.toBe(first.body);
+      if (app.fixture === 'ssr-node') {
+        const echo = await site(d.url ?? '', '/echo', {
+          method: 'POST',
+          body: JSON.stringify({ message: RUN }),
+        });
+        expect(JSON.parse(echo.body)).toEqual({ echo: RUN });
+      }
+    } finally {
+      const dep = await api<Deployment>(page.request, `/api/v1/deployments/${id}`);
+      const { csrfToken } = await api<{ csrfToken: string | null }>(page.request, '/api/v1/me');
+      await page.request.delete(`/api/v1/projects/${dep.projectId}`, {
+        headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
+      });
+      created.splice(created.indexOf(dep.projectId), 1);
+    }
+  });
+}
+
 test('a type error is repaired by AI, approved by a person, and goes live', async ({ page }) => {
   // Needs real AI providers; production has them once the keys are in.
   test.skip(!process.env.E2E_AI, 'set E2E_AI=1 when AI providers are configured');

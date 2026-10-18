@@ -9,6 +9,7 @@ import {
   classify,
   createRedactor,
   type DeploymentStatus,
+  NEXT_SERVER,
   routeKey,
 } from '@autodeploy/core';
 import { activate, recordEvent, routeValue, transition } from '@autodeploy/db';
@@ -24,7 +25,13 @@ import type { Executor } from '../executors/types.js';
 import { metrics } from '../metrics.js';
 import { storeArtifact } from '../pipeline/artifact.js';
 import { LogSink } from '../pipeline/logs.js';
-import { assembleSsr, packRuntimeBundle, uploadRuntimeBundle } from '../pipeline/runtime-bundle.js';
+import {
+  assembleServer,
+  assembleSsr,
+  BUNDLE_EXCLUDES,
+  packRuntimeBundle,
+  uploadRuntimeBundle,
+} from '../pipeline/runtime-bundle.js';
 import { loadSecrets } from '../pipeline/secrets.js';
 import { cleanupWorkspace, fetchSource, workspaceFor } from '../pipeline/source.js';
 import { validateSite } from '../pipeline/validate.js';
@@ -302,20 +309,42 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
 
         // ---- validate, store, publish ----
         // Server builds: split into static assets + a runtime bundle (ADR 0008).
-        const ssr =
-          config.mode === 'ssr' && result.serverDir && result.projectRoot
-            ? await assembleSsr(
-                result.serverDir,
-                result.projectRoot,
-                config.outputDir,
-                join(ws.out, 'ssr'),
-              )
-            : null;
-        const packed = ssr ? await packRuntimeBundle(ssr.bundleDir) : null;
-        if (ssr && packed)
-          log.stage(
-            `server bundle ${(packed.bytes / 1024 / 1024).toFixed(1)} MB · starting it for validation`,
+        const server = config.mode === 'ssr' ? (config.server ?? NEXT_SERVER) : null;
+        let ssr: { bundleDir: string; assetsDir: string; workdir: string } | null = null;
+        let excludes: readonly string[] = [];
+        if (server?.bundle === 'next-standalone' && result.serverDir && result.projectRoot) {
+          const out = join(ws.out, 'ssr');
+          ssr = {
+            ...(await assembleSsr(result.serverDir, result.projectRoot, config.outputDir, out)),
+            workdir: '.',
+          };
+        } else if (server && result.bundleDir && result.projectRoot) {
+          ssr = await assembleServer(
+            server,
+            result.projectRoot,
+            result.bundleDir,
+            config.rootDir,
+            join(ws.out, 'ssr'),
           );
+          excludes = BUNDLE_EXCLUDES;
+        }
+        const packed = ssr
+          ? await packRuntimeBundle(ssr.bundleDir, {
+              file: join(ws.out, 'runtime.tar.gz'),
+              excludes,
+            })
+          : null;
+        if (ssr && packed) {
+          const mb = packed.bytes / 1024 / 1024;
+          if (mb > deps.env.RUNTIME_BUNDLE_MAX_MB) {
+            log.write(
+              `autodeploy: the server bundle is ${mb.toFixed(0)} MB compressed; the limit is ${deps.env.RUNTIME_BUNDLE_MAX_MB} MB. Keep build-only packages in devDependencies, or trim what the project ships.`,
+            );
+            await finishFailed(deps, d, attempt, log, null, [], 'server bundle too large');
+            return;
+          }
+          log.stage(`server bundle ${mb.toFixed(1)} MB · starting it for validation`);
+        }
         log.stage('validating in headless Chromium');
         await log.close();
         await deps.sql.begin(async (tx) => {
@@ -332,7 +361,9 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
           ssr ? ssr.bundleDir : result.outputDir,
           join(ws.out, 'validation'),
           ctx.signal,
-          ssr ? { ssr: true, env: secrets } : undefined,
+          ssr && server
+            ? { ssr: true, env: secrets, start: server.start, workdir: ssr.workdir }
+            : undefined,
         );
         if (!validation.ok) {
           for (const e of [
@@ -409,9 +440,16 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
           projectSlug: d.slug,
           mode: runtime ? 'ssr' : 'static',
         });
-        const modeColumns = runtime
-          ? { mode: 'ssr' as const, runtime_sha: runtime.sha256, runtime_node: config.nodeVersion }
-          : {};
+        const modeColumns =
+          runtime && server && ssr
+            ? {
+                mode: 'ssr' as const,
+                runtime_sha: runtime.sha256,
+                runtime_node: config.nodeVersion,
+                runtime_command: server.start,
+                runtime_workdir: ssr.workdir,
+              }
+            : {};
         await deps.routes.put(
           routeKey({ kind: 'deployment', slug: d.slug, number: d.number }),
           value,

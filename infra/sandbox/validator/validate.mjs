@@ -1,8 +1,9 @@
 // Serves /site on localhost, loads it in Chromium, and reports whether it
 // actually works: HTTP 200 for "/", every same-origin asset loads, no
 // uncaught exceptions. Writes /out/result.json and /out/screenshot.png.
-// MODE=ssr: /site is a Next.js standalone bundle; its server.js is started
-// instead (still with no network: the container runs with --network none).
+// MODE=ssr: /site is a server bundle; START_COMMAND is run in /site/WORKDIR
+// (default `node server.js`, a Next.js standalone server) and has to listen on
+// $PORT, still with no network: the container runs with --network none.
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { stat, writeFile } from 'node:fs/promises';
@@ -56,9 +57,18 @@ const PLATFORM_ONLY = /^\/_vercel\//;
 let child = null;
 const serverLog = [];
 if (SSR) {
-  child = spawn('node', ['server.js'], {
-    cwd: SITE,
-    env: { ...process.env, PORT: '4173', HOSTNAME: '127.0.0.1', NODE_ENV: 'production' },
+  const cwd = join(SITE, normalize(process.env.WORKDIR ?? '.').replace(/^(\.\.(\/|$))+/, ''));
+  child = spawn('sh', ['-c', process.env.START_COMMAND || 'node server.js'], {
+    cwd,
+    env: {
+      ...process.env,
+      // Frameworks read different names: PORT/HOST (most), HOSTNAME (Next).
+      PORT: '4173',
+      HOST: '127.0.0.1',
+      HOSTNAME: '127.0.0.1',
+      NODE_ENV: 'production',
+      PATH: `${join(cwd, 'node_modules/.bin')}:${join(SITE, 'node_modules/.bin')}:${process.env.PATH}`,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   for (const s of [child.stdout, child.stderr])

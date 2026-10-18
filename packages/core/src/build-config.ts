@@ -1,4 +1,4 @@
-import type { Analysis } from './analyzer.js';
+import type { Analysis, ServerSpec } from './analyzer.js';
 
 // Everything an executor needs to run one build attempt. Rules produce a new
 // BuildConfig from an old one; nothing mutates in place, so every attempt's
@@ -16,9 +16,14 @@ export type BuildConfig = {
   patch?: string;
   /** Publishing this attempt needs a human to approve it. */
   requiresApproval?: boolean;
-  /** 'ssr': a Next.js server (standalone build, run on demand); default static. */
+  /** 'ssr': a server run on demand (ADR 0008); default static. */
   mode?: 'static' | 'ssr';
+  /** How the server is bundled and started; absent on older Next.js builds. */
+  server?: ServerSpec;
 };
+
+/** What builds recorded before server specs existed ran: Next.js standalone. */
+export const NEXT_SERVER: ServerSpec = { bundle: 'next-standalone', start: 'node server.js' };
 
 export type ProjectOverrides = Partial<
   Pick<BuildConfig, 'nodeVersion' | 'installCommand' | 'buildCommand' | 'outputDir' | 'rootDir'>
@@ -32,7 +37,10 @@ export function buildConfigFrom(analysis: Analysis, overrides: ProjectOverrides 
     outputDir: overrides.outputDir ?? analysis.outputDir.value,
     rootDir: overrides.rootDir ?? analysis.rootDir,
     env: {},
-    ...(analysis.mode.value === 'ssr' && { mode: 'ssr' as const }),
+    ...(analysis.mode.value === 'ssr' && {
+      mode: 'ssr' as const,
+      server: analysis.server?.value ?? NEXT_SERVER,
+    }),
   };
 }
 

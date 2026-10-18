@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip } from 'node:zlib';
 import type { Keyring } from '@autodeploy/crypto';
@@ -79,8 +79,11 @@ export class RuntimeManager {
         mode: string;
         runtime_sha: string | null;
         runtime_node: number | null;
+        runtime_command: string | null;
+        runtime_workdir: string | null;
       }[]
-    >`select org_id, project_id, status, mode, runtime_sha, runtime_node from deployments where id = ${deploymentId}`;
+    >`select org_id, project_id, status, mode, runtime_sha, runtime_node, runtime_command, runtime_workdir
+      from deployments where id = ${deploymentId}`;
     if (dep?.mode !== 'ssr' || !dep.runtime_sha || !SERVE_STATUSES.includes(dep.status))
       throw new RuntimeUnavailable(404, 'No server-rendered deployment is live here.');
 
@@ -97,7 +100,9 @@ export class RuntimeManager {
     const env: Record<string, string> = {
       ...secrets,
       NODE_ENV: 'production',
+      // Frameworks read different names: PORT/HOST (most), HOSTNAME (Next).
       PORT: '3000',
+      HOST: '0.0.0.0',
       HOSTNAME: '0.0.0.0',
       NEXT_TELEMETRY_DISABLED: '1',
       // Outbound HTTP(S) only through the SSRF-guarded public proxy.
@@ -109,45 +114,17 @@ export class RuntimeManager {
         NODE_OPTIONS: '--disable-warning=UNDICI-EHPA',
       }),
     };
-    const args = [
-      'run',
-      '-d',
-      '--name',
+    const args = containerArgs({
       container,
-      '--label',
-      `autodeploy.deployment=${deploymentId}`,
-      ...(e.SANDBOX_RUNTIME === 'runsc' ? ['--runtime=runsc'] : []),
-      ...(e.RUNTIME_REACH === 'network'
-        ? ['--network', e.RUNTIME_NETWORK]
-        : ['-p', '127.0.0.1::3000']),
-      '--memory',
-      e.RUNTIME_MEMORY,
-      '--memory-swap',
-      e.RUNTIME_MEMORY,
-      '--cpus',
-      e.RUNTIME_CPUS,
-      '--pids-limit',
-      '128',
-      '--read-only',
-      '--tmpfs',
-      '/tmp:rw,nosuid,size=64m',
-      '--tmpfs',
-      '/app/.next/cache:rw,nosuid,size=64m,mode=1777',
-      '--cap-drop',
-      'ALL',
-      '--security-opt',
-      'no-new-privileges',
-      '--user',
-      '1000:1000',
-      '-v',
-      `${bundle}:/app:ro`,
-      '-w',
-      '/app',
-      ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
-      `${e.SANDBOX_IMAGE_PREFIX}${dep.runtime_node ?? 22}`,
-      'node',
-      'server.js',
-    ];
+      deploymentId,
+      bundle,
+      image: `${e.SANDBOX_IMAGE_PREFIX}${dep.runtime_node ?? 22}`,
+      // Older Next.js deployments recorded no command: they run server.js.
+      command: dep.runtime_command ?? 'node server.js',
+      workdir: dep.runtime_workdir ?? '.',
+      env,
+      env_: e,
+    });
     const out: string[] = [];
     if ((await runProcess('docker', args, (l) => out.push(l))) !== 0) {
       await this.record(deploymentId, dep.org_id, { status: 'failed', error: out.join(' ') });
@@ -194,7 +171,8 @@ export class RuntimeManager {
   /** The bundle unpacked on disk (shared by every start of the same build). */
   private async bundle(sha: string): Promise<string> {
     const dir = join(this.d.env.RUNTIME_BUNDLES_DIR, sha);
-    if (await stat(join(dir, 'server.js')).catch(() => null)) return dir;
+    // The directory only appears (renamed into place) once fully unpacked.
+    if (await stat(dir).catch(() => null)) return dir;
     const obj = await this.d.storage.getStream(runtimeKey(sha));
     if (!obj) throw new RuntimeUnavailable(502, 'This build is no longer stored.');
     const tmp = `${dir}.tmp-${randomBytes(3).toString('hex')}`;
@@ -328,4 +306,74 @@ export class RuntimeManager {
         Object.fromEntries(Object.entries(row).filter(([k]) => k !== 'deployment_id')),
       )}`;
   }
+}
+
+/**
+ * `docker run` for one server: read-only bundle, non-root, capped, tmpfs for
+ * /tmp. The start command runs in the bundle's workdir with its node_modules
+ * binaries on PATH, as npm would run a script. Next.js bundles also get a
+ * tmpfs for .next/cache (its build leaves the mount point in the bundle).
+ */
+export function containerArgs(o: {
+  container: string;
+  deploymentId: string;
+  bundle: string;
+  image: string;
+  command: string;
+  workdir: string;
+  env: Record<string, string>;
+  env_: Pick<
+    Env,
+    'SANDBOX_RUNTIME' | 'RUNTIME_REACH' | 'RUNTIME_NETWORK' | 'RUNTIME_MEMORY' | 'RUNTIME_CPUS'
+  >;
+}): string[] {
+  const e = o.env_;
+  const wd = posix.join('/app', posix.normalize(o.workdir).replace(/^(\.\.(\/|$))+/, ''));
+  const next = o.command === 'node server.js' && wd === '/app';
+  const env = {
+    ...o.env,
+    HOME: '/tmp',
+    PATH: `${wd}/node_modules/.bin:/app/node_modules/.bin:/usr/local/bin:/usr/bin:/bin`,
+  };
+  return [
+    'run',
+    '-d',
+    '--name',
+    o.container,
+    '--label',
+    `autodeploy.deployment=${o.deploymentId}`,
+    ...(e.SANDBOX_RUNTIME === 'runsc' ? ['--runtime=runsc'] : []),
+    ...(e.RUNTIME_REACH === 'network'
+      ? ['--network', e.RUNTIME_NETWORK]
+      : ['-p', '127.0.0.1::3000']),
+    '--memory',
+    e.RUNTIME_MEMORY,
+    '--memory-swap',
+    e.RUNTIME_MEMORY,
+    '--cpus',
+    e.RUNTIME_CPUS,
+    '--pids-limit',
+    '128',
+    '--read-only',
+    '--tmpfs',
+    '/tmp:rw,nosuid,size=64m',
+    ...(next ? ['--tmpfs', '/app/.next/cache:rw,nosuid,size=64m,mode=1777'] : []),
+    '--cap-drop',
+    'ALL',
+    '--security-opt',
+    'no-new-privileges',
+    '--user',
+    '1000:1000',
+    '-v',
+    `${o.bundle}:/app:ro`,
+    '-w',
+    wd,
+    ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
+    o.image,
+    'sh',
+    '-c',
+    // exec: the server itself gets the stop signal (a shell wouldn't pass it
+    // on); a compound command (a && b) has to stay a shell.
+    /[;&|]/.test(o.command) ? o.command : `exec ${o.command}`,
+  ];
 }

@@ -19,6 +19,15 @@
       "!tests/load/config.json",
       "!tests/security/zap",
       "!tests/demo/acme-shop",
+      "!tests/e2e/fixtures/*/build",
+      "!tests/e2e/fixtures/*/.svelte-kit",
+      "!tests/e2e/fixtures/*/.output",
+      "!tests/e2e/fixtures/*/.nuxt",
+      "!tests/e2e/fixtures/*/.astro",
+      "!tests/e2e/fixtures/*/package-lock.json",
+      "!tests/e2e/fixtures/**/*.astro",
+      "!tests/e2e/fixtures/**/*.vue",
+      "!tests/e2e/fixtures/**/*.svelte",
       "!.vercel"
     ]
   },

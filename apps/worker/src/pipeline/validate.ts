@@ -22,8 +22,8 @@ export async function validateSite(
   siteDir: string,
   outDir: string,
   signal: AbortSignal,
-  /** Server builds: the validator starts server.js from siteDir instead of serving files. */
-  opts?: { ssr: true; env: Record<string, string> },
+  /** Server builds: the validator starts the server from siteDir instead of serving files. */
+  opts?: { ssr: true; env: Record<string, string>; start?: string; workdir?: string },
 ): Promise<ValidationResult> {
   const skipped: ValidationResult = {
     ok: true,
@@ -44,7 +44,15 @@ export async function validateSite(
   // A server writes caches (.next/cache, ISR) under its own directory.
   if (opts?.ssr) await runProcess('chmod', ['-R', 'a+rwX', siteDir], () => {});
   const ssrArgs = opts?.ssr
-    ? ['-e', 'MODE=ssr', ...Object.entries(opts.env).flatMap(([k, v]) => ['-e', `${k}=${v}`])]
+    ? [
+        ...Object.entries(opts.env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
+        '-e',
+        'MODE=ssr',
+        '-e',
+        `START_COMMAND=${opts.start ?? 'node server.js'}`,
+        '-e',
+        `WORKDIR=${opts.workdir ?? '.'}`,
+      ]
     : [];
   const code = await runProcess(
     'docker',

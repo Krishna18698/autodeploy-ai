@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { access, cp, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { ServerSpec } from '@autodeploy/core';
 import type { Deps } from '../deps.js';
+import { inside } from '../executors/paths.js';
 
 // A server-rendered (Next.js standalone) build becomes two things (ADR 0008):
 //  - assets: /_next/static/* and public/*, published as a normal static
@@ -46,9 +48,41 @@ export async function assembleSsr(
   return { bundleDir, assetsDir };
 }
 
-function tarGz(dir: string, file: string): Promise<void> {
+/**
+ * Any other server (Nuxt, SvelteKit, Astro, Remix, a plain Node app): the bundle
+ * is used where it lies (an output directory, or the whole built checkout so
+ * node_modules and workspace packages come along); the framework's static
+ * files are copied out for the edge. `workdir` is where the start command runs.
+ */
+export async function assembleServer(
+  server: ServerSpec,
+  projectRoot: string,
+  bundleDir: string,
+  rootDir: string,
+  outDir: string,
+): Promise<SsrOutput & { workdir: string }> {
+  const assetsDir = join(outDir, 'assets');
+  await rm(outDir, { recursive: true, force: true });
+  await mkdir(assetsDir, { recursive: true });
+  if (server.assets) {
+    const src = await inside(projectRoot, server.assets).catch(() => null);
+    if (src && (await exists(src)))
+      await cp(src, assetsDir, { recursive: true, verbatimSymlinks: true });
+  }
+  const workdir =
+    server.bundle === 'project' && rootDir && rootDir !== '.'
+      ? rootDir.replace(/^\.\//, '').replace(/\/+$/, '')
+      : '.';
+  return { bundleDir, assetsDir, workdir };
+}
+
+/** Left out of non-Next bundles: history and caches, never needed to run. */
+export const BUNDLE_EXCLUDES = ['.git', '.cache', '.turbo', 'node_modules/.cache', '.next/cache'];
+
+function tarGz(dir: string, file: string, excludes: readonly string[] = []): Promise<void> {
   return new Promise((resolve, reject) => {
-    const p = spawn('tar', ['-czf', file, '-C', dir, '.'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const args = ['-czf', file, ...excludes.map((e) => `--exclude=${e}`), '-C', dir, '.'];
+    const p = spawn('tar', args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';
     p.stderr.on('data', (d) => (err += d));
     p.on('error', reject);
@@ -67,9 +101,12 @@ export const runtimeKey = (sha: string) => `runtimes/${sha}.tar.gz`;
 export type PackedBundle = { file: string; sha256: string; bytes: number };
 
 /** Packs the pristine bundle (before validation runs it and writes caches). */
-export async function packRuntimeBundle(bundleDir: string): Promise<PackedBundle> {
-  const file = `${bundleDir}.tar.gz`;
-  await tarGz(bundleDir, file);
+export async function packRuntimeBundle(
+  bundleDir: string,
+  opts: { file?: string; excludes?: readonly string[] } = {},
+): Promise<PackedBundle> {
+  const file = opts.file ?? `${bundleDir}.tar.gz`;
+  await tarGz(bundleDir, file, opts.excludes);
   return { file, sha256: await sha256File(file), bytes: (await stat(file)).size };
 }
 
