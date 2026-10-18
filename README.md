@@ -122,7 +122,8 @@ tests/     fixtures (failure corpus)
 - Sites served by a Cloudflare Worker from Backblaze B2; the dashboard on Vercel,
   served on the app hostname by the same Worker.
 - GitHub App sign-in and private repositories.
-- The production smoke suite passes 12/12.
+- The production smoke suite passes 16/16, including a real AI repair approved
+  in the dashboard.
 
 Connected: AI repair (NVIDIA, OpenRouter fallback, Workers AI classifier),
 email (Resend), telemetry (Grafana Cloud over OTLP) and error tracking
