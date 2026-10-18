@@ -100,9 +100,14 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
     captures: failed.error_detail?.captures ?? {},
   };
   const [project] = await deps.sql<
-    { analysis: { framework?: { value: string }; packageManager?: { value: string } } | null }[]
+    {
+      analysis: { framework?: { value: string }; packageManager?: { value: string } } | null;
+      ai_repair: boolean;
+    }[]
   >`
-    select analysis from projects where id = ${d.project_id}`;
+    select analysis, ai_repair from projects where id = ${d.project_id}`;
+  // The project's owner can keep their code away from AI providers.
+  const aiOn = deps.ai.available && project?.ai_repair !== false;
 
   const decision = decideRecovery(
     {
@@ -117,8 +122,11 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
       appliedRules: repairs.filter((r) => r.rule_id).map((r) => r.rule_id as string),
       repairsMade: repairs.length,
     },
-    deps.ai.available,
+    aiOn,
   );
+  if (decision.kind === 'give_up' && deps.ai.available && !aiOn)
+    decision.reason =
+      'No rule matched, and AI repair is turned off for this project (Build settings).';
   metrics.recoveries.inc({ kind: decision.kind });
   deps.log.info(
     { deploymentId, code: signature.code, decision: decision.kind },

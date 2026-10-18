@@ -13,10 +13,9 @@ import {
   SlugAvailability,
   UpdateProjectBody,
 } from '@autodeploy/contracts';
-import { isValidSlug, RESERVED_LABELS, routeKey } from '@autodeploy/core';
+import { isValidSlug, RESERVED_LABELS } from '@autodeploy/core';
 import { encrypt, previewSecret } from '@autodeploy/crypto';
 import { withOrg } from '@autodeploy/db';
-import { enqueue } from '@autodeploy/queue';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
@@ -24,6 +23,7 @@ import { AppError, badRequest, conflict, notFound } from '../lib/errors.js';
 import { authOf, requireRole } from '../plugins/auth.js';
 import { createDeployment } from '../services/deployments.js';
 import { decodeCursor, encodeCursor, type ProjectRow, toProject } from '../services/mappers.js';
+import { queueSiteRemoval } from '../services/site-removal.js';
 import { analyzeSource, resolveSource, suggestSlug } from '../services/sources.js';
 
 export const projectRoutes =
@@ -296,6 +296,7 @@ export const projectRoutes =
         if (b.buildCommand !== undefined) set.build_command = b.buildCommand;
         if (b.outputDir !== undefined) set.output_dir = b.outputDir;
         if (b.rootDir !== undefined) set.root_dir = b.rootDir;
+        if (b.aiRepair !== undefined) set.ai_repair = b.aiRepair;
         if (b.nodeVersion != null && ![18, 20, 22, 24].includes(b.nodeVersion)) {
           throw badRequest('unsupported_node', 'Supported Node versions: 18, 20, 22, 24.');
         }
@@ -334,22 +335,9 @@ export const projectRoutes =
         const orgId = authOf(req).orgId;
         const deleted = await withOrg(deps.sql, orgId, async (tx) => {
           await tx`select set_config('app.allow_event_delete', 'on', true)`;
-          // The edge keeps serving whatever KV points at, so take every
-          // hostname this project ever had off the edge too (in this transaction).
-          const rows = await tx<{ slug: string; number: number; pr_number: number | null }[]>`
-            select p.slug, d.number, d.pr_number from projects p
-            left join deployments d on d.project_id = p.id where p.id = ${req.params.id}`;
-          const slug = rows[0]?.slug;
-          if (slug) {
-            const keys = new Set([routeKey({ kind: 'production', slug })]);
-            for (const r of rows) {
-              if (r.number != null)
-                keys.add(routeKey({ kind: 'deployment', slug, number: r.number }));
-              if (r.pr_number != null)
-                keys.add(routeKey({ kind: 'preview', slug, pr: r.pr_number }));
-            }
-            for (const key of keys) await enqueue(tx, 'routes.remove', { key }, { orgId });
-          }
+          // The edge keeps serving whatever KV points at: take the project's
+          // hostnames off it too, in this transaction.
+          await queueSiteRemoval(tx, req.params.id, orgId);
           return tx`delete from projects where id = ${req.params.id} returning id`;
         });
         if (deleted.length === 0) throw notFound('Project');

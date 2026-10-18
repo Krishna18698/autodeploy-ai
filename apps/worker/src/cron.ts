@@ -4,6 +4,7 @@ import { reapExpiredLeases, stats } from '@autodeploy/queue';
 import { reportError } from '@autodeploy/telemetry';
 import type { Deps } from './deps.js';
 import { metrics } from './metrics.js';
+import { sweepStorage } from './storage-sweep.js';
 
 // Periodic maintenance. Only one worker runs it: the one holding a session-
 // level advisory lock. If that process dies its connection closes, the lock
@@ -61,6 +62,11 @@ const TASKS: Task[] = [
     run: async (deps) => pruneArtifacts(deps),
   },
   {
+    name: 'storage-sweep',
+    everyMs: 24 * 60 * 60_000,
+    run: async (deps) => sweepStorage(deps),
+  },
+  {
     name: 'key-rotation',
     everyMs: 60 * 60_000,
     run: async (deps) => rotateKeys(deps),
@@ -112,7 +118,9 @@ async function pruneArtifacts(deps: Deps) {
   for (const v of victims) {
     await deps.storage.deletePrefix(`${v.storage_prefix}/`);
     await deps.sql.begin(async (tx) => {
-      await tx`update deployments set artifact_id = null where artifact_id = ${v.id}`;
+      // A pruned deployment can't be served, so it lets go of its server bundle
+      // too; the storage sweep then deletes bundles nothing refers to.
+      await tx`update deployments set artifact_id = null, runtime_sha = null where artifact_id = ${v.id}`;
       await tx`delete from artifacts where id = ${v.id}`;
     });
   }

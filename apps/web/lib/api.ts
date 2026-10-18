@@ -46,7 +46,8 @@ export const patch = <T>(path: string, body: unknown, headers?: HeadersInit) =>
   api<T>(path, { method: 'PATCH', body: JSON.stringify(body), ...(headers && { headers }) });
 export const put = <T>(path: string, body: unknown) =>
   api<T>(path, { method: 'PUT', body: JSON.stringify(body) });
-export const del = <T>(path: string) => api<T>(path, { method: 'DELETE' });
+export const del = <T>(path: string, body?: unknown) =>
+  api<T>(path, { method: 'DELETE', ...(body !== undefined && { body: JSON.stringify(body) }) });
 
 export function newIdempotencyKey(prefix = 'ui') {
   return `${prefix}-${crypto.randomUUID()}`;

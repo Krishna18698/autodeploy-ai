@@ -151,6 +151,33 @@ export class Storage {
     return keys;
   }
 
+  /** Keys under `prefix` with when each was last written. */
+  async listObjects(prefix: string): Promise<{ key: string; modified: Date }[]> {
+    const out: { key: string; modified: Date }[] = [];
+    let token: string | undefined;
+    do {
+      const r = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }),
+      );
+      for (const o of r.Contents ?? [])
+        if (o.Key) out.push({ key: o.Key, modified: o.LastModified ?? new Date(0) });
+      token = r.IsTruncated ? r.NextContinuationToken : undefined;
+    } while (token);
+    return out;
+  }
+
+  async deleteKeys(keys: readonly string[]): Promise<number> {
+    for (let i = 0; i < keys.length; i += 1000) {
+      await this.client.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: { Objects: keys.slice(i, i + 1000).map((Key) => ({ Key })) },
+        }),
+      );
+    }
+    return keys.length;
+  }
+
   async deletePrefix(prefix: string): Promise<number> {
     const keys = await this.list(prefix);
     for (let i = 0; i < keys.length; i += 1000) {

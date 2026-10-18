@@ -13,6 +13,7 @@ export type ProjectRow = {
   default_branch: string;
   framework: string;
   root_dir: string;
+  ai_repair: boolean;
   node_version: number | null;
   install_command: string | null;
   build_command: string | null;
@@ -44,6 +45,7 @@ export function toProject(r: ProjectRow, domain: string): Project {
       buildCommand: r.build_command,
       outputDir: r.output_dir,
       rootDir: r.root_dir,
+      aiRepair: r.ai_repair,
     },
     executor: r.executor,
     analysis: r.analysis,

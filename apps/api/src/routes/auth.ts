@@ -7,8 +7,9 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { githubAppConfigured } from '../env.js';
-import { AppError, forbidden, unavailable } from '../lib/errors.js';
+import { AppError, badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
 import { authOf, requireRole, SESSION_COOKIE } from '../plugins/auth.js';
+import { queueSiteRemoval } from '../services/site-removal.js';
 
 const SESSION_DAYS = 14;
 const STATE_COOKIE = 'ad_oauth_state';
@@ -252,12 +253,61 @@ export const authRoutes =
         schema: {
           tags: ['auth'],
           body: z.object({ email: z.email().max(254).nullable() }),
+          response: { 204: z.null().describe('Saved') },
         },
       },
       async (req, reply) => {
         const a = authOf(req);
         await deps.sql`update users set email = ${req.body.email} where id = ${a.userId}`;
         req.auditTarget = { type: 'user', id: a.userId };
+        return reply.code(204).send(null);
+      },
+    );
+
+    // Deletes the account and every org it alone owns (projects, sites, env vars,
+    // tokens, history). Sessions only, never an API token, and the login typed
+    // back as confirmation. Stored files are removed by the storage sweep.
+    app.delete(
+      '/api/v1/me',
+      {
+        preHandler: requireRole(),
+        config: { rateLimit: { limit: 5, windowMs: 60_000, key: 'principal' } },
+        schema: { tags: ['auth'], body: z.object({ confirm: z.string().max(100) }) },
+      },
+      async (req, reply) => {
+        const a = authOf(req);
+        if (a.via !== 'session')
+          throw forbidden('Sign in to delete your account; API tokens cannot.');
+        const [user] = await deps.sql<
+          { login: string }[]
+        >`select login from users where id = ${a.userId}`;
+        if (!user || req.body.confirm.trim().toLowerCase() !== user.login.toLowerCase())
+          throw badRequest('confirm_mismatch', `Type ${user?.login ?? 'your login'} to confirm.`);
+        await deps.sql.begin(async (tx) => {
+          await tx`select set_config('app.allow_event_delete', 'on', true)`;
+          const owned = await tx<{ org_id: string; others: number }[]>`
+            select m.org_id, (select count(*)::int from memberships x
+              where x.org_id = m.org_id and x.user_id <> ${a.userId}) as others
+            from memberships m where m.user_id = ${a.userId} and m.role = 'owner'`;
+          if (owned.some((o) => o.others > 0))
+            throw conflict(
+              'org_has_members',
+              'You own an organisation with other members. Transfer ownership or remove them first.',
+            );
+          for (const o of owned) {
+            const projects = await tx<
+              { id: string }[]
+            >`select id from projects where org_id = ${o.org_id}`;
+            for (const p of projects) await queueSiteRemoval(tx, p.id, null);
+            await tx`delete from orgs where id = ${o.org_id}`;
+          }
+          await tx`delete from users where id = ${a.userId}`;
+        });
+        req.log.info({ orgs: 'deleted' }, 'account deleted');
+        reply.clearCookie(SESSION_COOKIE, {
+          path: '/',
+          ...(deps.env.SESSION_COOKIE_DOMAIN && { domain: deps.env.SESSION_COOKIE_DOMAIN }),
+        });
         return reply.code(204).send();
       },
     );

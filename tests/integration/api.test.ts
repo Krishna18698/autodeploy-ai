@@ -368,3 +368,47 @@ describe('API contract', () => {
     expect(missing.filter((x) => !allowed.test(x))).toEqual([]);
   });
 });
+
+describe('Deleting an account', () => {
+  it('needs a session and the login typed back, refuses while others share an owned org, then removes everything', async () => {
+    const s = await login('del-owner');
+    const [me] = await deps.sql<{ id: string; org_id: string }[]>`
+      select u.id, m.org_id from users u join memberships m on m.user_id = u.id where u.login = 'del-owner'`;
+    const p = await makeProject(deps.sql, me!.org_id);
+    await makeDeployment(deps.sql, me!.org_id, p.id, 'CREATED', 1);
+    const del = (headers: Record<string, string>, confirm: string) =>
+      app.inject({ method: 'DELETE', url: '/api/v1/me', headers, payload: { confirm } });
+    const cookie = { cookie: s.cookie, 'x-csrf-token': s.csrf };
+
+    const tokenRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tokens',
+      headers: cookie,
+      payload: { name: 't', scopes: ['admin'] },
+    });
+    const token = tokenRes.json().token as string;
+    expect((await del({ authorization: `Bearer ${token}` }, 'del-owner')).statusCode).toBe(403);
+    expect((await del(cookie, 'someone-else')).statusCode).toBe(400);
+
+    await login('del-member');
+    const [other] = await deps.sql<
+      { id: string }[]
+    >`select id from users where login = 'del-member'`;
+    await deps.sql`insert into memberships (org_id, user_id, role) values (${me!.org_id}, ${other!.id}, 'member')`;
+    expect((await del(cookie, 'del-owner')).statusCode).toBe(409);
+    await deps.sql`delete from memberships where org_id = ${me!.org_id} and user_id = ${other!.id}`;
+
+    expect((await del(cookie, 'DEL-OWNER')).statusCode).toBe(204);
+    expect(await deps.sql`select 1 from users where id = ${me!.id}`).toHaveLength(0);
+    expect(await deps.sql`select 1 from orgs where id = ${me!.org_id}`).toHaveLength(0);
+    expect(await deps.sql`select 1 from projects where id = ${p.id}`).toHaveLength(0);
+    // The site comes off the edge even though its org is gone.
+    const jobs = await deps.sql<{ org_id: string | null }[]>`
+      select org_id from jobs where type = 'routes.remove' and payload->>'key' like ${`%${p.slug}%`}`;
+    expect(jobs.length).toBeGreaterThan(0);
+    expect(jobs.every((j) => j.org_id === null)).toBe(true);
+    expect(
+      (await app.inject({ url: '/api/v1/me', headers: { cookie: s.cookie } })).statusCode,
+    ).toBe(401);
+  });
+});

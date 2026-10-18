@@ -10,7 +10,7 @@ import { ApiError, del, patch, post } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useAudit, useDeliveries, useMe, useMembers, useTokens, useWebhooks } from '@/lib/queries';
 
-type TabId = 'team' | 'notifications' | 'tokens' | 'webhooks' | 'audit';
+type TabId = 'team' | 'account' | 'tokens' | 'webhooks' | 'audit';
 const EVENTS = [
   'deployment.created',
   'deployment.succeeded',
@@ -36,7 +36,7 @@ export default function SettingsPage() {
         onChange={setTab}
         tabs={[
           { id: 'team', label: 'Team' },
-          { id: 'notifications', label: 'Notifications' },
+          { id: 'account', label: 'Account' },
           { id: 'tokens', label: 'API tokens' },
           ...(admin
             ? [
@@ -48,7 +48,12 @@ export default function SettingsPage() {
       />
       <div className="mt-5">
         {tab === 'team' && <Team canEdit={Boolean(admin)} />}
-        {tab === 'notifications' && <Notifications />}
+        {tab === 'account' && (
+          <div className="flex flex-col gap-5">
+            <Notifications />
+            <DeleteAccount />
+          </div>
+        )}
         {tab === 'tokens' && <Tokens />}
         {tab === 'webhooks' && <Webhooks />}
         {tab === 'audit' && <Audit />}
@@ -184,6 +189,53 @@ function Notifications() {
         />
         <Button type="submit" variant="primary" loading={saving} disabled={value === current}>
           Save
+        </Button>
+      </form>
+    </Panel>
+  );
+}
+
+/** Deletes the account and every org it alone owns; typed confirmation, sessions only. */
+function DeleteAccount() {
+  const me = useMe();
+  const toast = useToast();
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const login = me.data?.user.login ?? '';
+  const remove = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await del('/api/v1/me', { confirm });
+      location.assign('/');
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not delete the account', 'fail');
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel title="Delete account">
+      <p className="mb-3 text-[13px] text-muted">
+        Deletes your account and every organisation only you own: its projects, live sites,
+        environment variables, API tokens and history. Stored builds and logs are removed within a
+        day; encrypted backups age out within 4 weeks. This can't be undone. Uninstall the
+        AutoDeploy GitHub App from your GitHub settings as well.
+      </p>
+      <form onSubmit={remove} className="flex flex-col gap-2 sm:flex-row">
+        <input
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder={login ? `type ${login} to confirm` : 'type your login to confirm'}
+          aria-label="Type your login to confirm"
+          className={`${input} flex-1`}
+        />
+        <Button
+          type="submit"
+          variant="danger"
+          loading={busy}
+          disabled={!login || confirm.trim().toLowerCase() !== login.toLowerCase()}
+        >
+          Delete my account
         </Button>
       </form>
     </Panel>

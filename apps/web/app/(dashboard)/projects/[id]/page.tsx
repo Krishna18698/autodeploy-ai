@@ -200,6 +200,7 @@ function Settings({
     rootDir: project.settings.rootDir,
     defaultBranch: project.defaultBranch,
   });
+  const [aiRepair, setAiRepair] = useState(project.settings.aiRepair);
   const [saving, setSaving] = useState(false);
   const detected = project.analysis;
   const save = async (e: React.FormEvent) => {
@@ -215,6 +216,7 @@ function Settings({
           outputDir: form.outputDir || null,
           rootDir: form.rootDir || '.',
           defaultBranch: form.defaultBranch,
+          aiRepair,
         },
         { 'if-match': `"v${project.version}"` },
       );
@@ -250,6 +252,22 @@ function Settings({
         {field('buildCommand', 'Build command', detected?.buildCommand.value ?? undefined)}
         {field('outputDir', 'Output directory', detected?.outputDir.value)}
         {field('rootDir', 'Root directory')}
+        <label className="flex items-start gap-3 rounded-md border border-line p-3 text-[13px] sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={aiRepair}
+            onChange={(e) => setAiRepair(e.target.checked)}
+            className="mt-0.5 size-4 accent-[var(--color-ai)]"
+          />
+          <span>
+            <span className="text-fg">AI repair</span>
+            <span className="block text-muted">
+              When no rule fixes a failed build, send its log excerpt and the files the error points
+              at to AI providers (NVIDIA, OpenRouter, Cloudflare) for a proposed fix, which waits
+              for your approval. Turn off to keep your code away from them; rules still run.
+            </span>
+          </span>
+        </label>
         <div className="sm:col-span-2">
           <Button type="submit" variant="primary" loading={saving}>
             Save

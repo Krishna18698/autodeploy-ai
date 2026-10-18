@@ -131,6 +131,9 @@ export const BuildSettings = z.object({
   buildCommand: z.string().max(500).nullable(),
   outputDir: RepoDir.nullable(),
   rootDir: RepoDir,
+  aiRepair: z
+    .boolean()
+    .describe("Send a failed build's log excerpt and related files to AI providers for a fix"),
 });
 
 export const Project = z.object({

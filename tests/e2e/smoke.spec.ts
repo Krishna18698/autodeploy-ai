@@ -531,7 +531,7 @@ test('the notification email can be read and saved', async ({ page }) => {
   });
   expect(r.status()).toBe(204);
   await expectRendered(page, '/settings');
-  await page.getByRole('tab', { name: 'Notifications' }).click();
+  await page.getByRole('tab', { name: 'Account' }).click();
   await expect(page.getByLabel('Notification email')).toHaveValue(me.user.email ?? '');
 });
 
