@@ -170,6 +170,13 @@ export const SlugAvailability = z.object({
 export const EnvVarKey = z.string().regex(/^[A-Z_][A-Z0-9_]{0,127}$/, 'UPPER_SNAKE_CASE');
 export const EnvVar = z.object({ key: z.string(), updatedAt: Timestamp, preview: z.string() });
 export const PutEnvVarBody = z.object({ value: z.string().max(8192) });
+export const ImportEnvBody = z.object({
+  vars: z
+    .array(z.object({ key: EnvVarKey, value: z.string().max(8192) }))
+    .min(1)
+    .max(200)
+    .describe('From a .env file; existing keys are overwritten'),
+});
 
 // --- deployments -----------------------------------------------------------
 export const DeploymentStatus = z.enum(DEPLOYMENT_STATUSES);

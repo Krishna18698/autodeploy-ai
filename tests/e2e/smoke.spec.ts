@@ -324,12 +324,21 @@ test('a failed build is never a dead end: set the env var, deploy again, live', 
   await expectRendered(page, `/deployments/${id}`);
   await expect(page.getByRole('button', { name: 'Deploy again' })).toBeVisible();
 
-  // Fix it the way a user would: project → Environment → add the variable.
+  // Fix it the way a user would: project → Environment. One variable by hand,
+  // the one the build needs from a pasted .env (with a line that must be skipped).
   await expectRendered(page, `/projects/${failed.projectId}`);
   await page.getByRole('tab', { name: 'Environment' }).click();
-  await page.getByLabel('Name').fill('E2E_GREETING');
-  await page.getByLabel('Value').fill(`hi-${RUN}`);
+  await page.getByLabel('Name').fill('E2E_UNUSED');
+  await page.getByLabel('Value').fill('by hand');
   await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByText('E2E_UNUSED', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Import .env' }).click();
+  await page
+    .getByLabel('.env contents')
+    .fill(`# from my laptop\nE2E_GREETING="hi-${RUN}"\nnot valid line\n`);
+  await expect(page.getByLabel('Variables to import')).toContainText('E2E_GREETING');
+  await expect(page.getByText('line 3 skipped: not KEY=value')).toBeVisible();
+  await page.getByRole('button', { name: 'Import 1 variable' }).click();
   await expect(page.getByText('E2E_GREETING', { exact: true })).toBeVisible();
 
   await page.goto(`/deployments/${id}`);

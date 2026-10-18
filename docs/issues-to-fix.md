@@ -7,4 +7,4 @@ Small things noticed while using the product; newest last.
   from the Relay reference). It works as a quick sweep on desktop, but on a
   phone it reads as a large empty block. Proposed: a thin band with the logo on
   small screens, full sweep on desktop. (`apps/web/components/landing/sections/Wipe.tsx`)
-  import env keys for deployment projects if a env file is given or give option to manually add from the user.
+- [x] **Import env keys from a .env file**, or add them by hand. Done 2026-10-18: Environment → Import .env (paste or choose a file; keys previewed, bad lines reported, saved in one transaction).

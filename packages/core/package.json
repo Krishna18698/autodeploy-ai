@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./dotenv": "./src/dotenv.ts",
     "./hostnames": "./src/hostnames.ts",
     "./state-machine": "./src/state-machine.ts"
   },

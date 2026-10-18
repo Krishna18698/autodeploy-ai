@@ -5,6 +5,7 @@ import {
   EnvVar,
   EnvVarKey,
   GitHubRepos,
+  ImportEnvBody,
   Page,
   PageQuery,
   Project,
@@ -380,6 +381,41 @@ export const projectRoutes =
           preview: r.preview,
           updatedAt: r.updated_at.toISOString(),
         }));
+      },
+    );
+
+    // A whole .env file at once (parsed in the browser by parseDotenv), saved in
+    // one transaction so a bad entry can't leave half a file imported.
+    app.post(
+      '/api/v1/projects/:id/env/import',
+      {
+        preHandler: requireRole('admin'),
+        config: { audit: 'env.import' },
+        schema: {
+          tags: ['env'],
+          params: z.object({ id: z.uuid() }),
+          body: ImportEnvBody,
+          response: { 200: z.object({ imported: z.array(z.string()) }) },
+        },
+      },
+      async (req) => {
+        const { id } = req.params;
+        const orgId = authOf(req).orgId;
+        await withOrg(deps.sql, orgId, async (tx) => {
+          const [p] = await tx`select 1 from projects where id = ${id}`;
+          if (!p) throw notFound('Project');
+          for (const { key, value } of req.body.vars) {
+            const env = encrypt(deps.keyring, value, `env:${id}:${key}`);
+            await tx`
+              insert into env_vars (project_id, org_id, key, ciphertext, dek_ciphertext, key_version, preview)
+              values (${id}, ${orgId}, ${key}, ${env.ciphertext}, ${env.dekCiphertext}, ${env.keyVersion}, ${previewSecret(value)})
+              on conflict (project_id, key) do update set ciphertext = excluded.ciphertext, dek_ciphertext = excluded.dek_ciphertext,
+                key_version = excluded.key_version, preview = excluded.preview, updated_at = now()`;
+          }
+        });
+        const imported = req.body.vars.map((v) => v.key);
+        req.auditTarget = { type: 'project', id, metadata: { envKeys: imported } };
+        return { imported };
       },
     );
 

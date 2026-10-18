@@ -33,6 +33,7 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | Dashboard accessibility | **0** serious/critical axe violations on 7 pages | `pnpm test:e2e` |
 | Production smoke (real user flows on the live stack) | **12/12** on 2026-10-08: static site, pinned pnpm, server-rendered app (POST, egress, metadata refused), env var → Deploy again, clicked navigation at 977/390 px, delete → site off the edge in ~30 s; everything created was deleted | `E2E_BASE_URL=https://app.autodeploy.dpdns.org pnpm test:smoke` |
 | SSR runtime on the production VM (gVisor, arm64) | build + validation passed; cold start **4.0 s**; outbound HTTPS allowed, metadata refused; **63 MB** of its 256 MB limit | VM three-stage check (build → validator → runtime) |
+| Real-AI repair (NVIDIA nemotron-3-super, corpus replay) | **12/12** fixable cases fixed (3 runs × 4), **6/6** unfixable ones escalated, **0** false fixes, mean AI call **4.0 s**; judged by the real TypeScript compiler, and a "fix" that adds a file counts as false. Before this round's fixes the same path fixed **0%** | `pnpm tsx tests/ai-eval/repair.ts` → `tests/ai-eval/repair-report.md` |
 | Push to deploy in production | a real repository's pushes deployed on their own (3 of 3) | GitHub App webhook → production |
 | Landing after the header and phone wipe changes | performance **89** (2 warm runs; a cold first run scored 59, as before), accessibility **100**, CLS **0** | `npx lighthouse http://127.0.0.1:3100/ --skip-audits=bf-cache` |
 
@@ -65,3 +66,6 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | production check | Server-rendered sites turned into 404s up to 10 minutes after going live: the KV re-sync dropped the route's mode (now one route builder and an integration test) |
 | production check | A mistyped site address hung and showed Cloudflare's 522 instead of a 404 |
 | production smoke | A missing server-side env var (no `VITE_`-style prefix) ended as FAILED instead of "needs input" |
+| production smoke + AI eval | AI repair fixed nothing with real models: diffs written by the model lost their line breaks (now edits; AutoDeploy computes the diff), NVIDIA's json_object mode invented field names (now json_schema), absolute paths in logs hid the broken file from the model, the excerpt cut off Node's SyntaxError file line, and a renamed module's new name was never shown |
+| review | The worker's metrics never reached Grafana: they were only exposed for scraping, and nothing scrapes in production (now also pushed over OTLP) |
+| key check | The configured NVIDIA model never answered on the free endpoint (no reply in 150 s); `pnpm keys:check` now proves every key before shipping |

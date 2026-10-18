@@ -1,8 +1,9 @@
 'use client';
 
+import { parseDotenv } from '@autodeploy/core/dotenv';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { use, useState } from 'react';
+import { use, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
@@ -283,8 +284,24 @@ function EnvVars({ projectId }: { projectId: string }) {
     await del(`/api/v1/projects/${projectId}/env/${k}`);
     await env.refetch();
   };
+  const [importing, setImporting] = useState(false);
   return (
     <Panel title="Environment variables · write-only, envelope-encrypted">
+      <div className="mb-3 flex justify-end">
+        <Button size="sm" onClick={() => setImporting((v) => !v)} aria-expanded={importing}>
+          {importing ? 'Close import' : 'Import .env'}
+        </Button>
+      </div>
+      {importing && (
+        <ImportEnv
+          projectId={projectId}
+          existing={new Set(env.data?.map((v) => v.key) ?? [])}
+          onDone={async () => {
+            setImporting(false);
+            await env.refetch();
+          }}
+        />
+      )}
       <form onSubmit={add} className="mb-4 flex flex-col gap-2 sm:flex-row">
         <input
           required
@@ -331,5 +348,97 @@ function EnvVars({ projectId }: { projectId: string }) {
         </p>
       )}
     </Panel>
+  );
+}
+
+/** Paste or pick a .env file; keys are previewed (never values), then saved in one go. */
+function ImportEnv({
+  projectId,
+  existing,
+  onDone,
+}: {
+  projectId: string;
+  existing: Set<string>;
+  onDone: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const parsed = useMemo(() => parseDotenv(text), [text]);
+  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setText(await file.text());
+    e.target.value = '';
+  };
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await post<{ imported: string[] }>(`/api/v1/projects/${projectId}/env/import`, {
+        vars: parsed.vars,
+      });
+      toast(`Imported ${r.imported.length} variables (encrypted)`, 'ok');
+      setText('');
+      await onDone();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Import failed', 'fail');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mb-4 flex flex-col gap-3 rounded-md border border-line bg-bg/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] text-muted">
+          Paste a .env file, or choose one from your computer.
+        </p>
+        <label className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-[12px] hover:bg-raised/60">
+          Choose file
+          <input type="file" accept=".env,.txt,text/plain" onChange={pick} className="sr-only" />
+        </label>
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={'DATABASE_URL=postgres://…\nVITE_API_URL=https://…'}
+        aria-label=".env contents"
+        spellCheck={false}
+        rows={6}
+        className="w-full rounded-md border border-line bg-bg px-3 py-2 font-mono text-[12px] outline-none focus:border-run/60 [-webkit-text-security:disc]"
+      />
+      {text.trim() !== '' && (
+        <div className="flex flex-col gap-2 font-mono text-[12px]">
+          {parsed.vars.length > 0 && (
+            <ul className="flex flex-wrap gap-1.5" aria-label="Variables to import">
+              {parsed.vars.map((v) => (
+                <li
+                  key={v.key}
+                  className={`rounded border px-1.5 py-0.5 ${existing.has(v.key) ? 'border-warn/50 text-warn' : 'border-line text-fg'}`}
+                  title={existing.has(v.key) ? 'Replaces the saved value' : 'New'}
+                >
+                  {v.key}
+                  {existing.has(v.key) && ' · replaces'}
+                </li>
+              ))}
+            </ul>
+          )}
+          {parsed.skipped.map((s) => (
+            <p key={s.line} className="text-fail">
+              line {s.line} skipped: {s.reason}
+            </p>
+          ))}
+          <div>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={busy}
+              disabled={parsed.vars.length === 0}
+              onClick={save}
+            >
+              Import {parsed.vars.length} variable{parsed.vars.length === 1 ? '' : 's'}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

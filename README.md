@@ -78,11 +78,12 @@ API docs: http://localhost:4000/docs.
 ## Tests
 
 ```bash
-pnpm test               # 105 unit tests (pure domain code)
+pnpm test               # 126 unit tests (pure domain code)
 pnpm test:integration   # 25 tests on real Postgres / Valkey / Kafka (Testcontainers)
 pnpm test:e2e           # 8 Playwright tests against the running stack
 pnpm test:smoke         # 16 end-to-end checks of what a user does (see below)
 pnpm corpus --mode ai   # 38 labelled repos deployed for real (also --mode rules)
+pnpm tsx tests/ai-eval/repair.ts   # real-AI repair on the corpus's AI cases, no containers
 pnpm chaos              # kill the worker, Kafka, DB connections, storage mid-deploy
 pnpm load               # k6: 100 concurrent deploys + polling dashboards
 ```
@@ -123,6 +124,7 @@ tests/     fixtures (failure corpus)
 - GitHub App sign-in and private repositories.
 - The production smoke suite passes 12/12.
 
-Not connected yet: the AI providers (NVIDIA, OpenRouter; repairs fall back to
-rules only), email (Resend), Grafana Cloud telemetry, and Sentry. See
+Connected: AI repair (NVIDIA, OpenRouter fallback, Workers AI classifier),
+email (Resend), telemetry (Grafana Cloud over OTLP) and error tracking
+(Sentry). `pnpm keys:check` verifies every key against its provider; see
 `infra/deploy/.env.prod.example` and [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md).
