@@ -10,11 +10,15 @@ import { defineConfig, devices } from '@playwright/test';
 //                     signs in with an API token read from infra/deploy/.e2e-token
 //                     (git-ignored; create one in Settings → API tokens) and imports
 //                     the fixtures from this repository on GitHub.
+//   local dashboard, production API (to check web changes before they ship):
+//                     API_URL=https://api.autodeploy.dpdns.org next dev, then
+//                     E2E_BASE_URL=http://localhost:<port> E2E_REMOTE=1 (token sign-in)
 //
 // Everything it creates is named e2e-* and deleted at the end.
 
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3100';
-export const REMOTE = !/\/\/(localhost|127\.0\.0\.1)[:/]/.test(`${BASE_URL}/`);
+export const REMOTE =
+  process.env.E2E_REMOTE === '1' || !/\/\/(localhost|127\.0\.0\.1)[:/]/.test(`${BASE_URL}/`);
 
 const tokenFile = resolve(import.meta.dirname, '../../infra/deploy/.e2e-token');
 const token = REMOTE && existsSync(tokenFile) ? readFileSync(tokenFile, 'utf8').trim() : '';

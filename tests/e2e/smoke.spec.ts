@@ -417,7 +417,24 @@ test('re-importing an existing project is refused with a way out', async ({ page
   await expect(page.getByText(/already a project/)).toBeVisible();
 });
 
-test('no dashboard page scrolls sideways on a phone', async ({ browser }) => {
+// Form controls shorter than this on a phone are a layout bug (a flex-1 input
+// in a stacked form once collapsed to ~18px); small row actions are size="sm" (28px).
+const squashed = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('main input, main select, main textarea')]
+      .filter(
+        (el) =>
+          el.offsetParent !== null &&
+          !['checkbox', 'radio'].includes(el.getAttribute('type') ?? ''),
+      )
+      .map((el) => ({
+        control: el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.tagName,
+        height: Math.round(el.getBoundingClientRect().height),
+      }))
+      .filter((c) => c.height < 32),
+  );
+
+test('no dashboard page scrolls sideways or squashes a form on a phone', async ({ browser }) => {
   const ctx = await browser.newContext({
     baseURL: test.info().project.use.baseURL,
     extraHTTPHeaders: test.info().project.use.extraHTTPHeaders,
@@ -441,6 +458,12 @@ test('no dashboard page scrolls sideways on a phone', async ({ browser }) => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow, path).toBeLessThanOrEqual(0);
+    expect(await squashed(page), path).toEqual([]);
+  }
+  await page.goto('/settings');
+  for (const tab of await page.getByRole('tab').all()) {
+    await tab.click();
+    expect(await squashed(page), `settings: ${await tab.textContent()}`).toEqual([]);
   }
   expect(problems).toEqual([]);
   await ctx.close();
