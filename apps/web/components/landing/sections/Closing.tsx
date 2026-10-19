@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { LEGAL_PAGES } from '@/lib/legal';
 
 export function Closing() {
   return (
@@ -32,7 +33,7 @@ export function Closing() {
         </div>
       </section>
       <footer className="border-t border-line">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 text-[13px] sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 text-[13px] sm:grid-cols-2 sm:px-6 lg:grid-cols-5">
           <div>
             <div className="flex items-center gap-2 font-semibold">
               <span
@@ -60,8 +61,7 @@ export function Closing() {
               'Engineering',
               [
                 ['Architecture', '#architecture'],
-                ['API reference', '/docs'],
-                ['Status', '#'],
+                ['API reference', 'https://api.autodeploy.dpdns.org/docs'],
               ],
             ],
             [
@@ -72,6 +72,7 @@ export function Closing() {
                 ['Source', 'https://github.com/Krishna18698'],
               ],
             ],
+            ['Legal', LEGAL_PAGES.map(([label, href]) => [label, href])],
           ].map(([title, links]) => (
             <div key={title as string}>
               <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted">

@@ -452,6 +452,10 @@ test('no dashboard page scrolls sideways or squashes a form on a phone', async (
     '/analytics',
     '/settings',
     '/projects/new',
+    '/terms',
+    '/privacy',
+    '/acceptable-use',
+    '/security',
   ]) {
     await expectRendered(page, path);
     const overflow = await page.evaluate(

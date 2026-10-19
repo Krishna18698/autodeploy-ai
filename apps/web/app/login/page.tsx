@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { Providers } from '@/components/app/providers';
@@ -57,6 +58,21 @@ function LoginInner() {
             </Button>
           )}
         </div>
+        <p className="mt-4 text-[12px] leading-5 text-muted">
+          By continuing you agree to the{' '}
+          <Link href="/terms" className="text-fg/80 underline-offset-2 hover:underline">
+            Terms
+          </Link>
+          ,{' '}
+          <Link href="/acceptable-use" className="text-fg/80 underline-offset-2 hover:underline">
+            Acceptable Use
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy" className="text-fg/80 underline-offset-2 hover:underline">
+            Privacy Policy
+          </Link>
+          .
+        </p>
         {error && (
           <p
             role="alert"
