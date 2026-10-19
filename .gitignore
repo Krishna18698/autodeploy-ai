@@ -15,6 +15,8 @@ infra/deploy/.e2e-token
 infra/deploy/.resend-setup-key
 # Grafana service-account token for installing dashboards and alerts (never shipped)
 infra/deploy/.grafana-token
+# Gmail app password for sending account email (moved into .env.prod once wired)
+infra/deploy/.smtp-password
 !.env.example
 
 # terraform
