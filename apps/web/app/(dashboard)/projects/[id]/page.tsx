@@ -336,7 +336,7 @@ function EnvVars({ projectId }: { projectId: string }) {
           placeholder="value"
           type="password"
           aria-label="Value"
-          className="h-9 flex-1 rounded-md border border-line bg-bg px-3 font-mono text-[13px] outline-none focus:border-run/60"
+          className="h-9 rounded-md border border-line bg-bg px-3 font-mono text-[13px] outline-none focus:border-run/60 sm:flex-1"
         />
         <Button type="submit" variant="primary">
           Add

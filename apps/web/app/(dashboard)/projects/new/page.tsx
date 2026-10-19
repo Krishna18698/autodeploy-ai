@@ -125,7 +125,7 @@ export default function NewProjectPage() {
           value={repoUrl}
           onChange={(e) => setRepoUrl(e.target.value)}
           placeholder="https://github.com/owner/repo"
-          className="h-10 flex-1 rounded-md border border-line bg-panel px-3 font-mono text-[13px] outline-none placeholder:text-muted/60 focus:border-run/60"
+          className="h-10 rounded-md border border-line bg-panel sm:flex-1 px-3 font-mono text-[13px] outline-none placeholder:text-muted/60 focus:border-run/60"
         />
         <label className="sr-only" htmlFor="root">
           Root directory

@@ -108,7 +108,7 @@ function Team({ canEdit }: { canEdit: boolean }) {
             onChange={(e) => setLogin(e.target.value)}
             placeholder="GitHub login"
             aria-label="GitHub login"
-            className={`${input} flex-1`}
+            className={`${input} sm:flex-1`}
           />
           <select
             value={role}
@@ -195,7 +195,7 @@ function Notifications() {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
           aria-label="Notification email"
-          className={`${input} flex-1`}
+          className={`${input} sm:flex-1`}
         />
         <Button type="submit" variant="primary" loading={saving} disabled={value === current}>
           Save
@@ -237,7 +237,7 @@ function DeleteAccount() {
           onChange={(e) => setConfirm(e.target.value)}
           placeholder={login ? `type ${login} to confirm` : 'type your login to confirm'}
           aria-label="Type your login to confirm"
-          className={`${input} flex-1`}
+          className={`${input} sm:flex-1`}
         />
         <Button
           type="submit"
@@ -362,7 +362,7 @@ function Tokens() {
           onChange={(e) => setName(e.target.value)}
           placeholder="laptop CLI"
           aria-label="Token name"
-          className={`${input} flex-1`}
+          className={`${input} sm:flex-1`}
         />
         <select
           value={scope}

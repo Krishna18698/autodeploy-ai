@@ -13,6 +13,8 @@ coverage/
 infra/deploy/.e2e-token
 # Full-access Resend key for domain setup only (never shipped)
 infra/deploy/.resend-setup-key
+# Grafana service-account token for installing dashboards and alerts (never shipped)
+infra/deploy/.grafana-token
 !.env.example
 
 # terraform
