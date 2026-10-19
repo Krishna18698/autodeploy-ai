@@ -4,8 +4,10 @@
 //   GRAFANA_URL=https://<stack>.grafana.net pnpm tsx scripts/grafana.ts            # read only
 //   GRAFANA_URL=https://<stack>.grafana.net pnpm tsx scripts/grafana.ts --install  # write
 //
-// Uses a service-account token (role Editor) saved in infra/deploy/.grafana-token
-// (git-ignored). The OTLP token the services send with is write-only and can't do this.
+// Uses a service-account token saved in infra/deploy/.grafana-token (git-ignored). Installing
+// needs role Admin: on Grafana 13 an Editor can't provision alert rules or use a folder it
+// created; Viewer is enough for the read-only check.
+// The OTLP token the services send with is write-only and can't do this.
 // Sources: infra/observability/grafana-dashboard.json and alerts.yaml.
 
 import { existsSync, readFileSync } from 'node:fs';

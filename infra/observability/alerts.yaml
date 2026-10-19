@@ -3,6 +3,12 @@ groups:
   - name: autodeploy
     interval: 1m
     rules:
+      # The worker reports this every 10 s; silence means the VM, the worker or
+      # its telemetry is down (an outside check of the site would also catch this).
+      - alert: ServerSilent
+        expr: absent_over_time(autodeploy_outbox_backlog[10m]) == 1
+        annotations:
+          summary: No metrics from the server for 10 minutes (VM, worker or telemetry down)
       - alert: QueueBacklog
         expr: max(autodeploy_queue_oldest_ms{type="deployment.build"}) > 600000
         for: 5m
