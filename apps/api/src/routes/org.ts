@@ -23,6 +23,7 @@ import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { authOf, type Role, rankOf, requireRole } from '../plugins/auth.js';
+import { usageFor } from '../services/limits.js';
 
 const Params = z.object({ id: z.uuid() });
 
@@ -450,10 +451,8 @@ export const orgRoutes =
       '/api/v1/quota',
       { preHandler: requireRole(), schema: { tags: ['org'], response: { 200: Quota } } },
       async (req) => {
-        const [q] = await deps.sql<{ used: number; quota: number }[]>`
-        select (select count(*)::int from deployments where org_id = ${authOf(req).orgId} and created_at >= date_trunc('day', now())) as used,
-               (select daily_deploy_quota from orgs where id = ${authOf(req).orgId}) as quota`;
-        return { deploysToday: q?.used ?? 0, dailyLimit: q?.quota ?? 0 };
+        const u = await usageFor(deps.sql, authOf(req).orgId, deps.env);
+        return { ...u, dailyLimit: u.deploysPerDay };
       },
     );
 

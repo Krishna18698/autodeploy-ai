@@ -8,9 +8,17 @@ import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, del, patch, post } from '@/lib/api';
 import { ago } from '@/lib/format';
-import { useAudit, useDeliveries, useMe, useMembers, useTokens, useWebhooks } from '@/lib/queries';
+import {
+  useAudit,
+  useDeliveries,
+  useMe,
+  useMembers,
+  useQuota,
+  useTokens,
+  useWebhooks,
+} from '@/lib/queries';
 
-type TabId = 'team' | 'account' | 'tokens' | 'webhooks' | 'audit';
+type TabId = 'team' | 'account' | 'usage' | 'tokens' | 'webhooks' | 'audit';
 const EVENTS = [
   'deployment.created',
   'deployment.succeeded',
@@ -37,6 +45,7 @@ export default function SettingsPage() {
         tabs={[
           { id: 'team', label: 'Team' },
           { id: 'account', label: 'Account' },
+          { id: 'usage', label: 'Usage' },
           { id: 'tokens', label: 'API tokens' },
           ...(admin
             ? [
@@ -54,6 +63,7 @@ export default function SettingsPage() {
             <DeleteAccount />
           </div>
         )}
+        {tab === 'usage' && <Usage />}
         {tab === 'tokens' && <Tokens />}
         {tab === 'webhooks' && <Webhooks />}
         {tab === 'audit' && <Audit />}
@@ -238,6 +248,75 @@ function DeleteAccount() {
           Delete my account
         </Button>
       </form>
+    </Panel>
+  );
+}
+
+/** What this account has used of its limits (free for everyone, so shared fairly). */
+function Usage() {
+  const q = useQuota();
+  if (!q.data) return <Panel title="Usage">Loading…</Panel>;
+  const u = q.data;
+  const mb = (b: number) => `${(b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+  const rows: [string, number, number, string, string][] = [
+    [
+      'Deployments today',
+      u.deploysToday,
+      u.deploysPerDay,
+      `${u.deploysToday}`,
+      `${u.deploysPerDay}`,
+    ],
+    [
+      'Build minutes this month',
+      u.buildMinutesThisMonth,
+      u.buildMinutesPerMonth,
+      `${u.buildMinutesThisMonth}`,
+      `${u.buildMinutesPerMonth}`,
+    ],
+    ['Projects', u.projects, u.projectLimit, `${u.projects}`, `${u.projectLimit}`],
+    [
+      'Server-rendered projects',
+      u.serverProjects,
+      u.serverProjectLimit,
+      `${u.serverProjects}`,
+      `${u.serverProjectLimit}`,
+    ],
+    ['Storage', u.storageBytes, u.storageLimitBytes, mb(u.storageBytes), mb(u.storageLimitBytes)],
+  ];
+  return (
+    <Panel title="Usage">
+      <p className="mb-4 text-[13px] text-muted">
+        AutoDeploy is free for everyone, so each account gets a fair share. Deployments reset daily
+        at 00:00 UTC and build minutes on the 1st of each month.
+      </p>
+      <ul className="flex flex-col gap-4">
+        {rows.map(([label, used, limit, usedText, limitText]) => {
+          const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+          return (
+            <li key={label}>
+              <div className="mb-1.5 flex justify-between text-[13px]">
+                <span>{label}</span>
+                <span className="font-mono text-muted">
+                  {usedText} / {limitText}
+                </span>
+              </div>
+              <div
+                className="h-1.5 overflow-hidden rounded-full bg-raised"
+                role="progressbar"
+                aria-label={label}
+                aria-valuenow={Math.round(pct)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className={`h-full rounded-full ${pct >= 100 ? 'bg-fail' : pct >= 80 ? 'bg-warn' : 'bg-run'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </Panel>
   );
 }

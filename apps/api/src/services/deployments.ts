@@ -3,6 +3,7 @@ import { enqueue, requestCancel } from '@autodeploy/queue';
 import { currentTraceparent } from '@autodeploy/telemetry';
 import type { Deps } from '../deps.js';
 import { AppError } from '../lib/errors.js';
+import { enforceDeployLimits } from './limits.js';
 
 export type CreateDeploymentInput = {
   orgId: string;
@@ -29,7 +30,7 @@ export async function createDeployment(
 ): Promise<{ id: string; number: number }> {
   const traceparent = currentTraceparent();
   return withOrg(deps.sql, input.orgId, async (tx) => {
-    await enforceQuota(tx, input.orgId);
+    await enforceDeployLimits(tx, input.orgId, deps.env);
 
     // A newer production build makes older not-yet-started ones pointless.
     if (input.kind === 'production') await cancelStale(tx, input.projectId, input.branch);
@@ -77,19 +78,6 @@ export async function createDeployment(
     );
     return dep;
   });
-}
-
-async function enforceQuota(tx: Tx, orgId: string) {
-  const [q] = await tx<{ used: number; quota: number }[]>`
-    select (select count(*)::int from deployments where org_id = ${orgId} and created_at >= date_trunc('day', now())) as used,
-           (select daily_deploy_quota from orgs where id = ${orgId}) as quota`;
-  if (q && q.used >= q.quota) {
-    throw new AppError(
-      429,
-      'quota_exceeded',
-      `Daily deployment quota reached (${q.quota}/day). It resets at 00:00 UTC.`,
-    );
-  }
 }
 
 async function cancelStale(tx: Tx, projectId: string, branch: string | null) {

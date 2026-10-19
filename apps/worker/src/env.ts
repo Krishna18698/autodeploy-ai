@@ -83,6 +83,8 @@ const EnvSchema = z.object({
   CF_AI_TOKEN: z.string().optional(),
   CF_AI_MODEL: z.string().default('@cf/qwen/qwen3-30b-a3b-fp8'),
   AI_DAILY_CALL_BUDGET: z.coerce.number().int().min(0).default(300),
+  // One account's share (a repair is about three calls).
+  AI_CALLS_PER_ORG_PER_DAY: z.coerce.number().int().min(0).default(60),
 
   // Edge routes (Cloudflare KV); unset = local mode (edge asks the API)
   CF_KV_NAMESPACE_ID: z.string().optional(),

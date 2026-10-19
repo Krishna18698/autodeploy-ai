@@ -444,7 +444,20 @@ export const AnalyticsSummary = z.object({
   consumers: z.array(z.object({ group: z.string(), lag: z.number().nullable(), dlq: z.number() })),
 });
 
-export const Quota = z.object({ deploysToday: z.number(), dailyLimit: z.number() });
+export const Quota = z.object({
+  deploysToday: z.number(),
+  /** Same as deploysPerDay (kept for older dashboards). */
+  dailyLimit: z.number(),
+  deploysPerDay: z.number(),
+  projects: z.number(),
+  projectLimit: z.number(),
+  serverProjects: z.number(),
+  serverProjectLimit: z.number(),
+  buildMinutesThisMonth: z.number(),
+  buildMinutesPerMonth: z.number(),
+  storageBytes: z.number(),
+  storageLimitBytes: z.number(),
+});
 
 // --- domain events (Kafka + SSE) ------------------------------------------
 export const DomainEvent = z.object({

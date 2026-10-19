@@ -117,7 +117,8 @@ tests/     fixtures (failure corpus)
 ## Status
 
 **Live** at [app.autodeploy.dpdns.org](https://app.autodeploy.dpdns.org)
-(invite-only beta; sites are served at `<name>.autodeploy.dpdns.org`):
+(free for everyone, with per-account limits; sites are served at
+`<name>.autodeploy.dpdns.org`):
 
 - API, worker, SSR gateway, Postgres, Valkey and Kafka on one Oracle Cloud
   Always Free VM (Ampere A1), reached only through a Cloudflare Tunnel.

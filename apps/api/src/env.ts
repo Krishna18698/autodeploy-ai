@@ -41,7 +41,13 @@ const EnvSchema = z
     WORK_DIR: z.string().default('/tmp/autodeploy'),
     DEV_LOGIN: bool,
     ALLOW_LOCAL_SOURCES: bool,
+    // Empty: anyone can sign in (usage is limited per account, below). Set it
+    // to restrict sign-in to listed GitHub logins, e.g. during an incident.
     ALLOWED_GITHUB_LOGINS: list,
+    // Per-account limits (one personal org per user).
+    MAX_PROJECTS_PER_ORG: z.coerce.number().int().min(1).default(10),
+    BUILD_MINUTES_PER_MONTH: z.coerce.number().int().min(1).default(300),
+    STORAGE_MB_PER_ORG: z.coerce.number().int().min(1).default(1024),
     GITHUB_TOKEN: z.string().optional(),
     GITHUB_APP_ID: z.string().optional(),
     GITHUB_APP_SLUG: z.string().optional(),
@@ -65,13 +71,6 @@ const EnvSchema = z
           path: ['ALLOW_LOCAL_SOURCES'],
           message: 'must be false in production',
         });
-      if (e.ALLOWED_GITHUB_LOGINS.length === 0) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['ALLOWED_GITHUB_LOGINS'],
-          message: 'V1 is invite-only: list the GitHub logins allowed to sign in',
-        });
-      }
     }
   });
 

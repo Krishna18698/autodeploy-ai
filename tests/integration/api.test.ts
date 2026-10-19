@@ -412,3 +412,50 @@ describe('Deleting an account', () => {
     ).toBe(401);
   });
 });
+
+describe('Per-account limits', () => {
+  const env = {
+    MAX_PROJECTS_PER_ORG: 2,
+    SSR_PROJECTS_PER_ORG: 1,
+    BUILD_MINUTES_PER_MONTH: 5,
+    STORAGE_MB_PER_ORG: 1,
+  };
+
+  it('counts usage and refuses new projects and deployments past each limit', async () => {
+    const { usageFor, enforceDeployLimits, enforceProjectLimit } = await import(
+      '../../apps/api/src/services/limits'
+    );
+    const sql = deps.sql;
+    // Projects, and this month's build minutes.
+    const org = await makeOrg(sql);
+    const p = await makeProject(sql, org);
+    const d = await makeDeployment(sql, org, p.id, 'CREATED', 1);
+    expect(await usageFor(sql, org, env)).toMatchObject({
+      projects: 1,
+      deploysToday: 1,
+      deploysPerDay: 20,
+    });
+    await makeProject(sql, org);
+    await expect(sql.begin((tx) => enforceProjectLimit(tx, org, env))).rejects.toMatchObject({
+      code: 'project_limit',
+    });
+    await sql`insert into deployment_attempts (deployment_id, org_id, attempt_no, executor, build_config, duration_ms)
+      values (${d}, ${org}, 1, 'sandbox', '{}', 360000)`;
+    expect((await usageFor(sql, org, env)).buildMinutesThisMonth).toBe(6);
+    await expect(sql.begin((tx) => enforceDeployLimits(tx, org, env))).rejects.toMatchObject({
+      code: 'build_minutes_exceeded',
+    });
+
+    // Storage: the org's artifacts count against it.
+    const org2 = await makeOrg(sql);
+    const p2 = await makeProject(sql, org2);
+    const d2 = await makeDeployment(sql, org2, p2.id, 'CREATED', 1);
+    const [a] = await sql<{ id: string }[]>`
+      insert into artifacts (sha256, storage_prefix, file_count, bytes)
+      values (${`limits-${d2}`}, 'x', 1, ${2 * 1024 * 1024}) returning id`;
+    await sql`update deployments set artifact_id = ${a!.id} where id = ${d2}`;
+    await expect(sql.begin((tx) => enforceDeployLimits(tx, org2, env))).rejects.toMatchObject({
+      code: 'storage_exceeded',
+    });
+  });
+});

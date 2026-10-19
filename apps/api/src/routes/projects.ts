@@ -22,6 +22,7 @@ import type { Deps } from '../deps.js';
 import { AppError, badRequest, conflict, notFound } from '../lib/errors.js';
 import { authOf, requireRole } from '../plugins/auth.js';
 import { createDeployment } from '../services/deployments.js';
+import { enforceProjectLimit } from '../services/limits.js';
 import { decodeCursor, encodeCursor, type ProjectRow, toProject } from '../services/mappers.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
 import { analyzeSource, resolveSource, suggestSlug } from '../services/sources.js';
@@ -178,6 +179,7 @@ export const projectRoutes =
             values (${src.installationId}, ${src.installationAccount ?? src.repo.owner}, ${a.orgId})
             on conflict (id) do update set org_id = coalesce(github_installations.org_id, excluded.org_id)`;
         const project = await withOrg(deps.sql, a.orgId, async (tx) => {
+          await enforceProjectLimit(tx, a.orgId, deps.env);
           const [row] = await tx<ProjectRow[]>`
             insert into projects (org_id, slug, name, repo_full_name, repo_url, default_branch, framework, root_dir, analysis, installation_id)
             values (${a.orgId}, ${slug}, ${req.body.name ?? src.fullName.split('/')[1] ?? slug}, ${src.fullName}, ${src.repoUrl},
