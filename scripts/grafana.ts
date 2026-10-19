@@ -3,6 +3,7 @@
 //
 //   GRAFANA_URL=https://<stack>.grafana.net pnpm tsx scripts/grafana.ts            # read only
 //   GRAFANA_URL=https://<stack>.grafana.net pnpm tsx scripts/grafana.ts --install  # write
+//   ALERT_EMAIL=you@example.com with --install also emails firing alerts there
 //
 // Uses a service-account token saved in infra/deploy/.grafana-token (git-ignored). Installing
 // needs role Admin: on Grafana 13 an Editor can't provision alert rules or use a folder it
@@ -241,3 +242,45 @@ must(
 console.log(
   `alert rules: ${alerts.length} installed in folder ${FOLDER.title} (${base}/alerting/list)`,
 );
+
+// 5. Where firing alerts go. Only with ALERT_EMAIL set: an email contact point and
+// a route for this group's alerts (label service=autodeploy). The rest of the
+// stack's notification policy is left as it is.
+const alertEmail = process.env.ALERT_EMAIL;
+if (!alertEmail) {
+  console.log('alert emails: not set up (set ALERT_EMAIL to route these alerts to an inbox)');
+  process.exit(0);
+}
+const RECEIVER = 'AutoDeploy email';
+type ContactPoint = { uid?: string; name: string; type: string; settings: object };
+const points = must(
+  await grafana<ContactPoint[]>('/api/v1/provisioning/contact-points'),
+  'contact points',
+);
+const existing = points.find((p) => p.name === RECEIVER);
+const point = {
+  name: RECEIVER,
+  type: 'email',
+  settings: { addresses: alertEmail, singleEmail: true },
+};
+must(
+  existing?.uid
+    ? await grafana(`/api/v1/provisioning/contact-points/${existing.uid}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...point, uid: existing.uid }),
+      })
+    : await grafana('/api/v1/provisioning/contact-points', {
+        method: 'POST',
+        body: JSON.stringify(point),
+      }),
+  'email contact point',
+);
+type Route = { receiver?: string; object_matchers?: string[][]; routes?: Route[] };
+const policy = must(await grafana<Route>('/api/v1/provisioning/policies'), 'notification policy');
+const ourRoute: Route = { receiver: RECEIVER, object_matchers: [['service', '=', 'autodeploy']] };
+policy.routes = [ourRoute, ...(policy.routes ?? []).filter((r) => r.receiver !== RECEIVER)];
+must(
+  await grafana('/api/v1/provisioning/policies', { method: 'PUT', body: JSON.stringify(policy) }),
+  'notification route',
+);
+console.log(`alert emails: firing AutoDeploy alerts go to ${alertEmail}`);
