@@ -83,6 +83,31 @@ describe('error signatures', () => {
     expect(classify(['> build', line, 'exit 1']).code).not.toBe('MISSING_ENV');
   });
 
+  it("recognises npm refusing another platform's binary, and installs past the check", () => {
+    const sig = classify([
+      '> npm ci',
+      'npm error code EBADPLATFORM',
+      'npm error notsup Unsupported platform for @oxc-parser/binding-android-arm-eabi@0.154.0: wanted {"os":"android","cpu":"arm"} (current: {"os":"linux","cpu":"arm64"})',
+    ]);
+    expect(sig.code).toBe('PLATFORM_PACKAGE');
+    const config = {
+      nodeVersion: 22,
+      installCommand: 'npm ci',
+      buildCommand: 'npm run build',
+      outputDir: '.output',
+      rootDir: '.',
+      env: {},
+    };
+    const decision = decideRecovery(
+      { signature: sig, config, framework: 'nuxt', packageManager: 'npm', indexDirs: [] },
+      { signatures: [sig.signature], appliedRules: [], repairsMade: 0 },
+      false,
+    );
+    expect(decision).toMatchObject({ kind: 'rule', result: { ruleId: 'R-008' } });
+    if (decision.kind === 'rule')
+      expect(decision.result.config.installCommand).toBe('npm ci --force');
+  });
+
   it('is stable across runs: timestamps, paths, positions and hashes are normalized', () => {
     const a = classify([
       '2026-10-02T10:00:00Z /home/a/x/src/a.ts(4,26): error TS2339: nope 3f9a1c2d',

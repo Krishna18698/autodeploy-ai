@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 export type ErrorCode =
   | 'NODE_ENGINE'
   | 'LOCKFILE_MISMATCH'
+  | 'PLATFORM_PACKAGE'
   | 'PEER_DEPS'
   | 'MODULE_NOT_FOUND'
   | 'TS_COMPILE'
@@ -54,6 +55,13 @@ const MATCHERS: Matcher[] = [
     code: 'NODE_ENGINE',
     re: /(?:engine "node" is incompatible with this module\. Expected version "(?<range>[^"]+)"|Unsupported engine.*?required: \{?\s*node:\s*'(?<range2>[^']+)'|requires Node\.?js (?:version )?(?<range3>[>=^~]*\s*\d[\d.x]*\+?)|You are using Node\.js \S+\. (?:Vite|Next\.js|Astro) requires Node\.js version (?<range4>[^.]+?\d[\d.]*)\b|ERR_PNPM_UNSUPPORTED_ENGINE)/i,
     keep: ['range', 'range2', 'range3', 'range4'],
+  },
+  {
+    // npm 11 can record a nested platform-specific binary (another OS's build of
+    // a native module) as required in a lockfile made on a Mac; npm ci then
+    // refuses it on Linux instead of skipping it.
+    code: 'PLATFORM_PACKAGE',
+    re: /npm (?:error|ERR!) code EBADPLATFORM/,
   },
   {
     code: 'LOCKFILE_MISMATCH',

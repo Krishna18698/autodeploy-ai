@@ -166,6 +166,22 @@ export const RULES: readonly Rule[] = [
       };
     },
   },
+  {
+    id: 'R-008',
+    codes: ['PLATFORM_PACKAGE'],
+    title: "Install past npm's platform check",
+    apply: ({ config, packageManager }) => {
+      if (packageManager !== 'npm' || config.installCommand?.includes('--force')) return undefined;
+      const base = config.installCommand ?? 'npm ci';
+      return {
+        ruleId: 'R-008',
+        title: "Install past npm's platform check",
+        explanation:
+          "The lockfile lists another platform's native binary as required (an npm bug with lockfiles made on another OS), so npm refused it. Installing with --force, which skips the platform check; the extra binary is never used. Regenerating the lockfile with a current npm fixes it for good.",
+        config: { ...config, installCommand: `${base} --force` },
+      };
+    },
+  },
 ];
 
 /** Codes that a human has to resolve; no amount of retrying helps. */
