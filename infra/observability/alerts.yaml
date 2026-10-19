@@ -33,10 +33,11 @@ groups:
         for: 15m
         annotations:
           summary: An AI provider has been failing; recovery is falling back
+      # Only judged when at least 4 builds ran in the hour: an idle hour is not a failure.
       - alert: BuildSuccessRateLow
         expr: |
           sum(increase(autodeploy_build_duration_seconds_count{outcome="ok"}[1h]))
-            / clamp_min(sum(increase(autodeploy_build_duration_seconds_count[1h])), 1) < 0.5
+            / (sum(increase(autodeploy_build_duration_seconds_count[1h])) > 3) < 0.5
         for: 30m
         annotations:
           summary: Fewer than half of build attempts are succeeding

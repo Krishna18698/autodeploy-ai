@@ -6,6 +6,17 @@
     "from": "now-24h",
     "to": "now"
   },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
