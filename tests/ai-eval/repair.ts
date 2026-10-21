@@ -27,7 +27,7 @@ import {
   type UsageRecord,
   workersAi,
 } from '@autodeploy/ai';
-import { checkPatch, classify, editsToDiff } from '@autodeploy/core';
+import { checkPatch, classify } from '@autodeploy/core';
 import { readTree } from '@autodeploy/github';
 import { readEnvProd } from '../../scripts/env-prod';
 import { CASES } from '../corpus/generate';
@@ -77,9 +77,7 @@ const CONFIGS: { label: string; provider: () => Provider; runs: number }[] = [
       workersAi(
         need('CF_ACCOUNT_ID'),
         need('CF_AI_TOKEN'),
-        process.env.CF_REPAIR_MODEL ??
-          get('CF_REPAIR_MODEL') ??
-          '@cf/openai/gpt-oss-120b',
+        process.env.CF_REPAIR_MODEL ?? get('CF_REPAIR_MODEL') ?? '@cf/openai/gpt-oss-120b',
         'cloudflare',
       ),
     runs: arg('--cloudflare-runs', 0),
@@ -147,9 +145,10 @@ async function evaluate(c: (typeof CASES)[number], provider: Provider) {
       if (cls && !cls.value.fixable) return done('stopped by classifier');
       const diagnosis = await gateway.diagnose(ctx.text);
       const withFiles = buildFailureContext(signature, tree, diagnosis.value.filesToRead);
-      const proposal = await gateway.proposePatch(withFiles.text, diagnosis.value);
-      if (proposal.value.edits.length === 0) return done('no patch');
-      const built = editsToDiff((p) => tree.read(p), proposal.value.edits);
+      const { built } = await gateway.proposeDiff(withFiles.text, diagnosis.value, (p) =>
+        tree.read(p),
+      );
+      if (!built) return done('no patch');
       if (!built.ok) return done('patch did not apply', { error: built.error });
       const diff = built.diff;
       const policy = checkPatch(diff);

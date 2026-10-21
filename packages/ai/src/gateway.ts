@@ -1,3 +1,4 @@
+import { editsToDiff } from '@autodeploy/core';
 import { CircuitBreaker, CircuitOpenError, retry, TimeoutError } from '@autodeploy/resilience';
 import type { z } from 'zod';
 import { SYSTEM_PROMPT } from './context.js';
@@ -90,9 +91,35 @@ export class AiGateway {
     );
   }
 
-  proposePatch(context: string, diagnosis: Diagnosis) {
-    const prompt = `Diagnosis: ${diagnosis.summary}\nCause: ${diagnosis.cause}\n\nPropose the smallest change that fixes the build, as edits. Each edit replaces \`find\` with \`replace\` in \`path\`, which must be one of the files shown below. Copy \`find\` exactly from that file, keeping it to the changed part of a single line where you can (one edit per line), and long enough to occur only once. Fix the code the error points at: never add files, invent values, or edit build scripts or configuration to hide the error. If the cause is outside the code (a service that is down, missing credentials, a package that does not exist), return no edits: wrapping it in try/catch, skipping it or returning placeholder data only hides it. Return no edits if unsure.\n\n${context}`;
+  proposePatch(context: string, diagnosis: Diagnosis, feedback?: string) {
+    const retry = feedback
+      ? `Your previous edits could not be applied: ${feedback}. Copy \`find\` exactly from the file and include enough of the line that it occurs only once.\n\n`
+      : '';
+    const prompt = `${retry}Diagnosis: ${diagnosis.summary}\nCause: ${diagnosis.cause}\n\nPropose the smallest change that fixes the build, as edits. Each edit replaces \`find\` with \`replace\` in \`path\`, which must be one of the files shown below. Copy \`find\` exactly from that file, keeping it to the changed part of a single line where you can (one edit per line), and long enough to occur only once. Fix the code the error points at: never add files, invent values, or edit build scripts or configuration to hide the error. If the cause is outside the code (a service that is down, missing credentials, a package that does not exist), return no edits: wrapping it in try/catch, skipping it or returning placeholder data only hides it. Return no edits if unsure.\n\n${context}`;
     return this.call(this.o.providers, 'patch', PatchProposal, 'patch', prompt, 2000);
+  }
+
+  /**
+   * Edits turned into a diff against the files themselves. Edits that don't
+   * fit (the text isn't there, or is there twice) get one more try, telling
+   * the model why: a near miss is usually a too-short \`find\`.
+   */
+  async proposeDiff(
+    context: string,
+    diagnosis: Diagnosis,
+    read: (path: string) => string | undefined,
+  ) {
+    let proposal = await this.proposePatch(context, diagnosis);
+    if (proposal.value.edits.length === 0) return { proposal, built: null };
+    let built = editsToDiff(read, proposal.value.edits);
+    if (!built.ok) {
+      const retry = await this.proposePatch(context, diagnosis, built.error);
+      if (retry.value.edits.length > 0) {
+        const again = editsToDiff(read, retry.value.edits);
+        if (again.ok) [proposal, built] = [retry, again];
+      }
+    }
+    return { proposal, built };
   }
 
   private async call<T>(
@@ -139,7 +166,9 @@ export class AiGateway {
               {
                 attempts: 2,
                 baseMs: 1_000,
-                retryable: isRetryable,
+                // A model that slips out of the schema once usually keeps to
+                // it on the next sample, so malformed output gets one retry too.
+                retryable: (e) => isRetryable(e) || e instanceof InvalidOutputError,
                 retryAfterMs: (e) => (e instanceof ProviderError ? e.retryAfterMs : undefined),
               },
             ),

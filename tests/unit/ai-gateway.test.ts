@@ -59,6 +59,15 @@ describe('AI gateway', () => {
     expect(gw.breakerStates().bad).toBe('closed');
   });
 
+  it('asks again once when the answer is not valid JSON, and uses the second answer', async () => {
+    let n = 0;
+    const flaky = fake('flaky', async () => (++n === 1 ? 'Here is the diagnosis: …' : diagnosis));
+    const gw = new AiGateway({ providers: [flaky] });
+    const r = await gw.diagnose('x');
+    expect(r.value.summary).toBe('s');
+    expect(flaky.calls).toBe(2);
+  });
+
   it('opens the circuit after repeated outages and stops calling the provider', async () => {
     const down = fake('down', async () => {
       throw new ProviderError('down', 503, 'unavailable');
@@ -76,6 +85,31 @@ describe('AI gateway', () => {
     const gw = new AiGateway({ providers: [p], budget: async () => false });
     await expect(gw.diagnose('x')).rejects.toBeInstanceOf(AiUnavailableError);
     expect(p.calls).toBe(0);
+  });
+
+  it('gives edits that do not fit the file one more try, saying why', async () => {
+    const file = '{\n  "links": [\n    "home",\n    "about",\n  ]\n}\n';
+    const answers = [
+      // `",` occurs twice: refused, and the model is told so.
+      { path: 'src/nav.json', find: '",', replace: '"' },
+      { path: 'src/nav.json', find: '"about",', replace: '"about"' },
+    ];
+    const prompts: string[] = [];
+    const p = fake('p', async (req) => {
+      prompts.push(String(req.messages.at(-1)?.content));
+      const edit = answers[prompts.length - 1];
+      return JSON.stringify({ explanation: 'trailing comma', edits: edit ? [edit] : [] });
+    });
+    const gw = new AiGateway({ providers: [p] });
+    const { built } = await gw.proposeDiff(
+      'ctx',
+      { summary: 's', cause: 'c', filesToRead: [], confidence: 'high' },
+      (path) => (path === 'src/nav.json' ? file : undefined),
+    );
+    expect(p.calls).toBe(2);
+    expect(prompts[1]).toContain('appears more than once in src/nav.json');
+    expect(built).toMatchObject({ ok: true });
+    if (built?.ok) expect(built.diff).toContain('+    "about"\n');
   });
 
   it('shows the data file a failing build script reads, though the error never names it', () => {

@@ -9,7 +9,6 @@ import {
   diffConfig,
   type ErrorCode,
   type ErrorSignature,
-  editsToDiff,
 } from '@autodeploy/core';
 import { recordEvent, transition } from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
@@ -215,13 +214,16 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
         provider: diagnosis.provider,
         model: diagnosis.model,
       };
-      const proposal = await deps.ai.proposePatch(ctxWithFiles.text, diagnosis.value);
-      if (proposal.value.edits.length === 0) {
+      // The model proposes edits; the diff is computed from the files themselves.
+      const { proposal, built } = await deps.ai.proposeDiff(
+        ctxWithFiles.text,
+        diagnosis.value,
+        (p) => tree.read(p),
+      );
+      if (!built) {
         await stopAi(deps, ref, repair.id, proposal.value.explanation, diag);
         return;
       }
-      // The model proposes edits; the diff is computed from the files themselves.
-      const built = editsToDiff((p) => tree.read(p), proposal.value.edits);
       if (!built.ok) {
         await stopAi(
           deps,
