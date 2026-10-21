@@ -9,7 +9,6 @@ x-app-env: &app-env
   PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
   APP_URL: https://app.${PLATFORM_DOMAIN}
   API_PUBLIC_URL: https://api.${PLATFORM_DOMAIN}
-  SESSION_COOKIE_DOMAIN: .${PLATFORM_DOMAIN}
   DATABASE_URL: postgres://autodeploy:${POSTGRES_PASSWORD}@postgres:5432/autodeploy
   VALKEY_URL: redis://:${VALKEY_PASSWORD}@valkey:6379
   KAFKA_BROKERS: kafka:29092
@@ -126,9 +125,9 @@ services:
       CF_KV_NAMESPACE_ID: ${CF_KV_NAMESPACE_ID:-}
       CF_KV_API_TOKEN: ${CF_KV_API_TOKEN:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      # Resend refuses free domains (dpdns.org, eu.org), so by default mail goes
-      # from Resend's own address, which only delivers to the Resend account's
-      # owner. Set EMAIL_FROM once a domain you own is verified in Resend.
+      # Until the platform domain is verified in Resend, mail goes from Resend's
+      # own address, which only delivers to the Resend account's owner. Then set
+      # EMAIL_FROM="AutoDeploy <noreply@PLATFORM_DOMAIN>" in .env.prod.
       EMAIL_FROM: ${EMAIL_FROM:-AutoDeploy <onboarding@resend.dev>}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}

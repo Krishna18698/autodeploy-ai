@@ -8,11 +8,12 @@ import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { githubAppConfigured } from '../env.js';
 import { AppError, badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
-import { authOf, requireRole, SESSION_COOKIE } from '../plugins/auth.js';
+import { authOf, requireRole, sessionCookie } from '../plugins/auth.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
 
 const SESSION_DAYS = 14;
-const STATE_COOKIE = 'ad_oauth_state';
+const stateCookie = (env: { NODE_ENV: string }) =>
+  env.NODE_ENV === 'production' ? '__Host-ad_oauth_state' : 'ad_oauth_state';
 
 type GitHubUser = {
   id: number;
@@ -70,13 +71,12 @@ async function startSession(
     insert into sessions (token_hash, user_id, org_id, csrf_token, ip, user_agent, expires_at)
     values (${sha256Hex(token)}, ${userId}, ${orgId}, ${csrf}, ${req.ip}, ${req.headers['user-agent']?.slice(0, 300) ?? null},
             now() + ${`${SESSION_DAYS} days`}::interval)`;
-  reply.setCookie(SESSION_COOKIE, token, {
+  reply.setCookie(sessionCookie(deps.env), token, {
     httpOnly: true,
     secure: deps.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
     maxAge: SESSION_DAYS * 86400,
-    ...(deps.env.SESSION_COOKIE_DOMAIN && { domain: deps.env.SESSION_COOKIE_DOMAIN }),
   });
   return csrf;
 }
@@ -100,20 +100,19 @@ export const authRoutes =
           );
         }
         const state = randomToken(18);
-        // Sign-in starts on the app's host but GitHub returns to the API's
-        // host, so the state cookie must be shared like the session cookie.
-        reply.setCookie(STATE_COOKIE, state, {
+        // Sign-in starts and ends on the app's host (the edge passes /auth to
+        // the API), so this cookie and the session cookie stay host-only.
+        reply.setCookie(stateCookie(deps.env), state, {
           httpOnly: true,
           sameSite: 'lax',
-          path: '/auth',
+          path: '/',
           maxAge: 600,
           secure: deps.env.NODE_ENV === 'production',
-          ...(deps.env.SESSION_COOKIE_DOMAIN && { domain: deps.env.SESSION_COOKIE_DOMAIN }),
         });
         const url = new URL('https://github.com/login/oauth/authorize');
         url.searchParams.set('client_id', deps.env.GITHUB_APP_CLIENT_ID ?? '');
         url.searchParams.set('state', state);
-        url.searchParams.set('redirect_uri', `${deps.env.API_PUBLIC_URL}/auth/github/callback`);
+        url.searchParams.set('redirect_uri', `${deps.env.APP_URL}/auth/github/callback`);
         return reply.redirect(url.toString());
       },
     );
@@ -125,11 +124,8 @@ export const authRoutes =
         schema: { hide: true, querystring: z.object({ code: z.string(), state: z.string() }) },
       },
       async (req, reply) => {
-        const expected = req.cookies[STATE_COOKIE];
-        reply.clearCookie(STATE_COOKIE, {
-          path: '/auth',
-          ...(deps.env.SESSION_COOKIE_DOMAIN && { domain: deps.env.SESSION_COOKIE_DOMAIN }),
-        });
+        const expected = req.cookies[stateCookie(deps.env)];
+        reply.clearCookie(stateCookie(deps.env), { path: '/' });
         if (!expected || expected !== req.query.state)
           throw forbidden('OAuth state mismatch; start sign-in again');
         const token = await exchangeOAuthCode(
@@ -146,7 +142,7 @@ export const authRoutes =
         const gh = (await res.json()) as GitHubUser;
         const allow = deps.env.ALLOWED_GITHUB_LOGINS;
         if (allow.length > 0 && !allow.includes(gh.login.toLowerCase())) {
-          throw forbidden('AutoDeploy is invite-only during the beta.');
+          throw forbidden('Sign-ups are not open yet.');
         }
         const { userId, orgId } = await upsertUserWithOrg(deps.sql, {
           githubId: gh.id,
@@ -194,9 +190,8 @@ export const authRoutes =
     app.post('/auth/logout', { schema: { hide: true } }, async (req, reply) => {
       if (req.auth?.sessionHash)
         await deps.sql`delete from sessions where token_hash = ${req.auth.sessionHash}`;
-      reply.clearCookie(SESSION_COOKIE, {
+      reply.clearCookie(sessionCookie(deps.env), {
         path: '/',
-        ...(deps.env.SESSION_COOKIE_DOMAIN && { domain: deps.env.SESSION_COOKIE_DOMAIN }),
       });
       return reply.code(204).send();
     });
@@ -304,9 +299,8 @@ export const authRoutes =
           await tx`delete from users where id = ${a.userId}`;
         });
         req.log.info({ orgs: 'deleted' }, 'account deleted');
-        reply.clearCookie(SESSION_COOKIE, {
+        reply.clearCookie(sessionCookie(deps.env), {
           path: '/',
-          ...(deps.env.SESSION_COOKIE_DOMAIN && { domain: deps.env.SESSION_COOKIE_DOMAIN }),
         });
         return reply.code(204).send();
       },

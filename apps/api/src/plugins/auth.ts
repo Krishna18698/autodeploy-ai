@@ -25,7 +25,11 @@ declare module 'fastify' {
   }
 }
 
-export const SESSION_COOKIE = 'ad_session';
+// Host-only (no Domain attribute): users' sites live under the same platform
+// domain, and a domain-wide cookie would be sent to their servers. In production
+// the __Host- prefix also makes browsers refuse one planted by any other host.
+export const sessionCookie = (env: { NODE_ENV: string }) =>
+  env.NODE_ENV === 'production' ? '__Host-ad_session' : 'ad_session';
 const RANK: Record<Role, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
 // What each token scope can do, expressed as the highest role it acts as.
 const SCOPE_ROLE: Record<Scope, Role> = { read: 'viewer', deploy: 'member', admin: 'admin' };
@@ -110,7 +114,7 @@ export const authPlugin = fp(async (app: FastifyInstance, deps: Deps) => {
       if (!req.auth) throw unauthorized('Invalid or expired API token');
       return;
     }
-    const cookie = req.cookies[SESSION_COOKIE];
+    const cookie = req.cookies[sessionCookie(deps.env)];
     if (cookie) req.auth = await resolveSession(deps, cookie);
 
     // CSRF: cookie-authenticated writes must carry the session's token and,

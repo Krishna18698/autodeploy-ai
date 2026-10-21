@@ -97,7 +97,7 @@ export async function buildApp(deps: Deps) {
       servers: [{ url: env.API_PUBLIC_URL }],
       components: {
         securitySchemes: {
-          session: { type: 'apiKey', in: 'cookie', name: 'ad_session' },
+          session: { type: 'apiKey', in: 'cookie', name: '__Host-ad_session' },
           token: { type: 'http', scheme: 'bearer', description: 'API token (adp_…)' },
         },
       },
