@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Me } from '@autodeploy/contracts';
 import { randomToken, sha256Hex } from '@autodeploy/crypto';
 import type { Sql, Tx } from '@autodeploy/db';
@@ -82,11 +83,16 @@ export async function ensurePersonalOrg(
     { org_id: string }[]
   >`select org_id from memberships where user_id = ${userId} order by created_at limit 1`;
   if (existing) return existing.org_id;
-  const slug = login.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  const [org] = await tx<{ id: string }[]>`
-    insert into orgs (slug, name) values (${slug}, ${name ?? login})
-    on conflict (slug) do update set slug = orgs.slug || '-' || substr(md5(random()::text), 1, 4)
-    returning id`;
+  const base = login.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  // A taken slug gets a suffix on the NEW org. (It once renamed the existing
+  // org and returned it, making the newcomer the owner of someone else's org.)
+  let org: { id: string } | undefined;
+  for (let i = 0; i < 5 && !org; i++) {
+    const slug = i === 0 ? base : `${base}-${randomBytes(2).toString('hex')}`;
+    [org] = await tx<{ id: string }[]>`
+      insert into orgs (slug, name) values (${slug}, ${name ?? login})
+      on conflict (slug) do nothing returning id`;
+  }
   if (!org) throw new Error('org insert failed');
   await tx`insert into memberships (org_id, user_id, role) values (${org.id}, ${userId}, 'owner')`;
   return org.id;

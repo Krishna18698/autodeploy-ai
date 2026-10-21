@@ -625,5 +625,23 @@ describe('Email sign-in', () => {
       { login: string }[]
     >`select login from users where id = ${alice.userId}`;
     expect(row?.login).toBe(`${name}-renamed`);
+    // Nobody joins an org they didn't create: Alice's org has only Alice.
+    const members = await deps.sql<{ user_id: string }[]>`
+      select user_id from memberships where org_id = ${alice.orgId}`;
+    expect(members.map((m) => m.user_id)).toEqual([alice.userId]);
+  });
+
+  it('a new account whose org name is taken gets its own org, never the existing one', async () => {
+    const taken = `clash-${randomBytes(3).toString('hex')}`;
+    const existing = await makeOrg(deps.sql, taken);
+    const user = await upsertUserWithOrg(deps.sql, {
+      githubId: null,
+      login: taken,
+      name: null,
+      email: null,
+      avatarUrl: null,
+    });
+    expect(user.orgId).not.toBe(existing);
+    expect(await deps.sql`select 1 from memberships where org_id = ${existing}`).toHaveLength(0);
   });
 });
