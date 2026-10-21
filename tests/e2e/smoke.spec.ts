@@ -456,6 +456,8 @@ test('no dashboard page scrolls sideways or squashes a form on a phone', async (
     '/privacy',
     '/acceptable-use',
     '/security',
+    '/login',
+    '/forgot-password',
   ]) {
     await expectRendered(page, path);
     const overflow = await page.evaluate(
@@ -560,6 +562,26 @@ test('the notification email can be read and saved', async ({ page }) => {
   await expectRendered(page, '/settings');
   await page.getByRole('tab', { name: 'Account' }).click();
   await expect(page.getByLabel('Notification email')).toHaveValue(me.user.email ?? '');
+});
+
+test('email sign-in never reveals who has an account', async ({ browser }) => {
+  // A fresh browser: no session, no API token. Only made-up addresses that
+  // have no account are used, so no email is ever sent to them.
+  const ctx = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  const page = await ctx.newPage();
+  const nobody = `nobody-${RUN}@example.com`;
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(nobody);
+  await page.getByLabel('Password').fill('not the password 1');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.locator('main [role=alert]')).toHaveText('Wrong email or password.');
+
+  await page.goto('/forgot-password');
+  await page.getByLabel('Email').fill(nobody);
+  await page.getByRole('button', { name: 'Email me a link' }).click();
+  await expect(page.getByText(`If ${nobody} has an AutoDeploy account`)).toBeVisible();
+
+  await ctx.close();
 });
 
 test('a repository AutoDeploy cannot see gets a clear way forward, not a 500', async ({ page }) => {

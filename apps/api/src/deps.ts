@@ -4,6 +4,7 @@ import { GitHubClient, InstallationTokens } from '@autodeploy/github';
 import { Storage } from '@autodeploy/storage';
 import { Valkey } from 'iovalkey';
 import { type Env, githubAppConfigured } from './env.js';
+import { type Email, sendEmail } from './lib/email.js';
 
 export type Deps = {
   env: Env;
@@ -15,6 +16,8 @@ export type Deps = {
   installations: InstallationTokens | null;
   /** Opens a dedicated Valkey connection (blocking reads for SSE). */
   valkeyFactory: () => Valkey;
+  /** Sends account email (tests swap it to read the links). */
+  sendEmail: (m: Email) => Promise<void>;
   close: () => Promise<void>;
 };
 
@@ -48,6 +51,7 @@ export function createDeps(env: Env): Deps {
     github,
     installations,
     valkeyFactory: () => new Valkey(env.VALKEY_URL, { maxRetriesPerRequest: null }),
+    sendEmail: (m) => sendEmail(env, m),
     close: async () => {
       await Promise.allSettled([sql.end({ timeout: 5 }), valkey.quit()]);
     },

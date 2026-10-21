@@ -20,6 +20,7 @@ import { rateLimitPlugin } from './plugins/rate-limit.js';
 import { authRoutes } from './routes/auth.js';
 import { clientErrorRoutes } from './routes/client-errors.js';
 import { deploymentRoutes } from './routes/deployments.js';
+import { emailAuthRoutes } from './routes/email-auth.js';
 import { githubWebhookRoutes } from './routes/github-webhooks.js';
 import { healthRoutes } from './routes/health.js';
 import { internalRoutes } from './routes/internal.js';
@@ -125,6 +126,7 @@ export async function buildApp(deps: Deps) {
 
   await app.register(async (scope) => healthRoutes(scope, deps));
   await app.register(authRoutes(deps));
+  await app.register(emailAuthRoutes(deps));
   await app.register(projectRoutes(deps));
   await app.register(deploymentRoutes(deps));
   await app.register(orgRoutes(deps));

@@ -49,6 +49,7 @@ const TASKS: Task[] = [
     everyMs: 60 * 60_000,
     run: async (deps) => {
       await deps.sql`delete from sessions where expires_at < now()`;
+      await deps.sql`delete from email_tokens where expires_at < now() - interval '1 day'`;
       await deps.sql`delete from idempotency_keys where created_at < now() - interval '24 hours'`;
       await deps.sql`delete from github_deliveries where received_at < now() - interval '7 days'`;
       await deps.sql`delete from processed_events where processed_at < now() - interval '14 days'`;

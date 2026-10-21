@@ -1,0 +1,60 @@
+import Link from 'next/link';
+
+// The card every sign-in screen sits in: sign in, confirm email, forgot and
+// reset password.
+export function AuthCard({
+  title,
+  children,
+}: {
+  title: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <main className="grid min-h-svh place-items-center px-4 py-10">
+      <div className="w-full max-w-sm rounded-[10px] border border-line bg-panel p-6">
+        <Link href="/" className="mb-6 flex items-center gap-2 text-sm font-semibold">
+          <span
+            aria-hidden
+            className="grid size-6 place-items-center rounded-md bg-run text-[12px] text-bg"
+          >
+            ◆
+          </span>
+          AutoDeploy
+        </Link>
+        <h1 className="text-[20px] font-semibold tracking-tight">{title}</h1>
+        {children}
+      </div>
+    </main>
+  );
+}
+
+// 16px text on phones, so iOS doesn't zoom into the field.
+export const fieldClass =
+  'h-10 w-full rounded-md border border-line bg-bg px-3 text-[16px] text-fg outline-none placeholder:text-muted/60 focus:border-run/60 sm:text-[14px]';
+
+export function Field({
+  label,
+  hint,
+  ...input
+}: { label: string; hint?: string } & React.ComponentProps<'input'>) {
+  return (
+    <label className="flex flex-col gap-1.5 text-[13px]">
+      <span className="text-muted">{label}</span>
+      <input {...input} className={fieldClass} />
+      {hint && <span className="text-[12px] text-muted">{hint}</span>}
+    </label>
+  );
+}
+
+export function Notice({ tone, children }: { tone: 'ok' | 'fail'; children: React.ReactNode }) {
+  const cls =
+    tone === 'ok' ? 'border-ok/40 bg-ok/10 text-fg/90' : 'border-fail/40 bg-fail/10 text-fail';
+  return (
+    <p
+      role={tone === 'fail' ? 'alert' : 'status'}
+      className={`mt-4 rounded-md border px-3 py-2 text-[13px] leading-5 ${cls}`}
+    >
+      {children}
+    </p>
+  );
+}

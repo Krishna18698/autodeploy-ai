@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import { buildApp } from '@autodeploy/api/app';
 import { createDeps, type Deps } from '@autodeploy/api/deps';
 import { loadEnv } from '@autodeploy/api/env';
+import { upsertUserWithOrg } from '@autodeploy/api/routes/auth';
+import { sha256Hex } from '@autodeploy/crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { makeDeployment, makeOrg, makeProject } from './helpers';
@@ -457,5 +459,165 @@ describe('Per-account limits', () => {
     await expect(sql.begin((tx) => enforceDeployLimits(tx, org2, env))).rejects.toMatchObject({
       code: 'storage_exceeded',
     });
+  });
+});
+
+describe('Email sign-in', () => {
+  const mails: { to: string; subject: string; text: string }[] = [];
+  const realSend = () => deps.sendEmail;
+  let restore: Deps['sendEmail'];
+  beforeAll(() => {
+    restore = realSend();
+    deps.sendEmail = async (m) => {
+      mails.push(m);
+    };
+  });
+  afterAll(() => {
+    deps.sendEmail = restore;
+  });
+  const post = (url: string, payload: object, headers: Record<string, string> = {}) =>
+    app.inject({ method: 'POST', url, payload, headers });
+  const linkToken = (text: string) => /token=([A-Za-z0-9_-]+)/.exec(text)?.[1] ?? '';
+  const lastMailTo = (to: string) => mails.filter((m) => m.to === to).at(-1);
+  // One account email per address a minute: tests that send twice reset it.
+  const unthrottle = (email: string) => deps.valkey.del(`account-mail:${sha256Hex(email)}`);
+  const cookieOf = (r: { headers: Record<string, unknown> }) =>
+    String(r.headers['set-cookie']).split(';')[0] ?? '';
+
+  it('signs up, confirms the address from the emailed link, then signs in', async () => {
+    const email = `new-${randomBytes(3).toString('hex')}@example.com`;
+    const password = 'correct horse battery';
+    expect(
+      (await post('/auth/email/signup', { email: email.toUpperCase(), password })).statusCode,
+    ).toBe(202);
+    const verify = lastMailTo(email);
+    expect(verify?.subject).toBe('Confirm your email for AutoDeploy');
+
+    // Not confirmed yet: no session, and no second email within the minute.
+    const early = await post('/auth/email/login', { email, password });
+    expect(early.statusCode).toBe(403);
+    expect(early.json().code).toBe('email_unverified');
+
+    const ok = await post('/auth/email/verify', { token: linkToken(verify!.text) });
+    expect(ok.statusCode).toBe(200);
+    const me = await app.inject({ url: '/api/v1/me', headers: { cookie: cookieOf(ok) } });
+    expect(me.statusCode).toBe(200);
+    // Never a valid GitHub login, so never matched to someone's GitHub App installation.
+    expect(me.json().user.login).toMatch(/^new-[0-9a-f]{6}_[0-9a-f]{6}$/);
+    expect(me.json().user.email).toBe(email);
+
+    expect((await post('/auth/email/verify', { token: linkToken(verify!.text) })).statusCode).toBe(
+      400,
+    );
+    expect(
+      (await post('/auth/email/login', { email, password: 'wrong password!' })).statusCode,
+    ).toBe(401);
+    expect(
+      (await post('/auth/email/login', { email: 'nobody@example.com', password })).statusCode,
+    ).toBe(401);
+    expect((await post('/auth/email/login', { email, password })).statusCode).toBe(200);
+
+    // Signing up again says the same thing, and only tells the owner.
+    await unthrottle(email);
+    expect(
+      (await post('/auth/email/signup', { email, password: 'another password' })).statusCode,
+    ).toBe(202);
+    expect(lastMailTo(email)?.subject).toBe('You already have an AutoDeploy account');
+    expect(await deps.sql`select 1 from user_passwords where email = ${email}`).toHaveLength(1);
+  });
+
+  it('resets a forgotten password once, signing out every other session', async () => {
+    const email = `reset-${randomBytes(3).toString('hex')}@example.com`;
+    await post('/auth/email/signup', { email, password: 'first password 1' });
+    const signedIn = await post('/auth/email/verify', {
+      token: linkToken(lastMailTo(email)!.text),
+    });
+    const oldCookie = cookieOf(signedIn);
+
+    const before = mails.length;
+    expect((await post('/auth/email/forgot', { email: 'nobody@example.com' })).statusCode).toBe(
+      202,
+    );
+    expect(mails.length).toBe(before);
+
+    await unthrottle(email);
+    expect((await post('/auth/email/forgot', { email })).statusCode).toBe(202);
+    const reset = lastMailTo(email)!;
+    expect(reset.subject).toBe('Reset your AutoDeploy password');
+    // A second request within the minute sends nothing and keeps the first link valid.
+    await post('/auth/email/forgot', { email });
+    expect(lastMailTo(email)).toBe(reset);
+
+    const token = linkToken(reset.text);
+    expect((await post('/auth/email/reset', { token, password: 'short' })).statusCode).toBe(400);
+    const done = await post('/auth/email/reset', { token, password: 'second password 2' });
+    expect(done.statusCode).toBe(200);
+    expect(
+      (await app.inject({ url: '/api/v1/me', headers: { cookie: oldCookie } })).statusCode,
+    ).toBe(401);
+    expect(
+      (await app.inject({ url: '/api/v1/me', headers: { cookie: cookieOf(done) } })).statusCode,
+    ).toBe(200);
+    expect(
+      (await post('/auth/email/reset', { token, password: 'third password 3' })).statusCode,
+    ).toBe(400);
+    expect(
+      (await post('/auth/email/login', { email, password: 'first password 1' })).statusCode,
+    ).toBe(401);
+    expect(
+      (await post('/auth/email/login', { email, password: 'second password 2' })).statusCode,
+    ).toBe(200);
+  });
+
+  it('refuses sign-ups while they are closed, and requests from other sites', async () => {
+    const email = `closed-${randomBytes(3).toString('hex')}@example.com`;
+    const allow = deps.env.ALLOWED_GITHUB_LOGINS;
+    deps.env.ALLOWED_GITHUB_LOGINS = ['someone'];
+    try {
+      const r = await post('/auth/email/signup', { email, password: 'long enough pw' });
+      expect(r.statusCode).toBe(403);
+      expect(r.json().detail ?? r.json().message).toContain('not open yet');
+    } finally {
+      deps.env.ALLOWED_GITHUB_LOGINS = allow;
+    }
+    const foreign = await post(
+      '/auth/email/login',
+      { email, password: 'long enough pw' },
+      { origin: 'https://evil.example' },
+    );
+    expect(foreign.statusCode).toBe(403);
+  });
+
+  it('matches GitHub users by id: a reused login never inherits the old account', async () => {
+    const name = `gh-${randomBytes(3).toString('hex')}`;
+    const alice = await upsertUserWithOrg(deps.sql, {
+      githubId: 900_000_001,
+      login: name,
+      name: 'Alice',
+      email: null,
+      avatarUrl: null,
+    });
+    // Alice renamed on GitHub; Bob took her old name.
+    const bob = await upsertUserWithOrg(deps.sql, {
+      githubId: 900_000_002,
+      login: name,
+      name: 'Bob',
+      email: null,
+      avatarUrl: null,
+    });
+    expect(bob.userId).not.toBe(alice.userId);
+    expect(bob.orgId).not.toBe(alice.orgId);
+    const again = await upsertUserWithOrg(deps.sql, {
+      githubId: 900_000_001,
+      login: `${name}-renamed`,
+      name: 'Alice',
+      email: null,
+      avatarUrl: null,
+    });
+    expect(again).toEqual(alice);
+    const [row] = await deps.sql<
+      { login: string }[]
+    >`select login from users where id = ${alice.userId}`;
+    expect(row?.login).toBe(`${name}-renamed`);
   });
 });

@@ -24,9 +24,11 @@ export default function Privacy() {
       <h2>1. What I collect</h2>
       <ul>
         <li>
-          <strong>Your account.</strong> When you sign in with GitHub: your GitHub user ID, login,
-          display name and avatar address. Your email address only if you enter one for
-          notifications.
+          <strong>Your account.</strong> If you sign in with GitHub: your GitHub user ID, login,
+          display name and avatar address. If you sign up with email: your email address and a
+          one-way hash of your password (the password itself is never stored), plus single-use links
+          emailed to you to confirm the address or reset the password, which expire within 24 hours.
+          Your notification email, if you set one.
         </li>
         <li>
           <strong>Sign-in sessions.</strong> The IP address and browser type each session was

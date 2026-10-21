@@ -40,9 +40,13 @@ const EnvSchema = z
     WORK_DIR: z.string().default('/tmp/autodeploy'),
     DEV_LOGIN: bool,
     ALLOW_LOCAL_SOURCES: bool,
-    // Empty: anyone can sign in (usage is limited per account, below). Set it
-    // to restrict sign-in to listed GitHub logins, e.g. during an incident.
+    // Empty: anyone can sign in or sign up (usage is limited per account,
+    // below). Set it to restrict sign-in to listed GitHub logins; new email
+    // sign-ups are closed while it is set.
     ALLOWED_GITHUB_LOGINS: list,
+    // Account email (verify address, reset password). Unset: logged, not sent.
+    RESEND_API_KEY: z.string().optional(),
+    EMAIL_FROM: z.string().default('AutoDeploy <onboarding@resend.dev>'),
     // Per-account limits (one personal org per user).
     MAX_PROJECTS_PER_ORG: z.coerce.number().int().min(1).default(10),
     BUILD_MINUTES_PER_MONTH: z.coerce.number().int().min(1).default(300),

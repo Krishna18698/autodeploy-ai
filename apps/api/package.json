@@ -41,6 +41,7 @@
   "exports": {
     "./app": "./src/app.ts",
     "./deps": "./src/deps.ts",
-    "./env": "./src/env.ts"
+    "./env": "./src/env.ts",
+    "./routes/auth": "./src/routes/auth.ts"
   }
 }

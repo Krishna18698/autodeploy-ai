@@ -1,6 +1,6 @@
 import { Me } from '@autodeploy/contracts';
 import { randomToken, sha256Hex } from '@autodeploy/crypto';
-import type { Sql } from '@autodeploy/db';
+import type { Sql, Tx } from '@autodeploy/db';
 import { exchangeOAuthCode } from '@autodeploy/github';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -23,7 +23,11 @@ type GitHubUser = {
   avatar_url: string | null;
 };
 
-/** Upserts the user and makes sure they have a personal org they own. */
+/**
+ * Finds or creates the user and makes sure they have a personal org they own.
+ * GitHub users are matched by their numeric id, never by login: logins can be
+ * renamed and then claimed by someone else, who must not inherit the account.
+ */
 export async function upsertUserWithOrg(
   sql: Sql,
   u: {
@@ -35,30 +39,57 @@ export async function upsertUserWithOrg(
   },
 ) {
   return sql.begin(async (tx) => {
-    const [user] = await tx<{ id: string }[]>`
-      insert into users (github_id, login, name, email, avatar_url)
-      values (${u.githubId}, ${u.login}, ${u.name}, ${u.email}, ${u.avatarUrl})
-      on conflict (login) do update set
-        github_id = coalesce(excluded.github_id, users.github_id),
-        name = excluded.name, email = coalesce(users.email, excluded.email), avatar_url = excluded.avatar_url
-      returning id`;
+    let user: { id: string } | undefined;
+    if (u.githubId !== null) {
+      // Another account holding this login (its owner renamed on GitHub and
+      // someone took the name) keeps its id and gives up the name; it gets
+      // its current one back on its next sign-in.
+      await tx`
+        update users set login = login || '~' || substr(md5(random()::text), 1, 6)
+        where lower(login) = lower(${u.login}) and github_id is distinct from ${u.githubId}`;
+      [user] = await tx<{ id: string }[]>`
+        insert into users (github_id, login, name, email, avatar_url)
+        values (${u.githubId}, ${u.login}, ${u.name}, ${u.email}, ${u.avatarUrl})
+        on conflict (github_id) do update set
+          login = excluded.login, name = excluded.name,
+          email = coalesce(users.email, excluded.email), avatar_url = excluded.avatar_url
+        returning id`;
+    } else {
+      // Local development sign-in only: no GitHub identity to match on.
+      [user] = await tx<{ id: string }[]>`
+        insert into users (login, name, email, avatar_url)
+        values (${u.login}, ${u.name}, ${u.email}, ${u.avatarUrl})
+        on conflict (login) do update set name = excluded.name
+        returning id`;
+    }
     if (!user) throw new Error('user upsert failed');
-    const [existing] = await tx<
-      { org_id: string }[]
-    >`select org_id from memberships where user_id = ${user.id} limit 1`;
-    if (existing) return { userId: user.id, orgId: existing.org_id };
-    const slug = u.login.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-    const [org] = await tx<{ id: string }[]>`
-      insert into orgs (slug, name) values (${slug}, ${u.name ?? u.login})
-      on conflict (slug) do update set slug = orgs.slug || '-' || substr(md5(random()::text), 1, 4)
-      returning id`;
-    if (!org) throw new Error('org insert failed');
-    await tx`insert into memberships (org_id, user_id, role) values (${org.id}, ${user.id}, 'owner')`;
-    return { userId: user.id, orgId: org.id };
+    const orgId = await ensurePersonalOrg(tx, user.id, u.login, u.name);
+    return { userId: user.id, orgId };
   });
 }
 
-async function startSession(
+/** The user's first org, or a new personal one they own. */
+export async function ensurePersonalOrg(
+  tx: Tx,
+  userId: string,
+  login: string,
+  name: string | null,
+): Promise<string> {
+  const [existing] = await tx<
+    { org_id: string }[]
+  >`select org_id from memberships where user_id = ${userId} order by created_at limit 1`;
+  if (existing) return existing.org_id;
+  const slug = login.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  const [org] = await tx<{ id: string }[]>`
+    insert into orgs (slug, name) values (${slug}, ${name ?? login})
+    on conflict (slug) do update set slug = orgs.slug || '-' || substr(md5(random()::text), 1, 4)
+    returning id`;
+  if (!org) throw new Error('org insert failed');
+  await tx`insert into memberships (org_id, user_id, role) values (${org.id}, ${userId}, 'owner')`;
+  return org.id;
+}
+
+export async function startSession(
   deps: Deps,
   req: FastifyRequest,
   reply: FastifyReply,

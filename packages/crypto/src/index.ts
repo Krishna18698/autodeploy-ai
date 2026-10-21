@@ -4,6 +4,8 @@ import {
   createHash,
   createHmac,
   randomBytes,
+  type ScryptOptions,
+  scrypt,
   timingSafeEqual,
 } from 'node:crypto';
 
@@ -115,3 +117,46 @@ export function previewSecret(value: string): string {
   if (value.length <= 8) return '•'.repeat(Math.max(4, value.length));
   return `${value.slice(0, 3)}…${value.slice(-4)}`;
 }
+
+// Passwords: scrypt from Node itself (no native modules to build for arm64).
+// Stored as scrypt$N$r$p$salt$hash so the cost can be raised later and old
+// hashes still verify. N=2^15, r=8 needs 32 MiB and ~50-100 ms per check.
+const SCRYPT = { N: 2 ** 15, r: 8, p: 1 };
+const SCRYPT_MAXMEM = 64 * 1024 * 1024;
+
+function scryptAsync(password: string, salt: Buffer, len: number, opts: ScryptOptions) {
+  return new Promise<Buffer>((done, fail) =>
+    scrypt(password.normalize('NFKC'), salt, len, { ...opts, maxmem: SCRYPT_MAXMEM }, (err, key) =>
+      err ? fail(err) : done(key),
+    ),
+  );
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16);
+  const hash = await scryptAsync(password, salt, 32, SCRYPT);
+  return [
+    'scrypt',
+    SCRYPT.N,
+    SCRYPT.r,
+    SCRYPT.p,
+    salt.toString('base64url'),
+    hash.toString('base64url'),
+  ].join('$');
+}
+
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const [alg, n, r, p, salt, hash] = stored.split('$');
+  if (alg !== 'scrypt' || !salt || !hash) return false;
+  const expected = Buffer.from(hash, 'base64url');
+  const got = await scryptAsync(password, Buffer.from(salt, 'base64url'), expected.length, {
+    N: Number(n),
+    r: Number(r),
+    p: Number(p),
+  });
+  return timingSafeEqual(got, expected);
+}
+
+/** Checked when no account matches, so a wrong email takes as long as a wrong password. */
+export const DUMMY_PASSWORD_HASH =
+  'scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
