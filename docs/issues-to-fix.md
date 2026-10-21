@@ -11,40 +11,40 @@ Small things noticed while using the product; newest last.
 
 ## Before public
 
-Everything to settle before AutoDeploy is opened beyond the owner (as of 2026-10-19).
+Status on 2026-10-22. The owner's order: finish the product first; opening
+sign-ups, making the GitHub App public and making the repository public are
+the last steps.
 
-**Decisions**
-- [ ] **Per-org caps.** Today static projects are unlimited per org; add a project cap
-  (e.g. 10), a storage cap and a monthly build-minutes budget so one org can't
-  fill B2 or hold the single build slot. (Already capped: 50 deploys/day, 3
-  server-rendered projects, 1 build at a time, 300 AI calls/day.)
+**Last steps (each needs the owner's yes)**
+- [ ] **Open sign-ups:** remove `ALLOWED_GITHUB_LOGINS` from `.env.prod` and ship.
+  Ready: per-account limits, email sign-in with verification and reset, legal pages.
+- [ ] **Make the GitHub App public** (app settings → Advanced) so other people can
+  install it on their own accounts.
+- [ ] **Make the repository public.**
+
+**Still to build**
+- [ ] **Google sign-in** (the owner provides a Google OAuth client).
+- [ ] **Redesign** (branch `redesign`): ship once the owner approves it.
 - [ ] **Automatic deploys of AutoDeploy itself on push** (GitHub Actions: lint and
   tests, then ship, edge and dashboard), or keep a manual yes per deploy. Needs
   three deploy credentials stored as GitHub secrets; the VM keeps its own `.env.prod`.
+
+**Upkeep**
 - [x] **Permanent domain:** autodeploy.fyi (Cloudflare Registrar, bought 2026-10-21). autodeploy.dpdns.org redirects to it; drop it from `legacy_domains` once nothing links there (its free registration lapses June 2027). The eu.org application is no longer needed.
 - [ ] **Renew autodeploy.fyi** each October (auto-renew on in Cloudflare).
-- [ ] **Who can sign in:** invite-only (one allowlisted GitHub account). Decide the
-  sign-up policy and abuse controls before opening it.
-- [ ] **"₹0" wording** in the hero badge ("₹0 to run") and the How it works section:
-  keep or remove.
-
-**Features**
-- [ ] **Server-rendered apps beyond Next.js:** Nuxt, SvelteKit (adapter-node), Astro
-  server mode, Remix/React Router, SolidStart and plain Node servers (Express,
-  Fastify, Hono) with a start command. In progress.
-- [ ] **Email to other people:** Resend refuses free domains, so mail goes from
-  onboarding@resend.dev and only reaches the Resend account's owner. Sending to
-  other users needs a domain of our own verified in Resend
-  (`scripts/resend-domain.ts` and the Terraform records are ready for it).
-
-**Setup to finish**
-- [ ] Set the notification email (Settings → Notifications) and confirm a failure
-  email arrives.
-- [ ] Grafana: service-account token, then install `infra/observability`
-  dashboard and alerts and confirm the worker's metrics arrive.
-- [ ] UptimeRobot monitors on `api…/healthz` and `app…/login`.
 - [ ] Confirm a real error shows up in Sentry (only the key-check test event so far).
-- [ ] The API docs description update goes out with the next server deploy.
+- [ ] Optional: set the Grafana service account back to Viewer.
+
+**Done since 2026-10-19**
+- [x] Per-account limits (10 projects, 3 server-rendered, 20 deploys/day, 300 build
+  minutes/month, 1 GB, 60 AI calls/day), counted in a ledger deleting a project can't undo.
+- [x] "₹0" wording removed; the site says "free".
+- [x] Server-rendered apps beyond Next.js: Nuxt, SvelteKit, Astro and Node servers
+  pass the production smoke suite.
+- [x] Email to anyone: Resend sends from noreply@autodeploy.fyi; hello@ forwards to the owner.
+- [x] Notification email set and a failure email received.
+- [x] Grafana dashboard and 8 alerts installed, emailing the owner (ServerSilent
+  covers a dead VM, so UptimeRobot was dropped).
 
 **Evidence**
 - [x] OpenRouter measured on 2026-10-21 (3/4 fixed, 2/2 escalated, 0 false fixes).
