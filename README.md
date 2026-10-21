@@ -99,7 +99,7 @@ or against production with an API token:
 
 ```bash
 # token from Settings → API tokens (scope: admin), saved to the git-ignored file
-E2E_BASE_URL=https://app.autodeploy.dpdns.org pnpm test:smoke   # reads infra/deploy/.e2e-token
+E2E_BASE_URL=https://app.autodeploy.fyi pnpm test:smoke   # reads infra/deploy/.e2e-token
 ```
 
 Results and the bugs they caught: [`docs/measurements.md`](docs/measurements.md).
@@ -116,9 +116,9 @@ tests/     fixtures (failure corpus)
 
 ## Status
 
-**Live** at [app.autodeploy.dpdns.org](https://app.autodeploy.dpdns.org)
+**Live** at [app.autodeploy.fyi](https://app.autodeploy.fyi)
 (free for everyone, with per-account limits; sites are served at
-`<name>.autodeploy.dpdns.org`):
+`<name>.autodeploy.fyi`):
 
 - API, worker, SSR gateway, Postgres, Valkey and Kafka on one Oracle Cloud
   Always Free VM (Ampere A1), reached only through a Cloudflare Tunnel.

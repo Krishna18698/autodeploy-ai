@@ -9,7 +9,7 @@ const API_URL = process.env.API_URL ?? 'http://localhost:4000';
 // here with x-autodeploy-edge set; a visit straight to *.vercel.app has no
 // such header and is sent over (sign-in there could never work).
 const APP_PUBLIC_URL =
-  process.env.APP_PUBLIC_URL ?? (process.env.VERCEL ? 'https://app.autodeploy.dpdns.org' : '');
+  process.env.APP_PUBLIC_URL ?? (process.env.VERCEL ? 'https://app.autodeploy.fyi' : '');
 
 // Everything is same-origin (the API is behind the rewrites below, fonts are
 // self-hosted by next/font). Inline scripts/styles are allowed because the App

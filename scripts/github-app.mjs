@@ -25,11 +25,12 @@ const state = randomBytes(16).toString('hex');
 
 const manifest = {
   name,
-  url: `https://app.${domain}`,
-  description: 'Self-healing static-site deploys: builds, repairs, previews.',
+  url: `https://${domain}`,
+  description: 'Self-healing deploys for static sites and server-rendered apps.',
   public: false, // installable only on the owner's account
   redirect_url: `http://127.0.0.1:${PORT}/created`,
-  callback_urls: [`https://api.${domain}/auth/github/callback`],
+  // Sign-in finishes on the dashboard's host so its cookies stay host-only.
+  callback_urls: [`https://app.${domain}/auth/github/callback`],
   request_oauth_on_install: false,
   setup_on_update: false,
   hook_attributes: { url: `https://api.${domain}/api/v1/webhooks/github`, active: true },

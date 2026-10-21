@@ -1,6 +1,6 @@
 // Sets up the platform domain for sending email through Resend.
-// Note: Resend refuses free domains (dpdns.org, eu.org); this is for a domain
-// you own. Without one, mail goes from onboarding@resend.dev to the account owner.
+// Resend refuses free domains (dpdns.org, eu.org); the platform domain is one
+// we own (autodeploy.fyi).
 //
 //   pnpm tsx scripts/resend-domain.ts            # status + DNS records (read only)
 //   pnpm tsx scripts/resend-domain.ts --create   # add the domain to Resend first
@@ -21,7 +21,7 @@ const get = readEnvProd();
 // shipped); the server gets a sending-only key limited to the platform domain.
 const setupFile = resolve(root, 'infra/deploy/.resend-setup-key');
 const key = existsSync(setupFile) ? readFileSync(setupFile, 'utf8').trim() : get('RESEND_API_KEY');
-const domain = get('PLATFORM_DOMAIN') ?? 'autodeploy.dpdns.org';
+const domain = get('PLATFORM_DOMAIN') ?? 'autodeploy.fyi';
 if (!key) {
   console.error('No Resend key: save a full-access one to infra/deploy/.resend-setup-key');
   process.exit(1);

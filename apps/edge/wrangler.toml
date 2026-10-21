@@ -24,11 +24,13 @@ name = "autodeploy-edge"
 workers_dev = false
 
 [env.production.vars]
-PLATFORM_DOMAIN = "autodeploy.dpdns.org"
+PLATFORM_DOMAIN = "autodeploy.fyi"
+# Earlier domains: every address on them redirects to the same one on PLATFORM_DOMAIN.
+LEGACY_DOMAINS = "autodeploy.dpdns.org"
 ROUTE_MODE = "kv"
-API_URL = "https://api.autodeploy.dpdns.org"
+API_URL = "https://api.autodeploy.fyi"
 APP_ORIGIN = "https://autodeploy-zeta.vercel.app"
-RUNTIME_URL = "https://run.autodeploy.dpdns.org"
+RUNTIME_URL = "https://run.autodeploy.fyi"
 S3_ENDPOINT = "https://s3.us-east-005.backblazeb2.com"
 S3_BUCKET = "autodeploy-ks-artifacts"
 S3_REGION = "us-east-005"

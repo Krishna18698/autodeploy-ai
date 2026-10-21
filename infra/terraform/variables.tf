@@ -19,7 +19,12 @@ variable "cloudflare_api_token" {
 variable "cloudflare_account_id" { type = string }
 variable "platform_domain" {
   type        = string
-  description = "e.g. autodeploy.eu.org — must already be a zone in Cloudflare"
+  description = "e.g. autodeploy.fyi — must already be a zone in Cloudflare"
+}
+variable "legacy_domains" {
+  type        = list(string)
+  default     = []
+  description = "Earlier platform domains kept alive while their addresses redirect (the edge sends them to platform_domain)."
 }
 
 variable "bootstrap_ssh_cidr" {

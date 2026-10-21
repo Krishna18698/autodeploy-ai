@@ -6,12 +6,12 @@ import { defineConfig, devices } from '@playwright/test';
 //
 //   local (default):  E2E_BASE_URL=http://localhost:3100, dev sign-in, file:// fixtures,
 //                     sites reached through the local edge (E2E_EDGE_URL, default :8787)
-//   production:       E2E_BASE_URL=https://app.autodeploy.dpdns.org pnpm test:smoke
+//   production:       E2E_BASE_URL=https://app.autodeploy.fyi pnpm test:smoke
 //                     signs in with an API token read from infra/deploy/.e2e-token
 //                     (git-ignored; create one in Settings → API tokens) and imports
 //                     the fixtures from this repository on GitHub.
 //   local dashboard, production API (to check web changes before they ship):
-//                     API_URL=https://api.autodeploy.dpdns.org next dev, then
+//                     API_URL=https://api.autodeploy.fyi next dev, then
 //                     E2E_BASE_URL=http://localhost:<port> E2E_REMOTE=1 (token sign-in)
 //
 // Everything it creates is named e2e-* and deleted at the end.

@@ -99,7 +99,7 @@ const checks: Record<string, () => Promise<Result>> = {
         : { ok: false, detail: `send check: HTTP ${s.status} ${await short(s)}` };
     }
     if (!r.ok) return { ok: false, detail: `HTTP ${r.status} ${await short(r)}` };
-    const domain = get('PLATFORM_DOMAIN') ?? 'autodeploy.dpdns.org';
+    const domain = get('PLATFORM_DOMAIN') ?? 'autodeploy.fyi';
     const { data = [] } = (await r.json()) as { data?: { name: string; status: string }[] };
     const d = data.find((x) => x.name === domain);
     if (!d) return { ok: false, detail: `key works; ${domain} not added in Resend yet` };

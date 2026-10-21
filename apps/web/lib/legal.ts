@@ -5,11 +5,11 @@ export const LEGAL = {
   operator: 'Krishna Shravan',
   place: 'Karnataka, India',
   courts: 'Bengaluru, Karnataka',
-  /** Public contact and grievance address; filled in before the pages go live. */
-  email: '',
-  effective: '19 October 2026',
-  appUrl: 'https://app.autodeploy.dpdns.org',
-  siteDomain: 'autodeploy.dpdns.org',
+  /** Public contact and grievance address (Cloudflare Email Routing forwards it). */
+  email: 'hello@autodeploy.fyi',
+  effective: '21 October 2026',
+  appUrl: 'https://app.autodeploy.fyi',
+  siteDomain: 'autodeploy.fyi',
 } as const;
 
 export const LEGAL_PAGES = [

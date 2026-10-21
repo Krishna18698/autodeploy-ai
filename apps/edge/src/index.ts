@@ -28,6 +28,20 @@ export interface Env {
   APP_ORIGIN?: string;
   /** The SSR runtime gateway (ADR 0008), reached through the tunnel. */
   RUNTIME_URL?: string;
+  /** Earlier platform domains, comma-separated: their addresses redirect to PLATFORM_DOMAIN. */
+  LEGACY_DOMAINS?: string;
+}
+
+/** The same address under the current platform domain, for a host under an earlier one. */
+export function movedHost(host: string, env: Pick<Env, 'PLATFORM_DOMAIN' | 'LEGACY_DOMAINS'>) {
+  for (const old of (env.LEGACY_DOMAINS ?? '')
+    .split(',')
+    .map((d) => d.trim())
+    .filter(Boolean)) {
+    if (host === old) return `app.${env.PLATFORM_DOMAIN}`;
+    if (host.endsWith(`.${old}`)) return `${host.slice(0, -old.length)}${env.PLATFORM_DOMAIN}`;
+  }
+  return null;
 }
 
 type RouteValue = {
@@ -112,9 +126,9 @@ function forBrowser(res: Response): Response {
 }
 
 /**
- * app.<domain>: the dashboard. Vercel can't attach a subdomain of dpdns.org
- * (it treats dpdns.org as someone else's apex), so the edge serves it: API and
- * sign-in calls go straight to the API (no extra hop, SSE streams untouched),
+ * app.<domain>: the dashboard. The edge serves it rather than attaching the
+ * domain to Vercel: API and sign-in calls go straight to the API (no extra hop,
+ * SSE streams untouched),
  * pages come from Vercel. The browser only ever sees app.<domain>, so cookies
  * and the API's origin check work as if it were one site.
  */
@@ -201,9 +215,18 @@ export default {
     const reqHost = (request.headers.get('host') ?? new URL(request.url).host)
       .toLowerCase()
       .replace(/:\d+$/, '');
+    const isRead = request.method === 'GET' || request.method === 'HEAD';
+    const url = new URL(request.url);
+    // Old links keep working: permanent redirects (308 keeps a POST a POST).
+    const moved = movedHost(reqHost, env);
+    if (moved)
+      return Response.redirect(`https://${moved}${url.pathname}${url.search}`, isRead ? 301 : 308);
+    // The bare domain and www have no pages of their own; the landing page lives
+    // with the dashboard. Temporary, so the apex can get its own page later.
+    if (reqHost === env.PLATFORM_DOMAIN || reqHost === `www.${env.PLATFORM_DOMAIN}`)
+      return Response.redirect(`https://${appHost}${url.pathname}${url.search}`, 302);
     if (env.APP_ORIGIN && reqHost === appHost)
       return serveApp(request, env as Env & { APP_ORIGIN: string }, appHost);
-    const url = new URL(request.url);
     const route = parseSiteHost(reqHost, env.PLATFORM_DOMAIN);
     if (!route) {
       // app/api/www and the bare domain have origins of their own: pass through.
@@ -214,8 +237,6 @@ export default {
       if (!label || RESERVED_LABELS.has(label)) return fetch(request);
       return notFound('No site lives at this address.');
     }
-    const isRead = request.method === 'GET' || request.method === 'HEAD';
-
     const target = await resolveRoute(env, reqHost, route);
     if (!target) return notFound('No deployment is live at this address.');
     // Static sites are read-only; a server-rendered one takes any method (forms, API routes).

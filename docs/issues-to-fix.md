@@ -21,7 +21,8 @@ Everything to settle before AutoDeploy is opened beyond the owner (as of 2026-10
 - [ ] **Automatic deploys of AutoDeploy itself on push** (GitHub Actions: lint and
   tests, then ship, edge and dashboard), or keep a manual yes per deploy. Needs
   three deploy credentials stored as GitHub secrets; the VM keeps its own `.env.prod`.
-- [ ] **Permanent domain:** eu.org approval pending. Renew dpdns.org before June 2027.
+- [x] **Permanent domain:** autodeploy.fyi (Cloudflare Registrar, bought 2026-10-21). autodeploy.dpdns.org redirects to it; drop it from `legacy_domains` once nothing links there (its free registration lapses June 2027). The eu.org application is no longer needed.
+- [ ] **Renew autodeploy.fyi** each October (auto-renew on in Cloudflare).
 - [ ] **Who can sign in:** invite-only (one allowlisted GitHub account). Decide the
   sign-up policy and abuse controls before opening it.
 - [ ] **"₹0" wording** in the hero badge ("₹0 to run") and the How it works section:

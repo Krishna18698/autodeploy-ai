@@ -61,7 +61,7 @@ export function Closing() {
               'Engineering',
               [
                 ['Architecture', '#architecture'],
-                ['API reference', 'https://api.autodeploy.dpdns.org/docs'],
+                ['API reference', 'https://api.autodeploy.fyi/docs'],
               ],
             ],
             [
