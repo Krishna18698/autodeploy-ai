@@ -123,6 +123,9 @@ services:
       BUILD_CONCURRENCY: 1
       AI_PROVIDERS: ${AI_PROVIDERS:-}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      # Free models get retired; swap them here (measure with tests/ai-eval/repair.ts).
+      NVIDIA_MODEL: ${NVIDIA_MODEL:-nvidia/nemotron-3-ultra-550b-a55b}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       CF_ACCOUNT_ID: ${CF_ACCOUNT_ID:-}
       CF_AI_TOKEN: ${CF_AI_TOKEN:-}

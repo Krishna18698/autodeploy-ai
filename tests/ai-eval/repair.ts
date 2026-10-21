@@ -52,7 +52,10 @@ const CONFIGS: { label: string; provider: () => Provider; runs: number }[] = [
   {
     label: 'nvidia',
     provider: () =>
-      nvidia(need('NVIDIA_API_KEY'), get('NVIDIA_MODEL') ?? 'nvidia/nemotron-3-super-120b-a12b'),
+      nvidia(
+        need('NVIDIA_API_KEY'),
+        process.env.NVIDIA_MODEL ?? get('NVIDIA_MODEL') ?? 'nvidia/nemotron-3-ultra-550b-a55b',
+      ),
     runs: arg('--nvidia-runs', 3),
   },
   {
@@ -60,7 +63,9 @@ const CONFIGS: { label: string; provider: () => Provider; runs: number }[] = [
     provider: () =>
       openrouter(
         need('OPENROUTER_API_KEY'),
-        get('OPENROUTER_MODEL') ?? 'nvidia/nemotron-3-super-120b-a12b:free',
+        process.env.OPENROUTER_MODEL ??
+          get('OPENROUTER_MODEL') ??
+          'nvidia/nemotron-3-ultra-550b-a55b:free',
       ),
     runs: arg('--openrouter-runs', 1),
   },

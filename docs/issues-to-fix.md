@@ -47,8 +47,8 @@ Everything to settle before AutoDeploy is opened beyond the owner (as of 2026-10
 - [ ] The API docs description update goes out with the next server deploy.
 
 **Evidence**
-- [ ] OpenRouter's two escalation cases weren't measured (free-tier rate limit):
-  re-run `pnpm tsx tests/ai-eval/repair.ts --nvidia-runs 0`.
+- [x] OpenRouter measured on 2026-10-21 (3/4 fixed, 2/2 escalated, 0 false fixes).
+- [ ] **AI fallback shares the primary's model** (Nemotron 3 Ultra on both). It covers NVIDIA rate limits but not the model being withdrawn again; no non-NVIDIA free model on OpenRouter passed the eval (Cohere North Mini Code, MiniMax M3.1 Flash gave invalid output). Re-check monthly with the eval.
 - [ ] Widen the AI evaluation beyond the corpus's 6 AI cases with realistic failures.
 - [ ] Renew the `e2e-smoke` API token before 2027-01-06.
 

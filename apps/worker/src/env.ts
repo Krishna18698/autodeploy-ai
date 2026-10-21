@@ -74,11 +74,11 @@ const EnvSchema = z.object({
   NVIDIA_API_KEY: z.string().optional(),
   // Checked 2026-10-18 on the free endpoint: answers in ~1 s with thinking off;
   // deepseek-v4.1-flash and the GLM models never answered (no reply in 150 s).
-  NVIDIA_MODEL: z.string().default('nvidia/nemotron-3-super-120b-a12b'),
+  NVIDIA_MODEL: z.string().default('nvidia/nemotron-3-ultra-550b-a55b'),
   NVIDIA_THINKING: z.enum(['on', 'off', 'default']).default('off'),
   OPENROUTER_API_KEY: z.string().optional(),
   // Free models come and go; checked against openrouter.ai/api/v1/models 2026-10-07.
-  OPENROUTER_MODEL: z.string().default('nvidia/nemotron-3-super-120b-a12b:free'),
+  OPENROUTER_MODEL: z.string().default('nvidia/nemotron-3-ultra-550b-a55b:free'),
   CF_ACCOUNT_ID: z.string().optional(),
   CF_AI_TOKEN: z.string().optional(),
   CF_AI_MODEL: z.string().default('@cf/qwen/qwen3-30b-a3b-fp8'),

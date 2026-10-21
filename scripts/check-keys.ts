@@ -51,7 +51,7 @@ const checks: Record<string, () => Promise<Result>> = {
     return chat(
       'https://integrate.api.nvidia.com/v1',
       key,
-      get('NVIDIA_MODEL') ?? 'nvidia/nemotron-3-super-120b-a12b',
+      get('NVIDIA_MODEL') ?? 'nvidia/nemotron-3-ultra-550b-a55b',
       // As the worker calls it (NVIDIA_THINKING defaults to off).
       { chat_template_kwargs: { enable_thinking: get('NVIDIA_THINKING') === 'on' } },
     );
@@ -66,7 +66,7 @@ const checks: Record<string, () => Promise<Result>> = {
     return chat(
       'https://openrouter.ai/api/v1',
       key,
-      get('OPENROUTER_MODEL') ?? 'nvidia/nemotron-3-super-120b-a12b:free',
+      get('OPENROUTER_MODEL') ?? 'nvidia/nemotron-3-ultra-550b-a55b:free',
     );
   },
   'Cloudflare Workers AI (classifier)': async () => {
