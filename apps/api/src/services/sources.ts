@@ -42,7 +42,7 @@ async function readToken(deps: Deps, installationId: number | null) {
 }
 
 /** Who is asking: an installation may only be used by its own account or org. */
-export type SourceActor = { login: string; orgId: string };
+export type SourceActor = { githubId: number | null; orgId: string };
 
 /**
  * The App installation this actor may use for the repo. Another account's
@@ -52,7 +52,8 @@ export type SourceActor = { login: string; orgId: string };
 async function usableInstallation(deps: Deps, repo: RepoRef, actor: SourceActor) {
   const inst = deps.installations ? await deps.installations.forRepo(repo) : null;
   if (!inst) return null;
-  if (inst.account.toLowerCase() === actor.login.toLowerCase()) return inst;
+  // By GitHub's numeric id: a login can be renamed and then taken by someone else.
+  if (actor.githubId !== null && inst.accountId === actor.githubId) return inst;
   const [claimed] = await deps.sql<{ id: string }[]>`
     select id from github_installations where id = ${inst.id} and org_id = ${actor.orgId}`;
   return claimed ? inst : null;

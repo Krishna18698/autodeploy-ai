@@ -63,6 +63,18 @@ export function RepoPicker({
             <div key={i} className="h-8 animate-pulse rounded bg-raised/60" />
           ))}
         </div>
+      ) : data && !data.githubConnected ? (
+        <div className="flex flex-col gap-3 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[13px] text-muted">
+            Connect your GitHub account to pick from your repositories, including private ones.
+          </p>
+          <a
+            href="/auth/github/connect"
+            className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-fg px-3.5 text-[13px] font-medium text-bg hover:bg-fg/90 pointer-coarse:h-10"
+          >
+            Connect GitHub
+          </a>
+        </div>
       ) : !data?.repos.length ? (
         <p className="px-4 py-5 text-[13px] text-muted">
           The AutoDeploy app can’t see any of your repositories yet. Give it access on GitHub, then

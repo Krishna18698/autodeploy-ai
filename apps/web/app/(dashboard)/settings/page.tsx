@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
@@ -31,6 +31,20 @@ const EVENTS = [
 export default function SettingsPage() {
   const [tab, setTab] = useState<TabId>('team');
   const me = useMe();
+  const toast = useToast();
+  // Links land on a tab (?tab=account); coming back from GitHub says how linking went.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const t = q.get('tab');
+    if (t && ['team', 'account', 'usage', 'tokens', 'webhooks', 'audit'].includes(t))
+      setTab(t as TabId);
+    const gh = q.get('github');
+    if (gh === 'connected') toast('GitHub connected', 'ok');
+    if (gh === 'taken')
+      toast('That GitHub account is already linked to another AutoDeploy account', 'fail');
+    // Shown once: a refresh shouldn't repeat it.
+    if (gh) window.history.replaceState(null, '', `/settings${t ? `?tab=${t}` : ''}`);
+  }, [toast]);
   const admin = me.data && ['owner', 'admin'].includes(me.data.org.role);
   return (
     <>
@@ -59,6 +73,7 @@ export default function SettingsPage() {
         {tab === 'team' && <Team canEdit={Boolean(admin)} />}
         {tab === 'account' && (
           <div className="flex flex-col gap-5">
+            <GitHubLink />
             <Notifications />
             <DeleteAccount />
           </div>
@@ -74,6 +89,35 @@ export default function SettingsPage() {
 
 const input =
   'h-9 rounded-md border border-line bg-bg px-3 font-mono text-[13px] text-fg outline-none focus:border-run/60';
+
+function GitHubLink() {
+  const me = useMe();
+  if (!me.data) return null;
+  const connected = me.data.user.githubConnected;
+  return (
+    <Panel title="GitHub">
+      {connected ? (
+        <p className="text-[13px] text-muted">
+          Connected. The AutoDeploy app can deploy the repositories you give it access to, and
+          pushes deploy automatically.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[13px] text-muted">
+            Connect your GitHub account to deploy private repositories and deploy on every push.
+            Public repositories work without it.
+          </p>
+          <a
+            href="/auth/github/connect"
+            className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-fg px-3.5 text-[13px] font-medium text-bg hover:bg-fg/90 pointer-coarse:h-10"
+          >
+            Connect GitHub
+          </a>
+        </div>
+      )}
+    </Panel>
+  );
+}
 
 function Team({ canEdit }: { canEdit: boolean }) {
   const members = useMembers();

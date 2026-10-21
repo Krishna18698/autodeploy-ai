@@ -367,7 +367,8 @@ export function createAppJwt(
   return `${unsigned}.${sig}`;
 }
 
-export type RepoInstallation = { id: number; account: string };
+/** accountId is GitHub's numeric id for the account: logins can be renamed and reused, ids can't. */
+export type RepoInstallation = { id: number; account: string; accountId: number };
 export type InstalledRepo = {
   fullName: string;
   private: boolean;
@@ -403,8 +404,8 @@ export class InstallationTokens {
       return null;
     }
     if (!res.ok) throw await toError(res);
-    const body = (await res.json()) as { id: number; account: { login: string } };
-    const hit = { id: body.id, account: body.account.login };
+    const body = (await res.json()) as { id: number; account: { login: string; id: number } };
+    const hit = { id: body.id, account: body.account.login, accountId: body.account.id };
     this.repos.set(key, { hit, at: Date.now() });
     return hit;
   }
@@ -419,8 +420,11 @@ export class InstallationTokens {
       },
     });
     if (!res.ok) throw await toError(res);
-    const body = (await res.json()) as Array<{ id: number; account: { login: string } }>;
-    return body.map((i) => ({ id: i.id, account: i.account.login }));
+    const body = (await res.json()) as Array<{
+      id: number;
+      account: { login: string; id: number };
+    }>;
+    return body.map((i) => ({ id: i.id, account: i.account.login, accountId: i.account.id }));
   }
 
   /** The repositories an installation was given access to. */

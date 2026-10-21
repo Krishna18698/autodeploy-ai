@@ -47,12 +47,14 @@ export const projectRoutes =
         const a = authOf(req);
         const slug = deps.env.GITHUB_APP_SLUG;
         const installUrl = slug ? `https://github.com/apps/${slug}/installations/new` : null;
-        if (!deps.installations) return { configured: false, installUrl, accounts: [], repos: [] };
+        const githubConnected = a.githubId !== null;
+        if (!deps.installations)
+          return { configured: false, githubConnected, installUrl, accounts: [], repos: [] };
         const claimed = await deps.sql<{ id: string }[]>`
           select id from github_installations where org_id = ${a.orgId}`;
         const mine = (await deps.installations.list()).filter(
           (i) =>
-            i.account.toLowerCase() === a.login.toLowerCase() ||
+            (a.githubId !== null && i.accountId === a.githubId) ||
             claimed.some((c) => Number(c.id) === i.id),
         );
         const repos = (
@@ -74,6 +76,7 @@ export const projectRoutes =
         );
         return {
           configured: true,
+          githubConnected,
           installUrl,
           accounts: mine.map((i) => i.account),
           repos: repos

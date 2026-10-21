@@ -10,6 +10,8 @@ export type Scope = 'read' | 'deploy' | 'admin';
 export type Auth = {
   userId: string;
   login: string;
+  /** The linked GitHub account's numeric id (null for an email account not linked yet). */
+  githubId: number | null;
   orgId: string;
   role: Role;
   via: 'session' | 'token';
@@ -37,9 +39,17 @@ const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 async function resolveToken(deps: Deps, raw: string): Promise<Auth | null> {
   const [row] = await deps.sql<
-    { id: string; org_id: string; user_id: string; scopes: Scope[]; login: string; role: Role }[]
+    {
+      id: string;
+      org_id: string;
+      user_id: string;
+      scopes: Scope[];
+      login: string;
+      github_id: string | null;
+      role: Role;
+    }[]
   >`
-    select t.id, t.org_id, t.user_id, t.scopes, u.login, m.role
+    select t.id, t.org_id, t.user_id, t.scopes, u.login, u.github_id, m.role
     from api_tokens t
     join users u on u.id = t.user_id
     join memberships m on m.org_id = t.org_id and m.user_id = t.user_id
@@ -59,6 +69,7 @@ async function resolveToken(deps: Deps, raw: string): Promise<Auth | null> {
   return {
     userId: row.user_id,
     login: row.login,
+    githubId: row.github_id === null ? null : Number(row.github_id),
     orgId: row.org_id,
     role,
     via: 'token',
@@ -75,10 +86,11 @@ async function resolveSession(deps: Deps, raw: string): Promise<Auth | null> {
       org_id: string | null;
       csrf_token: string;
       login: string;
+      github_id: string | null;
       last_seen_at: Date;
     }[]
   >`
-    select s.user_id, s.org_id, s.csrf_token, u.login, s.last_seen_at
+    select s.user_id, s.org_id, s.csrf_token, u.login, u.github_id, s.last_seen_at
     from sessions s join users u on u.id = s.user_id
     where s.token_hash = ${hash} and s.expires_at > now()`;
   if (!row) return null;
@@ -96,6 +108,7 @@ async function resolveSession(deps: Deps, raw: string): Promise<Auth | null> {
   return {
     userId: row.user_id,
     login: row.login,
+    githubId: row.github_id === null ? null : Number(row.github_id),
     orgId: m.org_id,
     role: m.role,
     via: 'session',

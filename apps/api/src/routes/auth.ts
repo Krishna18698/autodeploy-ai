@@ -14,6 +14,9 @@ import { queueSiteRemoval } from '../services/site-removal.js';
 const SESSION_DAYS = 14;
 const stateCookie = (env: { NODE_ENV: string }) =>
   env.NODE_ENV === 'production' ? '__Host-ad_oauth_state' : 'ad_oauth_state';
+// Linking GitHub to a signed-in email account: "<state>.<user id>".
+const linkCookie = (env: { NODE_ENV: string }) =>
+  env.NODE_ENV === 'production' ? '__Host-ad_link_state' : 'ad_link_state';
 
 type GitHubUser = {
   id: number;
@@ -148,6 +151,37 @@ export const authRoutes =
       },
     );
 
+    // An email account links its GitHub account: needed to see private repos
+    // through the App, and lets "Continue with GitHub" sign in to it later.
+    app.get(
+      '/auth/github/connect',
+      { config: strict, schema: { hide: true } },
+      async (req, reply) => {
+        if (!githubAppConfigured(deps.env)) {
+          throw unavailable(
+            'github_not_configured',
+            'GitHub is not configured on this server yet.',
+          );
+        }
+        const a = req.auth;
+        if (a?.via !== 'session') return reply.redirect(`${deps.env.APP_URL}/login`);
+        if (a.githubId !== null) return reply.redirect(`${deps.env.APP_URL}/settings?tab=account`);
+        const state = randomToken(18);
+        reply.setCookie(linkCookie(deps.env), `${state}.${a.userId}`, {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 600,
+          secure: deps.env.NODE_ENV === 'production',
+        });
+        const url = new URL('https://github.com/login/oauth/authorize');
+        url.searchParams.set('client_id', deps.env.GITHUB_APP_CLIENT_ID ?? '');
+        url.searchParams.set('state', state);
+        url.searchParams.set('redirect_uri', `${deps.env.APP_URL}/auth/github/callback`);
+        return reply.redirect(url.toString());
+      },
+    );
+
     app.get(
       '/auth/github/callback',
       {
@@ -155,10 +189,15 @@ export const authRoutes =
         schema: { hide: true, querystring: z.object({ code: z.string(), state: z.string() }) },
       },
       async (req, reply) => {
-        const expected = req.cookies[stateCookie(deps.env)];
-        reply.clearCookie(stateCookie(deps.env), { path: '/' });
-        if (!expected || expected !== req.query.state)
-          throw forbidden('OAuth state mismatch; start sign-in again');
+        const [linkState, linkUser] = (req.cookies[linkCookie(deps.env)] ?? '').split('.');
+        const linking = Boolean(linkState) && linkState === req.query.state;
+        if (linking) reply.clearCookie(linkCookie(deps.env), { path: '/' });
+        else {
+          const expected = req.cookies[stateCookie(deps.env)];
+          reply.clearCookie(stateCookie(deps.env), { path: '/' });
+          if (!expected || expected !== req.query.state)
+            throw forbidden('OAuth state mismatch; start sign-in again');
+        }
         const token = await exchangeOAuthCode(
           {
             clientId: deps.env.GITHUB_APP_CLIENT_ID ?? '',
@@ -171,6 +210,24 @@ export const authRoutes =
         });
         if (!res.ok) throw new AppError(502, 'github_error', 'Could not read your GitHub profile');
         const gh = (await res.json()) as GitHubUser;
+        if (linking) {
+          // Still the same signed-in person who started it.
+          const a = req.auth;
+          if (a?.via !== 'session' || a.userId !== linkUser)
+            throw forbidden('Sign in again, then connect GitHub.');
+          const settings = `${deps.env.APP_URL}/settings?tab=account&github=`;
+          const linked = await deps.sql`
+            update users set github_id = ${gh.id}, name = coalesce(name, ${gh.name}),
+              avatar_url = coalesce(avatar_url, ${gh.avatar_url})
+            where id = ${a.userId} and github_id is null
+              and not exists (select 1 from users where github_id = ${gh.id})
+            returning id`.catch((err: { code?: string }) => {
+            if (err.code === '23505') return [];
+            throw err;
+          });
+          // Already linked to another AutoDeploy account (one GitHub account, one AutoDeploy account).
+          return reply.redirect(`${settings}${linked.length ? 'connected' : 'taken'}`);
+        }
         const allow = deps.env.ALLOWED_GITHUB_LOGINS;
         if (allow.length > 0 && !allow.includes(gh.login.toLowerCase())) {
           throw forbidden('Sign-ups are not open yet.');
@@ -261,6 +318,7 @@ export const authRoutes =
             name: user.name,
             avatarUrl: user.avatar_url,
             email: user.email,
+            githubConnected: a.githubId !== null,
           },
           org,
           orgs,

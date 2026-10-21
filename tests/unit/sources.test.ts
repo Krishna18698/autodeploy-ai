@@ -12,13 +12,16 @@ const commit = {
   private: false,
 };
 
-function fakeDeps(o: { account: string; claimedByOrg: boolean }) {
+function fakeDeps(o: { account: string; accountId: number; claimedByOrg: boolean }) {
   const publicClient = { resolveCommit: vi.fn(async () => ({ ...commit, sha: 'p'.repeat(40) })) };
   const tokenFor = vi.fn(async () => 'inst-token');
   const sql = vi.fn(async () => (o.claimedByOrg ? [{ id: '7' }] : []));
   const deps = {
     env: { ALLOW_LOCAL_SOURCES: false },
-    installations: { forRepo: vi.fn(async () => ({ id: 7, account: o.account })), get: tokenFor },
+    installations: {
+      forRepo: vi.fn(async () => ({ id: 7, account: o.account, accountId: o.accountId })),
+      get: tokenFor,
+    },
     sql,
     github: publicClient,
   } as unknown as Deps;
@@ -48,15 +51,16 @@ describe('private repos: which App installation a user may use', () => {
 
   it("uses the installation on the user's own account", async () => {
     const auth = stubGitHub();
-    const { deps, publicClient } = fakeDeps({ account: 'Krishna18698', claimedByOrg: false });
+    const { deps, publicClient } = fakeDeps({
+      account: 'Krishna18698',
+      accountId: 1001,
+      claimedByOrg: false,
+    });
     const src = await resolveSource(
       deps,
       'https://github.com/krishna18698/portfolio-ai',
       undefined,
-      {
-        login: 'krishna18698',
-        orgId: 'org-1',
-      },
+      { githubId: 1001, orgId: 'org-1' },
     );
     expect(src.installationId).toBe(7);
     expect(src.commitSha).toBe('b'.repeat(40));
@@ -66,9 +70,13 @@ describe('private repos: which App installation a user may use', () => {
 
   it("never uses another account's installation (cross-tenant)", async () => {
     stubGitHub();
-    const { deps, publicClient, tokenFor } = fakeDeps({ account: 'victim', claimedByOrg: false });
+    const { deps, publicClient, tokenFor } = fakeDeps({
+      account: 'victim',
+      accountId: 2002,
+      claimedByOrg: false,
+    });
     const src = await resolveSource(deps, 'https://github.com/victim/secret', undefined, {
-      login: 'intruder',
+      githubId: 3003,
       orgId: 'org-2',
     });
     expect(src.installationId).toBeNull();
@@ -76,11 +84,29 @@ describe('private repos: which App installation a user may use', () => {
     expect(publicClient.resolveCommit).toHaveBeenCalled(); // anonymous: private repos 404
   });
 
+  it('matches by GitHub id, never by login: a reused login or an unlinked account gets nothing', async () => {
+    stubGitHub();
+    // "victim" renamed on GitHub and someone took the name: same login, different account.
+    for (const githubId of [4004, null]) {
+      const { deps, tokenFor } = fakeDeps({
+        account: 'victim',
+        accountId: 2002,
+        claimedByOrg: false,
+      });
+      const src = await resolveSource(deps, 'https://github.com/victim/secret', undefined, {
+        githubId,
+        orgId: 'org-3',
+      });
+      expect(src.installationId).toBeNull();
+      expect(tokenFor).not.toHaveBeenCalled();
+    }
+  });
+
   it('allows an installation the org has claimed (e.g. a GitHub organisation)', async () => {
     stubGitHub();
-    const { deps } = fakeDeps({ account: 'acme-inc', claimedByOrg: true });
+    const { deps } = fakeDeps({ account: 'acme-inc', accountId: 5005, claimedByOrg: true });
     const src = await resolveSource(deps, 'https://github.com/acme-inc/site', undefined, {
-      login: 'someone',
+      githubId: 1001,
       orgId: 'org-1',
     });
     expect(src.installationId).toBe(7);

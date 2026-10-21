@@ -38,6 +38,9 @@ export const Me = z.object({
     name: z.string().nullable(),
     avatarUrl: z.string().nullable(),
     email: z.string().nullable().describe('Where failure and approval emails go'),
+    githubConnected: z
+      .boolean()
+      .describe('false for an email account that has not linked a GitHub account'),
   }),
   org: z.object({ id: Id, slug: z.string(), name: z.string(), role: Role }),
   orgs: z.array(z.object({ id: Id, slug: z.string(), name: z.string(), role: Role })),
@@ -88,6 +91,7 @@ export const Analysis = z.object({
 
 export const GitHubRepos = z.object({
   configured: z.boolean().describe('false when the server has no GitHub App'),
+  githubConnected: z.boolean().describe('false until the account is linked to GitHub'),
   installUrl: z.string().nullable().describe('Where to give the App access to more repos'),
   accounts: z.array(z.string()),
   repos: z.array(

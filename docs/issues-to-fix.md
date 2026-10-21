@@ -54,7 +54,8 @@ Everything to settle before AutoDeploy is opened beyond the owner (as of 2026-10
 
 ## Sign-in hardening (later)
 
-- [ ] **Match GitHub App installations by account id, not login.** Access to an installation is granted when its account name equals the AutoDeploy user's login; a stale login (the owner renamed on GitHub and someone else took the name) could match the wrong account until its owner signs in again. Email accounts can't collide (their logins contain `_`).
+- [x] **GitHub App installations are matched by account id** (2026-10-21), and email accounts link GitHub from Settings → Account ("Connect GitHub").
+- [ ] **GitHub organisation installations**: an installation on an organisation (not a person) is only usable once some project of the org claims it, and nothing can claim it first. Needs a setup URL that checks the installer is an org admin (GitHub's user-to-server `GET /user/installations`).
 - [ ] **Per-account sign-in throttling.** Password sign-in is limited per IP (10/min) and costs ~50 ms of scrypt per try; add a per-address failure counter to slow down guessing spread across many IPs.
 - [ ] **Google sign-in** (needs a Google OAuth client from the owner).
 
