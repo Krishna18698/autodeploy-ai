@@ -55,7 +55,7 @@ the last steps.
 ## Sign-in hardening (later)
 
 - [x] **GitHub App installations are matched by account id** (2026-10-21), and email accounts link GitHub from Settings → Account ("Connect GitHub").
-- [ ] **GitHub organisation installations**: an installation on an organisation (not a person) is only usable once some project of the org claims it, and nothing can claim it first. Needs a setup URL that checks the installer is an org admin (GitHub's user-to-server `GET /user/installations`).
+- [x] **GitHub organisation installations** (2026-10-22): the installation webhook records who installed the App (only an organisation's owners can), and that person may use the unclaimed installation; importing a project claims it for their AutoDeploy org, after which nobody else can. Takes effect once the App is public (until then it installs only on the owner's account).
 - [x] **Per-account sign-in throttling** (2026-10-22): 10 wrong passwords for one address within 15 minutes pause password sign-in for it from any IP (checked before the scrypt work, the same for unknown addresses); "Forgot password" still works and ends the pause.
 - [ ] **Google sign-in** (needs a Google OAuth client from the owner).
 

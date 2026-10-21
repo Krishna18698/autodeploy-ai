@@ -50,8 +50,11 @@ export const projectRoutes =
         const githubConnected = a.githubId !== null;
         if (!deps.installations)
           return { configured: false, githubConnected, installUrl, accounts: [], repos: [] };
+        // This org's installations, plus unclaimed ones its user installed
+        // (an organisation's owner); importing a repo claims them.
         const claimed = await deps.sql<{ id: string }[]>`
-          select id from github_installations where org_id = ${a.orgId}`;
+          select id from github_installations
+          where org_id = ${a.orgId} or (org_id is null and installed_by = ${a.githubId})`;
         const mine = (await deps.installations.list()).filter(
           (i) =>
             (a.githubId !== null && i.accountId === a.githubId) ||

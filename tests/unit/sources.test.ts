@@ -12,10 +12,11 @@ const commit = {
   private: false,
 };
 
-function fakeDeps(o: { account: string; accountId: number; claimedByOrg: boolean }) {
+type InstallRow = { org_id: string | null; installed_by: string | null } | null;
+function fakeDeps(o: { account: string; accountId: number; row: InstallRow }) {
   const publicClient = { resolveCommit: vi.fn(async () => ({ ...commit, sha: 'p'.repeat(40) })) };
   const tokenFor = vi.fn(async () => 'inst-token');
-  const sql = vi.fn(async () => (o.claimedByOrg ? [{ id: '7' }] : []));
+  const sql = vi.fn(async () => (o.row ? [o.row] : []));
   const deps = {
     env: { ALLOW_LOCAL_SOURCES: false },
     installations: {
@@ -54,7 +55,7 @@ describe('private repos: which App installation a user may use', () => {
     const { deps, publicClient } = fakeDeps({
       account: 'Krishna18698',
       accountId: 1001,
-      claimedByOrg: false,
+      row: { org_id: null, installed_by: null },
     });
     const src = await resolveSource(
       deps,
@@ -73,7 +74,7 @@ describe('private repos: which App installation a user may use', () => {
     const { deps, publicClient, tokenFor } = fakeDeps({
       account: 'victim',
       accountId: 2002,
-      claimedByOrg: false,
+      row: { org_id: null, installed_by: null },
     });
     const src = await resolveSource(deps, 'https://github.com/victim/secret', undefined, {
       githubId: 3003,
@@ -91,7 +92,7 @@ describe('private repos: which App installation a user may use', () => {
       const { deps, tokenFor } = fakeDeps({
         account: 'victim',
         accountId: 2002,
-        claimedByOrg: false,
+        row: { org_id: null, installed_by: null },
       });
       const src = await resolveSource(deps, 'https://github.com/victim/secret', undefined, {
         githubId,
@@ -104,12 +105,30 @@ describe('private repos: which App installation a user may use', () => {
 
   it('allows an installation the org has claimed (e.g. a GitHub organisation)', async () => {
     stubGitHub();
-    const { deps } = fakeDeps({ account: 'acme-inc', accountId: 5005, claimedByOrg: true });
+    const { deps } = fakeDeps({
+      account: 'acme-inc',
+      accountId: 5005,
+      row: { org_id: 'org-1', installed_by: null },
+    });
     const src = await resolveSource(deps, 'https://github.com/acme-inc/site', undefined, {
       githubId: 1001,
       orgId: 'org-1',
     });
     expect(src.installationId).toBe(7);
+  });
+
+  it("an organisation's installer may use its unclaimed installation; nobody else, and not once claimed elsewhere", async () => {
+    stubGitHub();
+    const use = (row: InstallRow, githubId: number) =>
+      resolveSource(
+        fakeDeps({ account: 'acme-inc', accountId: 5005, row }).deps,
+        'https://github.com/acme-inc/site',
+        undefined,
+        { githubId, orgId: 'org-1' },
+      );
+    expect((await use({ org_id: null, installed_by: '6006' }, 6006)).installationId).toBe(7);
+    expect((await use({ org_id: null, installed_by: '6006' }, 7007)).installationId).toBeNull();
+    expect((await use({ org_id: 'org-9', installed_by: '6006' }, 6006)).installationId).toBeNull();
   });
 });
 

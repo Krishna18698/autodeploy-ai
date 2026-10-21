@@ -325,6 +325,30 @@ describe('GitHub webhooks', () => {
     console.info('[measure] 100 concurrent redeliveries of one webhook → 1 deployment');
   });
 
+  it('records who installed the App, so an organisation install is theirs to use until claimed', async () => {
+    const id = 900_000 + Math.floor(Math.random() * 90_000);
+    const body = JSON.stringify({
+      action: 'created',
+      installation: { id, account: { login: 'acme-org' } },
+      sender: { id: 6006 },
+    });
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/webhooks/github',
+      headers: {
+        'content-type': 'application/json',
+        'x-hub-signature-256': sign(body),
+        'x-github-delivery': `d-install-${id}`,
+        'x-github-event': 'installation',
+      },
+      payload: body,
+    });
+    expect(r.statusCode).toBe(202);
+    const [row] = await deps.sql<{ installed_by: string; org_id: string | null }[]>`
+      select installed_by::text, org_id from github_installations where id = ${id}`;
+    expect(row).toEqual({ installed_by: '6006', org_id: null });
+  });
+
   it('ignores pushes to non-default branches', async () => {
     const org = await makeOrg(deps.sql);
     const p = await makeProject(deps.sql, org, { repo: 'acme/branchy' });

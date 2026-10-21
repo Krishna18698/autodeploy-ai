@@ -31,6 +31,8 @@ type PullRequestEvent = {
 type InstallationEvent = {
   action: string;
   installation: { id: number; account: { login: string } };
+  /** Who installed it: on an organisation, only its owners can. */
+  sender?: { id: number };
 };
 
 export async function githubWebhookRoutes(app: FastifyInstance, deps: Deps) {
@@ -153,8 +155,10 @@ async function onPullRequest(deps: Deps, e: PullRequestEvent): Promise<number> {
 
 async function onInstallation(deps: Deps, e: InstallationEvent) {
   if (e.action === 'created') {
-    await deps.sql`insert into github_installations (id, account_login) values (${e.installation.id}, ${e.installation.account.login})
-      on conflict (id) do update set account_login = excluded.account_login`;
+    await deps.sql`insert into github_installations (id, account_login, installed_by)
+      values (${e.installation.id}, ${e.installation.account.login}, ${e.sender?.id ?? null})
+      on conflict (id) do update set account_login = excluded.account_login,
+        installed_by = coalesce(github_installations.installed_by, excluded.installed_by)`;
   } else if (e.action === 'deleted') {
     await deps.sql`delete from github_installations where id = ${e.installation.id}`;
   }

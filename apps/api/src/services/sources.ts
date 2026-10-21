@@ -54,9 +54,15 @@ async function usableInstallation(deps: Deps, repo: RepoRef, actor: SourceActor)
   if (!inst) return null;
   // By GitHub's numeric id: a login can be renamed and then taken by someone else.
   if (actor.githubId !== null && inst.accountId === actor.githubId) return inst;
-  const [claimed] = await deps.sql<{ id: string }[]>`
-    select id from github_installations where id = ${inst.id} and org_id = ${actor.orgId}`;
-  return claimed ? inst : null;
+  const [row] = await deps.sql<{ org_id: string | null; installed_by: string | null }[]>`
+    select org_id, installed_by from github_installations where id = ${inst.id}`;
+  if (row?.org_id === actor.orgId) return inst;
+  // An organisation installation nobody has claimed yet: usable by whoever
+  // installed it (only the organisation's owners can); importing claims it.
+  const installer = row?.installed_by == null ? null : Number(row.installed_by);
+  if (row && row.org_id === null && actor.githubId !== null && installer === actor.githubId)
+    return inst;
+  return null;
 }
 
 export async function resolveSource(
