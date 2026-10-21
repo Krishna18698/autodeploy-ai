@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
+import type { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip } from 'node:zlib';
 import type { Keyring } from '@autodeploy/crypto';
@@ -178,13 +179,7 @@ export class RuntimeManager {
     const tmp = `${dir}.tmp-${randomBytes(3).toString('hex')}`;
     await mkdir(tmp, { recursive: true });
     try {
-      const tar = spawn('tar', ['-x', '-C', tmp], { stdio: ['pipe', 'ignore', 'pipe'] });
-      const done = new Promise<void>((resolve, reject) => {
-        tar.on('error', reject);
-        tar.on('close', (c) => (c === 0 ? resolve() : reject(new Error(`tar exited ${c}`))));
-      });
-      await pipeline(obj.body, createGunzip(), tar.stdin);
-      await done;
+      await feedProcess([obj.body, createGunzip()], 'tar', ['-x', '-C', tmp]);
       await rename(tmp, dir).catch(async (err) => {
         // Another start unpacked it first.
         if (
@@ -376,4 +371,33 @@ export function containerArgs(o: {
     // on); a compound command (a && b) has to stay a shell.
     /[;&|]/.test(o.command) ? o.command : `exec ${o.command}`,
   ];
+}
+
+/**
+ * Streams data through `transforms` into a command's stdin. The command's exit
+ * code decides: tar stops reading at the archive's end marker, possibly while
+ * gzip still holds the archive's zero padding, so its stdin closing early is
+ * not a failure when it exits 0 (that race once broke random server starts).
+ */
+export async function feedProcess(
+  [source, ...transforms]: [Readable, ...Transform[]],
+  cmd: string,
+  args: string[],
+): Promise<void> {
+  const child = spawn(cmd, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', (d) => {
+    stderr = (stderr + d).slice(-2000);
+  });
+  const exited = new Promise<number | null>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', resolve);
+  });
+  const fed = pipeline([source, ...transforms, child.stdin]).then(
+    () => null,
+    (err: NodeJS.ErrnoException) => err,
+  );
+  const [code, err] = await Promise.all([exited, fed]);
+  if (code !== 0) throw new Error(`${cmd} exited ${code}${stderr ? `: ${stderr.trim()}` : ''}`);
+  if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE' && err.code !== 'EPIPE') throw err;
 }

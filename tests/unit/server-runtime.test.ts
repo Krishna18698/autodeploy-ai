@@ -1,9 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { createGunzip } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { containerArgs } from '../../apps/worker/src/gateway/runtimes';
+import { containerArgs, feedProcess } from '../../apps/worker/src/gateway/runtimes';
 import {
   assembleServer,
   BUNDLE_EXCLUDES,
@@ -93,5 +96,41 @@ describe('bundling a server', () => {
     expect(files).not.toContain('.git/');
     expect(files).not.toContain('.cache/');
     expect(execFileSync('ls', [join(r.assetsDir, '_app')], { encoding: 'utf8' })).toContain('a.js');
+  });
+});
+
+describe('unpacking a server bundle', () => {
+  const big = () =>
+    Readable.from(
+      (function* () {
+        for (let i = 0; i < 256; i++) yield Buffer.alloc(64 * 1024, 1);
+      })(),
+    );
+
+  it('succeeds when the command exits 0 having read only part of its input', async () => {
+    // Like tar stopping at the archive's end marker before gzip's padding arrives.
+    await expect(feedProcess([big()], 'sh', ['-c', 'head -c 1000 >/dev/null'])).resolves.toBe(
+      undefined,
+    );
+  });
+
+  it("fails with the command's own error when it exits non-zero", async () => {
+    await expect(
+      feedProcess([big()], 'sh', [
+        '-c',
+        'head -c 10 >/dev/null; echo "broken archive" >&2; exit 2',
+      ]),
+    ).rejects.toThrow('sh exited 2: broken archive');
+  });
+
+  it('unpacks a real .tar.gz', async () => {
+    const src = await mkdtemp(join(tmpdir(), 'bundle-src-'));
+    await mkdir(join(src, 'server'), { recursive: true });
+    await writeFile(join(src, 'server', 'index.mjs'), 'console.log(1)');
+    const archive = join(src, '..', `${src.split('/').pop()}.tar.gz`);
+    execFileSync('tar', ['-czf', archive, '-C', src, '.']);
+    const out = await mkdtemp(join(tmpdir(), 'bundle-out-'));
+    await feedProcess([createReadStream(archive), createGunzip()], 'tar', ['-x', '-C', out]);
+    expect(await readFile(join(out, 'server', 'index.mjs'), 'utf8')).toBe('console.log(1)');
   });
 });
