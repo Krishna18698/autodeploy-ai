@@ -575,6 +575,35 @@ describe('Email sign-in', () => {
     ).toBe(200);
   });
 
+  it('pauses password sign-in for an address after 10 wrong passwords from any IP; a reset ends it', async () => {
+    const email = `guess-${randomBytes(3).toString('hex')}@example.com`;
+    await post('/auth/email/signup', { email, password: 'the right password' });
+    await post('/auth/email/verify', { token: linkToken(lastMailTo(email)!.text) });
+    // Each guess from a different address: the per-IP limit never applies.
+    const login = (password: string, i: number) =>
+      app.inject({
+        method: 'POST',
+        url: '/auth/email/login',
+        payload: { email, password },
+        remoteAddress: `198.51.100.${i}`,
+      });
+    for (let i = 0; i < 10; i++) expect((await login(`wrong guess ${i}!`, i)).statusCode).toBe(401);
+    const paused = await login('the right password', 50);
+    expect(paused.statusCode).toBe(429);
+    expect(paused.json().code).toBe('too_many_attempts');
+    expect(Number(paused.headers['retry-after'])).toBeGreaterThan(0);
+
+    // The owner gets back in through "Forgot password".
+    await unthrottle(email);
+    await post('/auth/email/forgot', { email });
+    const reset = await post('/auth/email/reset', {
+      token: linkToken(lastMailTo(email)!.text),
+      password: 'a brand new password',
+    });
+    expect(reset.statusCode).toBe(200);
+    expect((await login('a brand new password', 51)).statusCode).toBe(200);
+  });
+
   it('refuses sign-ups while they are closed, and requests from other sites', async () => {
     const email = `closed-${randomBytes(3).toString('hex')}@example.com`;
     const allow = deps.env.ALLOWED_GITHUB_LOGINS;

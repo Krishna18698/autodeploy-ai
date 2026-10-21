@@ -24,7 +24,7 @@ the last steps.
 
 **Still to build**
 - [ ] **Google sign-in** (the owner provides a Google OAuth client).
-- [ ] **Redesign** (branch `redesign`): ship once the owner approves it.
+- [x] **Redesign** shipped 2026-10-22: Linear-like dark, Geist, subtle motion.
 - [ ] **Automatic deploys of AutoDeploy itself on push** (GitHub Actions: lint and
   tests, then ship, edge and dashboard), or keep a manual yes per deploy. Needs
   three deploy credentials stored as GitHub secrets; the VM keeps its own `.env.prod`.
@@ -56,6 +56,6 @@ the last steps.
 
 - [x] **GitHub App installations are matched by account id** (2026-10-21), and email accounts link GitHub from Settings → Account ("Connect GitHub").
 - [ ] **GitHub organisation installations**: an installation on an organisation (not a person) is only usable once some project of the org claims it, and nothing can claim it first. Needs a setup URL that checks the installer is an org admin (GitHub's user-to-server `GET /user/installations`).
-- [ ] **Per-account sign-in throttling.** Password sign-in is limited per IP (10/min) and costs ~50 ms of scrypt per try; add a per-address failure counter to slow down guessing spread across many IPs.
+- [x] **Per-account sign-in throttling** (2026-10-22): 10 wrong passwords for one address within 15 minutes pause password sign-in for it from any IP (checked before the scrypt work, the same for unknown addresses); "Forgot password" still works and ends the pause.
 - [ ] **Google sign-in** (needs a Google OAuth client from the owner).
 

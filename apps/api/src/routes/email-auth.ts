@@ -22,6 +22,11 @@ import { ensurePersonalOrg, startSession } from './auth.js';
 
 const VERIFY_TTL = '24 hours';
 const RESET_TTL = '1 hour';
+// Wrong passwords per address before password sign-in pauses for it, from any
+// IP (the per-IP limit alone lets a botnet guess one account). "Forgot
+// password" still works during a pause, so an attacker can't lock the owner out.
+const FAILS_ALLOWED = 10;
+const FAIL_WINDOW_S = 15 * 60;
 
 const Email = z
   .email()
@@ -192,10 +197,29 @@ export const emailAuthRoutes =
       },
       async (req, reply) => {
         const { email, password } = req.body;
+        // Checked before the (deliberately slow) password hash, and for every
+        // address alike, so it says nothing about which ones have accounts.
+        const failKey = `login-fails:${sha256Hex(email)}`;
+        const fails = Number((await deps.valkey.get(failKey)) ?? 0);
+        if (fails >= FAILS_ALLOWED) {
+          const wait = Math.max(60, await deps.valkey.ttl(failKey));
+          throw new AppError(
+            429,
+            'too_many_attempts',
+            `Too many wrong passwords for this email. Try again in ${Math.ceil(wait / 60)} minutes, or reset your password.`,
+            { headers: { 'retry-after': String(wait) } },
+          );
+        }
         const [row] = await deps.sql<{ user_id: string; hash: string; verified_at: Date | null }[]>`
           select user_id, hash, verified_at from user_passwords where email = ${email}`;
         const ok = await verifyPassword(password, row?.hash ?? DUMMY_PASSWORD_HASH);
-        if (!row || !ok) throw new AppError(401, 'bad_credentials', 'Wrong email or password.');
+        if (!row || !ok) {
+          // The window starts at the first failure and isn't extended by later ones.
+          const n = await deps.valkey.incr(failKey);
+          if (n === 1) await deps.valkey.expire(failKey, FAIL_WINDOW_S);
+          throw new AppError(401, 'bad_credentials', 'Wrong email or password.');
+        }
+        await deps.valkey.del(failKey);
         if (!row.verified_at) {
           if (await mayEmail(email)) {
             const token = await deps.sql.begin((tx) =>
@@ -255,15 +279,19 @@ export const emailAuthRoutes =
       },
       async (req, reply) => {
         const hash = await hashPassword(req.body.password);
-        const { userId, orgId } = await deps.sql.begin(async (tx) => {
+        const { userId, email, orgId } = await deps.sql.begin(async (tx) => {
           const userId = await useToken(tx, req.body.token, 'reset');
           // The link proved they own the address, so it counts as confirmed;
           // every other session ends (whoever knew the old password is out).
-          await tx`update user_passwords set hash = ${hash}, updated_at = now(),
-            verified_at = coalesce(verified_at, now()) where user_id = ${userId}`;
+          const [pw] = await tx<{ email: string }[]>`
+            update user_passwords set hash = ${hash}, updated_at = now(),
+              verified_at = coalesce(verified_at, now()) where user_id = ${userId}
+            returning email`;
           await tx`delete from sessions where user_id = ${userId}`;
-          return { userId, orgId: await orgOf(tx, userId) };
+          return { userId, email: pw?.email, orgId: await orgOf(tx, userId) };
         });
+        // They proved they own the address: a pause from wrong guesses ends.
+        if (email) await deps.valkey.del(`login-fails:${sha256Hex(email)}`);
         if (!orgId) throw forbidden('This account has no organisation.');
         const csrfToken = await startSession(deps, req, reply, userId, orgId);
         return { ok: true as const, csrfToken };
