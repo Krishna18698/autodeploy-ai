@@ -31,7 +31,7 @@ export default function AnalyticsPage() {
             type="button"
             aria-pressed={days === r}
             onClick={() => setDays(r)}
-            className={`rounded-full border px-3 py-1 text-[12px] ${days === r ? 'border-run/50 bg-run/10 text-fg' : 'border-line text-muted hover:text-fg'}`}
+            className={`rounded-full border px-3 py-1 text-[12px] pointer-coarse:py-2 ${days === r ? 'border-run/50 bg-run/10 text-fg' : 'border-line text-muted hover:text-fg'}`}
           >
             Last {r} days
           </button>

@@ -69,7 +69,7 @@ export function Closing() {
               [
                 ['Dashboard', '/overview'],
                 ['Sign in', '/login'],
-                ['Source', 'https://github.com/Krishna18698'],
+                ['GitHub', 'https://github.com/Krishna18698'],
               ],
             ],
             ['Legal', LEGAL_PAGES.map(([label, href]) => [label, href])],

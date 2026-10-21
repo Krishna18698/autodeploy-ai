@@ -1,11 +1,37 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 // Charts built to the dataviz spec: ≤24px columns with 4px rounded data
 // ends, a 2px surface gap between stacked segments, 2px lines, hairline
 // solid grid, a legend for ≥2 series, sparing direct labels, hover + focus
 // tooltips (values lead), and a table view so nothing is gated on hover.
+
+/**
+ * The chart's own width in pixels, so it draws at real size: on a phone its
+ * 10px labels stay 10px instead of shrinking with a scaled-down drawing.
+ */
+function useWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(640);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      if (e) setW(Math.max(280, Math.round(e.contentRect.width)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
+
+/** About one x-axis label per 100px: always the first and last, never crowding the last. */
+function xLabel(i: number, n: number, w: number) {
+  if (i === 0 || i === n - 1) return true;
+  const step = Math.ceil(n / Math.max(2, Math.floor(w / 100)));
+  return i % step === 0 && n - 1 - i >= step / 2;
+}
 
 type Tip = {
   x: number | string;
@@ -63,7 +89,7 @@ export function StackedColumns({
   const id = useId();
   const totals = data.map((d) => series.reduce((s, k) => s + Number(d[k.key] ?? 0), 0));
   const max = niceMax(Math.max(1, ...totals));
-  const w = 640;
+  const [box, w] = useWidth();
   const padL = 32;
   const padB = 22;
   const padT = 18; // room for the peak's direct label
@@ -88,7 +114,7 @@ export function StackedColumns({
           head={['Day', ...series.map((s) => s.label)]}
         />
       ) : (
-        <div className="relative">
+        <div ref={box} className="relative">
           {/* biome-ignore lint/a11y/useSemanticElements: an SVG cannot be a fieldset; a labelled group lets its columns be focusable */}
           <svg
             viewBox={`0 0 ${w} ${height}`}
@@ -179,7 +205,7 @@ export function StackedColumns({
                       {totals[i]}
                     </text>
                   ) : null}
-                  {(i === 0 || i === data.length - 1 || i % Math.ceil(data.length / 6) === 0) && (
+                  {xLabel(i, data.length, w) && (
                     <text
                       x={cx}
                       y={height - 6}
@@ -231,7 +257,7 @@ export function LineChart({
     y: d[yKey] == null ? null : Number(d[yKey]),
   }));
   const ys = pts.map((p) => p.y).filter((y): y is number => y !== null);
-  const w = 640;
+  const [box, w] = useWidth();
   const padL = 44;
   const padB = 22;
   const plotH = height - padB - 10;
@@ -252,9 +278,9 @@ export function LineChart({
         <button
           type="button"
           onClick={() => setTable((t) => !t)}
-          className="font-mono text-[11px] text-muted underline-offset-2 hover:text-fg hover:underline"
+          className="font-mono text-[11px] text-muted underline-offset-2 hover:text-fg hover:underline pointer-coarse:py-2"
         >
-          {table ? 'chart' : 'table'}
+          {table ? 'View as chart' : 'View as table'}
         </button>
       </div>
       {table ? (
@@ -265,7 +291,7 @@ export function LineChart({
       ) : ys.length === 0 ? (
         <p className="py-10 text-center text-[13px] text-muted">No builds in this range yet.</p>
       ) : (
-        <div className="relative">
+        <div ref={box} className="relative">
           <svg
             viewBox={`0 0 ${w} ${height}`}
             className="h-auto w-full touch-none"
@@ -339,7 +365,7 @@ export function LineChart({
               />
             )}
             {pts.map((p) =>
-              p.i === 0 || p.i === pts.length - 1 || p.i % Math.ceil(pts.length / 6) === 0 ? (
+              xLabel(p.i, pts.length, w) ? (
                 <text
                   key={p.x}
                   x={sx(p.i)}
@@ -435,9 +461,9 @@ function Legend({
       <button
         type="button"
         onClick={onTable}
-        className="ml-auto font-mono text-[11px] hover:text-fg hover:underline"
+        className="ml-auto font-mono text-[11px] hover:text-fg hover:underline pointer-coarse:py-2"
       >
-        {table ? 'chart' : 'table'}
+        {table ? 'View as chart' : 'View as table'}
       </button>
     </div>
   );

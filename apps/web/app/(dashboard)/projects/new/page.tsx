@@ -115,28 +115,29 @@ export default function NewProjectPage() {
         sub="Pick a repository the AutoDeploy GitHub App can see, or paste any public repository URL."
       />
       <RepoPicker selected={repoUrl} onPick={pick} />
-      <form onSubmit={analyzeRepo} className="flex flex-col gap-3 sm:flex-row">
-        <label className="sr-only" htmlFor="repo">
+      <form onSubmit={analyzeRepo} className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="flex flex-col gap-1.5 text-[12px] text-muted sm:flex-1">
           Repository URL
+          <input
+            id="repo"
+            required
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            placeholder="https://github.com/owner/repo"
+            className="h-10 rounded-md border border-line bg-panel px-3 font-mono text-[16px] text-fg outline-none placeholder:text-muted/60 focus:border-run/60 sm:text-[13px]"
+          />
         </label>
-        <input
-          id="repo"
-          required
-          value={repoUrl}
-          onChange={(e) => setRepoUrl(e.target.value)}
-          placeholder="https://github.com/owner/repo"
-          className="h-10 rounded-md border border-line bg-panel sm:flex-1 px-3 font-mono text-[13px] outline-none placeholder:text-muted/60 focus:border-run/60"
-        />
-        <label className="sr-only" htmlFor="root">
-          Root directory
+        <label className="flex flex-col gap-1.5 text-[12px] text-muted sm:w-40">
+          <span>
+            Root directory <span className="text-muted/70">(monorepos)</span>
+          </span>
+          <input
+            id="root"
+            value={rootDir}
+            onChange={(e) => setRootDir(e.target.value || '.')}
+            className="h-10 w-full rounded-md border border-line bg-panel px-3 font-mono text-[16px] text-fg outline-none focus:border-run/60 sm:text-[13px]"
+          />
         </label>
-        <input
-          id="root"
-          value={rootDir}
-          onChange={(e) => setRootDir(e.target.value || '.')}
-          className="h-10 w-full rounded-md border border-line bg-panel px-3 font-mono text-[13px] outline-none focus:border-run/60 sm:w-32"
-          title="Root directory (for monorepos)"
-        />
         <Button type="submit" variant="primary" loading={busy === 'analyze'} className="h-10">
           Analyze
         </Button>

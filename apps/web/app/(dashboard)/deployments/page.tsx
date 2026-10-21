@@ -30,7 +30,7 @@ export default function DeploymentsPage() {
             type="button"
             aria-pressed={status === f.id}
             onClick={() => setStatus(f.id)}
-            className={`rounded-full border px-3 py-1 text-[12px] transition-colors ${status === f.id ? 'border-run/50 bg-run/10 text-fg' : 'border-line text-muted hover:text-fg'}`}
+            className={`rounded-full border px-3 py-1 text-[12px] pointer-coarse:py-2 transition-colors ${status === f.id ? 'border-run/50 bg-run/10 text-fg' : 'border-line text-muted hover:text-fg'}`}
           >
             {f.label}
           </button>

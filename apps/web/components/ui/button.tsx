@@ -25,7 +25,7 @@ export function Button({
       type="button"
       {...rest}
       disabled={rest.disabled || loading}
-      className={`${base} ${V[variant]} ${size === 'sm' ? 'h-7 px-2.5' : 'h-9 px-3.5'} ${className}`}
+      className={`${base} ${V[variant]} ${size === 'sm' ? 'h-7 px-2.5 pointer-coarse:h-9' : 'h-9 px-3.5 pointer-coarse:h-10'} ${className}`}
     >
       {loading && (
         <span

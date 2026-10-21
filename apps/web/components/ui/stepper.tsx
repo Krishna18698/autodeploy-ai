@@ -13,7 +13,7 @@ export function Stepper({ status }: { status: Deployment['status'] }) {
     status === 'ROLLED_BACK';
   return (
     <ol
-      className="flex flex-wrap items-center gap-x-2 gap-y-2 font-mono text-[12px]"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[12px] sm:gap-x-2"
       aria-label="Pipeline progress"
     >
       {STAGES.map((s, i) => {
@@ -43,7 +43,10 @@ export function Stepper({ status }: { status: Deployment['status'] }) {
             </motion.span>
             <span className={state === 'todo' ? 'text-muted/60' : 'text-fg'}>{s}</span>
             {i < STAGES.length - 1 && (
-              <span aria-hidden className="relative mx-1 h-px w-6 overflow-hidden bg-line sm:w-10">
+              <span
+                aria-hidden
+                className="relative mx-1 hidden h-px w-6 overflow-hidden bg-line sm:block sm:w-10"
+              >
                 <motion.span
                   className="absolute inset-y-0 left-0 bg-ok/70"
                   initial={false}

@@ -14,7 +14,7 @@ const LINES = [
   ['', 'dist/assets/index-Bgopu29T.js  142.18 kB │ gzip: 45.71 kB', 'text-muted'],
   ['', '✓ built in 1.82s', 'text-ok'],
   ['▸', 'validating in headless Chromium… 200 OK, 0 errors', 'text-run'],
-  ['▸', 'live at shop.autodeploy.eu.org', 'text-ok'],
+  ['▸', 'live at shop.autodeploy.fyi', 'text-ok'],
 ] as const;
 const STEPS = ['Analyze', 'Queue', 'Build', 'Validate', 'Live'];
 
@@ -43,13 +43,14 @@ export function Waiting() {
             no network except the package registry, validated in a real browser before anyone sees
             it.
           </p>
-          <ol className="mt-8 flex flex-wrap items-center gap-2 font-mono text-[12px]">
+          <ol className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[12px] sm:gap-2">
             {STEPS.map((s, i) => (
               <li key={s} data-step className="flex items-center gap-2 text-fg">
                 <span className="text-ok">✓</span>
                 {s}
                 {i < STEPS.length - 1 && (
-                  <span className="relative h-px w-8 overflow-hidden bg-line">
+                  // Connectors only where the steps fit on one line.
+                  <span className="relative hidden h-px w-8 overflow-hidden bg-line sm:block">
                     <span data-step-fill className="absolute inset-0 bg-ok/70" />
                   </span>
                 )}
@@ -66,9 +67,14 @@ export function Waiting() {
               shop ▸ deploy #128 ▸ attempt 1 · node 22 · sandbox
             </span>
           </div>
-          <pre className="min-h-[300px] overflow-x-auto p-4 font-mono text-[12px] leading-6">
+          {/* Phones wrap long lines (with a hanging indent) instead of cutting them off. */}
+          <pre className="min-h-[300px] overflow-x-auto p-4 font-mono text-[11px] leading-6 sm:text-[12px]">
             {LINES.map(([p, t, cls]) => (
-              <div key={t} data-line className={cls || 'text-fg/90'}>
+              <div
+                key={t}
+                data-line
+                className={`whitespace-pre-wrap break-words pl-[2ch] -indent-[2ch] sm:whitespace-pre ${cls || 'text-fg/90'}`}
+              >
                 <span className="mr-2 select-none text-muted/60">{p || ' '}</span>
                 {t}
               </div>

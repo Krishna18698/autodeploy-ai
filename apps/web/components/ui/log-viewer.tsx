@@ -57,6 +57,10 @@ export function LogViewer({ lines, live }: { lines: LogLine[]; live: boolean }) 
   const [query, setQuery] = useState('');
   const [follow, setFollow] = useState(true);
   const [wrap, setWrap] = useState(false);
+  // Phones wrap long lines by default; scrolling a log sideways there is painful.
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 639px)').matches) setWrap(true);
+  }, []);
 
   const filtered = useMemo(
     () => (query ? lines.filter((l) => l.text.toLowerCase().includes(query.toLowerCase())) : lines),

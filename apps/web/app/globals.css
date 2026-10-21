@@ -133,3 +133,8 @@ html.lenis body {
 .legal a:hover {
   text-decoration: underline;
 }
+
+/* Anchored sections land below the fixed 3.5rem header, not under it. */
+section[id] {
+  scroll-margin-top: 4rem;
+}

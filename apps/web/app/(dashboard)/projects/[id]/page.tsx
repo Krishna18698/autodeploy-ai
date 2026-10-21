@@ -52,7 +52,14 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           <span className="font-mono text-[12px]">
             {p.repoFullName} · {p.framework} ·{' '}
             {p.activeDeploymentId ? (
-              <span className="text-run">{p.url.replace('https://', '')}</span>
+              <a
+                href={p.url}
+                target="_blank"
+                rel="noreferrer"
+                className="whitespace-nowrap text-run hover:underline"
+              >
+                {p.url.replace('https://', '')} ↗
+              </a>
             ) : (
               'not live yet'
             )}
@@ -115,11 +122,12 @@ function History({ projectId }: { projectId: string }) {
         {deps.data.items.map((d) => (
           <li
             key={d.id}
-            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-4 py-3"
+            // Phones: status and actions on a second line under the details.
+            className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
           >
             <Link
               href={`/deployments/${d.id}`}
-              className="block h-12 w-20 overflow-hidden rounded border border-line bg-raised"
+              className="row-span-2 block h-12 w-20 self-start overflow-hidden rounded border border-line bg-raised sm:row-span-1 sm:self-center"
             >
               {d.screenshotUrl ? (
                 // biome-ignore lint/performance/noImgElement: authenticated API image, not optimisable by next/image
@@ -144,13 +152,15 @@ function History({ projectId }: { projectId: string }) {
                 <span className="font-mono text-[12px] text-muted">{shortSha(d.commitSha)}</span>
                 <span className="truncate text-muted">{d.commitMessage}</span>
               </Link>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted">
-                <span>{d.kind}</span>·<span>{d.trigger}</span>·<span>{ago(d.createdAt)}</span>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-muted">
+                <span className="whitespace-nowrap">
+                  {d.kind} · {d.trigger} · {ago(d.createdAt)}
+                </span>
                 {d.recoveredBy && <span className="text-ai">· auto-fixed by {d.recoveredBy}</span>}
                 {d.url && (
                   <a
                     href={d.url}
-                    className="text-run/80 hover:underline"
+                    className="max-w-full truncate text-run/80 hover:underline"
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -159,7 +169,7 @@ function History({ projectId }: { projectId: string }) {
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="col-start-2 flex items-center gap-2 sm:col-start-3 sm:row-start-1">
               <StatusPill status={d.status} />
               {(d.status === 'SUPERSEDED' || d.status === 'ROLLED_BACK') &&
                 d.kind === 'production' && (

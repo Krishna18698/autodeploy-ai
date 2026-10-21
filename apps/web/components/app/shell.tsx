@@ -80,12 +80,18 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
           <button
             type="button"
-            className="font-mono text-muted lg:hidden"
-            aria-label="Open menu"
+            className="-mr-2 grid size-10 place-items-center rounded-md text-muted hover:text-fg lg:hidden"
+            aria-label={menu ? 'Close menu' : 'Open menu'}
             aria-expanded={menu}
             onClick={() => setMenu((m) => !m)}
           >
-            ≡
+            <svg viewBox="0 0 20 20" className="size-5" aria-hidden>
+              {menu ? (
+                <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" />
+              ) : (
+                <path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" strokeWidth="1.6" />
+              )}
+            </svg>
           </button>
         </div>
         <nav aria-label="Main" className={`${menu ? 'block' : 'hidden'} px-2 pb-3 lg:block`}>

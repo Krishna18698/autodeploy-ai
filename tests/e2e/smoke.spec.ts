@@ -513,7 +513,7 @@ for (const width of [977, 390]) {
     const problems = watch(page);
     await page.goto('/overview', { waitUntil: 'networkidle' });
     const nav = page.getByRole('navigation', { name: 'Main' });
-    const menu = page.getByRole('button', { name: 'Open menu' });
+    const menu = page.getByRole('button', { name: /^(Open|Close) menu$/ });
     const route = ['Settings', 'Projects', 'Overview', 'Settings', 'Analytics', 'Deployments'];
     for (const name of [...route, ...route]) {
       const link = nav.getByRole('link', { name, exact: true });
