@@ -3,14 +3,14 @@ import type { ComponentProps, ReactNode } from 'react';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'ai';
 const V: Record<Variant, string> = {
-  primary: 'bg-run text-bg hover:bg-run/90',
-  secondary: 'border border-line bg-raised text-fg hover:border-muted/60',
+  primary: 'bg-fg text-bg shadow-[0_1px_0_rgb(255_255_255/0.25)_inset] hover:bg-fg/90',
+  secondary: 'border border-white/8 bg-white/4 text-fg hover:bg-white/7',
   ghost: 'text-muted hover:text-fg hover:bg-raised',
   danger: 'border border-fail/40 bg-fail/10 text-fail hover:bg-fail/20',
   ai: 'border border-ai/40 bg-ai/10 text-ai hover:bg-ai/20',
 };
 const base =
-  'inline-flex items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-[background,border,color,transform] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50';
+  'inline-flex items-center justify-center gap-2 rounded-lg text-[13px] font-medium transition-[background,border,color,transform] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50';
 
 export function Button({
   variant = 'secondary',

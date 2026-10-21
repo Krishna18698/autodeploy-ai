@@ -1,13 +1,6 @@
 'use client';
 
-import {
-  AnimatePresence,
-  motion,
-  useMotionValue,
-  useReducedMotion,
-  useSpring,
-  useTransform,
-} from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
 type Stage = { id: string; label: string; sub: string };
@@ -34,7 +27,7 @@ const SCRIPT: Record<string, Tone>[] = [
 ];
 
 const TONE: Record<Tone, { dot: string; text: string; ring: string; word: string }> = {
-  idle: { dot: 'bg-line', text: 'text-muted', ring: 'border-line', word: 'queued' },
+  idle: { dot: 'bg-white/15', text: 'text-muted', ring: 'border-white/7', word: 'queued' },
   run: { dot: 'bg-run text-run', text: 'text-run', ring: 'border-run/50', word: 'running' },
   ok: { dot: 'bg-ok', text: 'text-ok', ring: 'border-ok/40', word: 'passed' },
   fail: { dot: 'bg-fail', text: 'text-fail', ring: 'border-fail/50', word: 'failed' },
@@ -82,59 +75,24 @@ export function HeroCard() {
     };
   }, [reduced]);
 
-  // Pointer-driven tilt with spring smoothing; touch devices drift on their own.
-  const px = useMotionValue(0);
-  const py = useMotionValue(0);
-  const sx = useSpring(px, { stiffness: 60, damping: 18, mass: 0.6 });
-  const sy = useSpring(py, { stiffness: 60, damping: 18, mass: 0.6 });
-  const rotateY = useTransform(sx, [-1, 1], [-20, -4]);
-  const rotateX = useTransform(sy, [-1, 1], [9, -3]);
-
-  useEffect(() => {
-    if (reduced) return;
-    const coarse = window.matchMedia('(pointer: coarse)').matches;
-    if (coarse) {
-      let raf = 0;
-      const t0 = performance.now();
-      const loop = (now: number) => {
-        const t = (now - t0) / 1000;
-        px.set(Math.sin(t * 0.5) * 0.6);
-        py.set(Math.cos(t * 0.37) * 0.5);
-        raf = requestAnimationFrame(loop);
-      };
-      raf = requestAnimationFrame(loop);
-      return () => cancelAnimationFrame(raf);
-    }
-    const onMove = (e: PointerEvent) => {
-      px.set((e.clientX / window.innerWidth) * 2 - 1);
-      py.set((e.clientY / window.innerHeight) * 2 - 1);
-    };
-    window.addEventListener('pointermove', onMove, { passive: true });
-    return () => window.removeEventListener('pointermove', onMove);
-  }, [reduced, px, py]);
-
   const state = SCRIPT[step] ?? {};
 
   return (
-    <div className="relative [perspective:1400px]">
-      <motion.div
-        style={{ rotateY, rotateX }}
-        className="glass relative w-full max-w-[560px] rounded-[10px] p-5 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.8)] [transform-style:preserve-3d]"
-      >
-        {/* edge light */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 rounded-[10px] [background:linear-gradient(120deg,rgba(34,211,238,0.35),transparent_30%,transparent_70%,rgba(52,211,153,0.25))] [mask:linear-gradient(#000,#000)_content-box,linear-gradient(#000,#000)] [mask-composite:exclude] p-px"
-        />
-
-        <div className="flex items-center justify-between gap-4 font-mono text-[11px] text-muted [transform:translateZ(20px)]">
+    <div className="relative">
+      {/* Soft light behind the card. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -inset-10 rounded-full bg-[radial-gradient(closest-side,rgb(122_162_255/0.18),transparent)] blur-2xl"
+      />
+      <div className="glass relative w-full max-w-[540px] rounded-2xl bg-panel/80 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)]">
+        <div className="flex items-center justify-between gap-4 font-mono text-[11px] text-muted">
           <span className="truncate">
             acme/shop <span className="text-fg/60">▸</span> main @ 9f3c2a1
           </span>
           <span className="shrink-0">5 stages · 1 recovery</span>
         </div>
 
-        <ol className="mt-5 grid gap-2.5 [transform:translateZ(46px)]">
+        <ol className="mt-5 grid gap-2.5">
           {STAGES.map((s, i) => {
             const tone: Tone = state[s.id] ?? 'idle';
             const t = TONE[tone];
@@ -160,7 +118,7 @@ export function HeroCard() {
                   />
                 </span>
                 <div
-                  className={`flex flex-1 items-center justify-between rounded-md border ${t.ring} bg-raised/70 px-3 py-2 transition-colors duration-500`}
+                  className={`flex flex-1 items-center justify-between rounded-lg border ${t.ring} bg-white/[0.025] px-3 py-2 transition-colors duration-500`}
                 >
                   <div>
                     <div className="text-[13px] font-medium">{s.label}</div>
@@ -184,10 +142,8 @@ export function HeroCard() {
           })}
         </ol>
 
-        <div className="mt-5 border-t border-line pt-3 [transform:translateZ(28px)]">
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted">
-            recent deploys
-          </div>
+        <div className="mt-5 border-t border-white/6 pt-3">
+          <div className="mb-2 text-[11px] text-muted">Recent deploys</div>
           <ul className="relative h-[92px] overflow-hidden font-mono text-[11px]">
             <AnimatePresence initial={false} mode="popLayout">
               {feed.map(({ id, row: [name, what, tone, dur] }, i) => (
@@ -209,7 +165,7 @@ export function HeroCard() {
             </AnimatePresence>
           </ul>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

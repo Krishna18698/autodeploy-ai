@@ -5,18 +5,32 @@ import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useState } from 'react';
+import { Logo } from '@/components/ui/logo';
 import { Kbd } from '@/components/ui/panel';
 import { ApiError, post } from '@/lib/api';
 import { useAllRepairs, useMe, useQuota } from '@/lib/queries';
 import { CommandPalette } from './command-palette';
 
 const NAV = [
-  { href: '/overview', label: 'Overview', glyph: '▣' },
-  { href: '/projects', label: 'Projects', glyph: '▤' },
-  { href: '/deployments', label: 'Deployments', glyph: '▶' },
-  { href: '/recovery', label: 'Recovery', glyph: '⟲' },
-  { href: '/analytics', label: 'Analytics', glyph: '◔' },
-  { href: '/settings', label: 'Settings', glyph: '⚙' },
+  // Line icons on a 20px grid.
+  {
+    href: '/overview',
+    label: 'Overview',
+    icon: 'M3.5 3.5h5v5h-5zM11.5 3.5h5v5h-5zM3.5 11.5h5v5h-5zM11.5 11.5h5v5h-5z',
+  },
+  {
+    href: '/projects',
+    label: 'Projects',
+    icon: 'M3 6.5V15a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 17 15V8a1.5 1.5 0 0 0-1.5-1.5H10L8.5 4.5h-4A1.5 1.5 0 0 0 3 6v.5',
+  },
+  { href: '/deployments', label: 'Deployments', icon: 'M10 16.5V4M5 9l5-5 5 5' },
+  { href: '/recovery', label: 'Recovery', icon: 'M4 10a6 6 0 1 0 2-4.5M4 3.5v3h3' },
+  { href: '/analytics', label: 'Analytics', icon: 'M4 16.5V11M8 16.5V7M12 16.5V9.5M16 16.5V4' },
+  {
+    href: '/settings',
+    label: 'Settings',
+    icon: 'M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4',
+  },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -64,19 +78,13 @@ export function Shell({ children }: { children: ReactNode }) {
       >
         Skip to content
       </a>
-      <aside className="sticky top-0 z-30 flex flex-col border-b border-line bg-panel/80 backdrop-blur lg:h-dvh lg:border-b-0 lg:border-r">
+      <aside className="sticky top-0 z-30 flex flex-col border-b border-white/6 bg-[#0b0c0e]/90 backdrop-blur lg:h-dvh lg:border-b-0 lg:border-r">
         <div className="flex h-14 items-center justify-between px-4">
           <Link
             href="/overview"
             className="flex items-center gap-2 text-[13px] font-semibold tracking-tight"
           >
-            <span
-              aria-hidden
-              className="grid size-5 place-items-center rounded-[5px] bg-run text-[11px] text-bg"
-            >
-              ◆
-            </span>
-            AutoDeploy
+            <Logo />
           </Link>
           <button
             type="button"
@@ -104,18 +112,25 @@ export function Shell({ children }: { children: ReactNode }) {
                     href={n.href}
                     onClick={() => setMenu(false)}
                     aria-current={active ? 'page' : undefined}
-                    className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors ${active ? 'text-fg' : 'text-muted hover:bg-raised/60 hover:text-fg'}`}
+                    className={`relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors pointer-coarse:py-2.5 ${active ? 'text-fg' : 'text-muted hover:bg-white/4 hover:text-fg'}`}
                   >
                     {active && (
                       <motion.span
                         layoutId="nav-active"
-                        className="absolute inset-0 rounded-md bg-raised"
+                        className="absolute inset-0 rounded-lg bg-white/6"
                         transition={{ type: 'spring', stiffness: 500, damping: 40 }}
                       />
                     )}
-                    <span aria-hidden className="relative w-4 text-center font-mono text-[12px]">
-                      {n.glyph}
-                    </span>
+                    <svg viewBox="0 0 20 20" aria-hidden className="relative size-4 shrink-0">
+                      <path
+                        d={n.icon}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                     <span className="relative">{n.label}</span>
                     {n.href === '/recovery' && pending > 0 && (
                       <span className="relative ml-auto rounded-full bg-ai/20 px-1.5 font-mono text-[10px] text-ai">
@@ -129,13 +144,18 @@ export function Shell({ children }: { children: ReactNode }) {
             })}
           </ul>
         </nav>
-        <div className="mt-auto hidden border-t border-line px-4 py-3 font-mono text-[11px] text-muted lg:block">
+        <div className="mt-auto hidden border-t border-white/6 px-4 py-3 text-[12px] text-muted lg:block">
           {quota.data && (
-            <div className="mb-2">
-              deploys today {quota.data.deploysToday}/{quota.data.dailyLimit}
-              <div className="mt-1 h-1 overflow-hidden rounded bg-raised">
+            <div className="mb-3">
+              <div className="flex justify-between">
+                <span>Deploys today</span>
+                <span className="tabular-nums">
+                  {quota.data.deploysToday}/{quota.data.dailyLimit}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/6">
                 <div
-                  className="h-full bg-run/70"
+                  className="h-full rounded-full bg-run/80"
                   style={{
                     width: `${Math.min(100, (quota.data.deploysToday / Math.max(1, quota.data.dailyLimit)) * 100)}%`,
                   }}
@@ -151,7 +171,7 @@ export function Shell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-3 border-b border-line bg-bg/80 px-6 backdrop-blur lg:flex">
+        <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-3 border-b border-white/6 bg-bg/80 px-6 backdrop-blur lg:flex">
           <label className="sr-only" htmlFor="org">
             Organisation
           </label>
@@ -159,7 +179,7 @@ export function Shell({ children }: { children: ReactNode }) {
             id="org"
             value={me.data.org.id}
             onChange={(e) => switchOrg(e.target.value)}
-            className="h-8 rounded-md border border-line bg-panel px-2 text-[13px] text-fg outline-none focus:border-run/60"
+            className="h-8 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
           >
             {me.data.orgs.map((o) => (
               <option key={o.id} value={o.id}>
@@ -170,7 +190,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <span className="flex items-center gap-2 text-[13px] text-muted">
             <span
               aria-hidden
-              className="grid size-7 place-items-center rounded-full border border-line bg-raised font-mono text-[11px] text-fg"
+              className="grid size-7 place-items-center rounded-full bg-gradient-to-b from-white/20 to-white/5 text-[11px] font-medium text-fg"
             >
               {me.data.user.login.slice(0, 2).toUpperCase()}
             </span>
@@ -209,7 +229,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
-        <h1 className="truncate text-[22px] font-semibold tracking-tight">{title}</h1>
+        <h1 className="truncate text-[24px] font-semibold tracking-[-0.02em]">{title}</h1>
         {sub && <div className="mt-1 text-[13px] text-muted">{sub}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

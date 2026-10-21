@@ -1,85 +1,38 @@
-'use client';
-
-import { useGSAP } from '@gsap/react';
-import gsap from 'gsap';
-import { SplitText } from 'gsap/SplitText';
-import { useRef } from 'react';
+import Link from 'next/link';
 import { DemoVideo } from './DemoVideo';
 import { HeroCard } from './HeroCard';
 
-gsap.registerPlugin(useGSAP, SplitText);
-
-const LATE_HYDRATION_MS = 1200;
-
 export function Hero() {
-  const root = useRef<HTMLElement>(null);
-
-  useGSAP(
-    () => {
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      // On a slow load the hero has already been readable for a while; hiding
-      // it again just to animate it in looks like the page glitching.
-      if (performance.now() > LATE_HYDRATION_MS) return;
-      const split = SplitText.create('[data-split]', {
-        type: 'lines,words',
-        mask: 'lines',
-        aria: 'none',
-      });
-      const tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
-      tl.from(split.words, { yPercent: 110, duration: 1.1, stagger: 0.06 })
-        .from('[data-accent]', { yPercent: 110, opacity: 0, duration: 1.2 }, '-=0.7')
-        .from('[data-fade]', { y: 14, opacity: 0, duration: 0.9, stagger: 0.08 }, '-=0.9')
-        .from('[data-card]', { y: 40, opacity: 0, duration: 1.4 }, 0.25);
-      return () => split.revert();
-    },
-    { scope: root },
-  );
-
   return (
-    <section
-      ref={root}
-      className="relative mx-auto grid min-h-svh max-w-7xl items-center gap-12 px-4 pb-16 pt-28 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pt-20"
-    >
-      <div>
-        <p
-          data-fade
-          className="mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-panel/60 px-2.5 py-1 font-mono text-[11px] text-muted"
+    <section className="relative mx-auto grid max-w-6xl items-center gap-14 px-4 pb-16 pt-32 sm:px-6 lg:grid-cols-[1fr_1fr] lg:pb-24 lg:pt-40">
+      <div className="animate-[rise_0.9s_cubic-bezier(0.16,1,0.3,1)_both] motion-reduce:animate-none">
+        <a
+          href="#features"
+          className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/3 py-1 pl-1 pr-3 text-[12px] text-muted transition-colors hover:text-fg"
         >
-          <span className="size-1.5 rounded-full bg-run" />
-          open beta · static + server-rendered · free
-        </p>
-        <h1 className="text-[clamp(2.6rem,6.4vw,5.25rem)] font-semibold leading-[0.98] tracking-[-0.035em]">
-          <span data-split className="block">
-            Deploys that fix
-          </span>
-          <span className="block overflow-hidden pb-[0.08em]">
-            <span
-              data-accent
-              className="inline-block font-serif font-normal italic tracking-[-0.01em] text-fg/95"
-            >
-              themselves.
-            </span>
-          </span>
+          <span className="rounded-full bg-run/15 px-2 py-0.5 font-medium text-run">Open beta</span>
+          Static sites and server-rendered apps
+          <span aria-hidden>→</span>
+        </a>
+        <h1 className="text-[clamp(2.6rem,6vw,4.6rem)] font-semibold leading-[1.02] tracking-[-0.04em]">
+          Deploys that fix <span className="text-muted">themselves.</span>
         </h1>
-        <p data-fade className="mt-6 max-w-md text-[15px] leading-relaxed text-muted">
-          Connect a repo. AutoDeploy detects how to build it, runs it in a sandbox, repairs the
-          failures it understands, validates the result — and shows you every decision it made.
+        <p className="mt-6 max-w-lg text-[17px] leading-relaxed text-muted">
+          Connect a repository. AutoDeploy works out how to build it, runs it in a sandbox, repairs
+          the failures it understands and shows you every decision it made.
         </p>
-        <div data-fade className="mt-8 flex flex-wrap items-center gap-3">
-          <a
-            id="start"
+        <div className="mt-9 flex flex-wrap items-center gap-3">
+          <Link
             href="/login"
-            className="rounded-full bg-run px-5 py-2.5 text-sm font-medium text-bg transition-transform hover:scale-[1.03] active:scale-[0.98]"
+            className="inline-flex h-11 items-center rounded-lg bg-fg px-5 text-[14px] font-medium text-bg shadow-[0_1px_0_rgb(255_255_255/0.3)_inset] transition-colors hover:bg-fg/90"
           >
-            Connect GitHub
-          </a>
+            Start deploying
+          </Link>
           <DemoVideo />
         </div>
-        <p data-fade className="mt-5 font-mono text-[11px] text-muted">
-          free · no credit card · rules first, AI only when needed
-        </p>
+        <p className="mt-6 text-[13px] text-muted">Free · No credit card · Any framework</p>
       </div>
-      <div data-card className="lg:justify-self-end">
+      <div className="animate-[rise_1.1s_0.15s_cubic-bezier(0.16,1,0.3,1)_both] motion-reduce:animate-none lg:justify-self-end">
         <HeroCard />
       </div>
     </section>

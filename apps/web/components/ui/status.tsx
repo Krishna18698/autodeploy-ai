@@ -30,7 +30,7 @@ export function StatusPill({
   const t = TONE_CLASS[s.tone];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border ${t.border} ${t.bg} ${t.text} font-mono ${size === 'md' ? 'px-2.5 py-1 text-[12px]' : 'px-2 py-0.5 text-[11px]'} transition-colors duration-300`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border ${t.border} ${t.bg} ${t.text} font-medium ${size === 'md' ? 'px-2.5 py-1 text-[12px]' : 'px-2 py-0.5 text-[11px]'} transition-colors duration-300`}
     >
       <Dot tone={s.tone} pulse={Boolean(s.live)} />
       {s.label}

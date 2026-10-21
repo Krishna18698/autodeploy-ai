@@ -83,19 +83,7 @@ function LoginInner() {
 
   const signup = mode === 'signup';
   return (
-    <AuthCard
-      title={
-        signup ? (
-          <>
-            Create your <span className="font-serif font-normal italic">account.</span>
-          </>
-        ) : (
-          <>
-            Sign in to deploy <span className="font-serif font-normal italic">your repos.</span>
-          </>
-        )
-      }
-    >
+    <AuthCard title={signup ? 'Create your account' : 'Sign in to AutoDeploy'}>
       <div className="mt-6 flex flex-col gap-2">
         <a
           href="/auth/github/login"

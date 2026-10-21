@@ -1,23 +1,12 @@
 import type { Metadata, Viewport } from 'next';
-import { Instrument_Serif, Inter, JetBrains_Mono } from 'next/font/google';
+import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 
-// display 'optional': a font is used only if it's ready before first paint;
-// otherwise the (size-matched) fallback stays for that visit. No late swap, so
-// headings and the hero card never resize while someone is looking at them.
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'optional' });
-const serif = Instrument_Serif({
-  subsets: ['latin'],
-  weight: '400',
-  style: 'italic',
-  variable: '--font-instrument-serif',
-  display: 'optional',
-});
-const mono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-jetbrains-mono',
-  display: 'optional',
-});
+// display 'swap': Geist always shows once loaded; next/font sizes the
+// fallback to match, so the swap barely moves anything.
+// Geist everywhere; Geist Mono for logs, IDs and code, where columns must line up.
+const sans = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' });
+const mono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'AutoDeploy — deploys that fix themselves',
@@ -26,12 +15,12 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0a0c0f',
+  themeColor: '#08090a',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${serif.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body className="min-h-dvh font-sans text-fg">{children}</body>
     </html>
   );

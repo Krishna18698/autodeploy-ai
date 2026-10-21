@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Logo } from '@/components/ui/logo';
 
 // The card every sign-in screen sits in: sign in, confirm email, forgot and
 // reset password.
@@ -11,15 +12,9 @@ export function AuthCard({
 }) {
   return (
     <main className="grid min-h-svh place-items-center px-4 py-10">
-      <div className="w-full max-w-sm rounded-[10px] border border-line bg-panel p-6">
-        <Link href="/" className="mb-6 flex items-center gap-2 text-sm font-semibold">
-          <span
-            aria-hidden
-            className="grid size-6 place-items-center rounded-md bg-run text-[12px] text-bg"
-          >
-            ◆
-          </span>
-          AutoDeploy
+      <div className="glass w-full max-w-sm rounded-2xl bg-panel/80 p-7 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)]">
+        <Link href="/" className="mb-7 inline-flex" aria-label="AutoDeploy home">
+          <Logo size={22} />
         </Link>
         <h1 className="text-[20px] font-semibold tracking-tight">{title}</h1>
         {children}

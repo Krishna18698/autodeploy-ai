@@ -1,29 +1,30 @@
 @import "tailwindcss";
 
-/* Control Room tokens. Dark only. Status colour is always paired with a dot + label. */
+/* Tokens: dark only, Linear-like: soft near-black greys, hairline borders,
+   one calm blue accent; violet only for AI. Status colour always comes with a
+   dot + label. */
 @theme {
-  --color-bg: #0a0c0f;
-  --color-panel: #12151a;
-  --color-raised: #1a1e25;
-  --color-line: #252a33;
-  --color-fg: #e8ebf0;
-  --color-muted: #8a93a3;
-  --color-run: #22d3ee;
-  --color-ok: #34d399;
-  --color-warn: #fbbf24;
-  --color-fail: #f43f5e;
-  --color-ai: #a78bfa;
+  --color-bg: #08090a;
+  --color-panel: #0f1012;
+  --color-raised: #17181b;
+  --color-line: #222327;
+  --color-fg: #f2f3f5;
+  --color-muted: #8b8f98;
+  --color-run: #7aa2ff;
+  --color-ok: #4cc38a;
+  --color-warn: #f2c14e;
+  --color-fail: #eb5a5a;
+  --color-ai: #c084fc;
 
   /* Chart marks (validated for the dark surface with the dataviz checker):
      status hues above are for pills/text; these are for filled data marks. */
   --color-chart-1: #3987e5;
   --color-chart-fail: #e5484d;
   --color-chart-muted: #4b5563;
-  --color-grid: #1f242c;
+  --color-grid: #1b1c1f;
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-instrument-serif), ui-serif, Georgia, serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -45,20 +46,11 @@
   }
 }
 
-/* Lenis */
-html.lenis,
-html.lenis body {
-  height: auto;
-}
-.lenis.lenis-smooth {
-  scroll-behavior: auto !important;
-}
-
 @utility glass {
-  background: color-mix(in oklab, var(--color-panel) 72%, transparent);
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  border: 1px solid color-mix(in oklab, var(--color-line) 90%, white 6%);
+  /* A card lit faintly from above: the Linear look, no blur needed. */
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0.01));
+  border: 1px solid rgb(255 255 255 / 0.07);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
 @utility hairline {
@@ -137,4 +129,11 @@ html.lenis body {
 /* Anchored sections land below the fixed 3.5rem header, not under it. */
 section[id] {
   scroll-margin-top: 4rem;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
 }

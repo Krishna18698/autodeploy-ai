@@ -1,7 +1,4 @@
-'use client';
-
-import { useRef } from 'react';
-import { useScrollScene } from './useScrollScene';
+import { FadeIn, SectionHead } from '../FadeIn';
 
 const LINES = [
   ['$', 'pnpm install --frozen-lockfile', ''],
@@ -19,68 +16,53 @@ const LINES = [
 const STEPS = ['Analyze', 'Queue', 'Build', 'Validate', 'Live'];
 
 export function Waiting() {
-  const root = useRef<HTMLElement>(null);
-  useScrollScene(root, (tl) => {
-    tl.from('[data-line]', { opacity: 0, y: 8, stagger: 0.3, duration: 0.3 }, 0);
-    tl.from(
-      '[data-step-fill]',
-      { scaleX: 0, transformOrigin: 'left', stagger: 0.7, duration: 0.7 },
-      0,
-    );
-    // Steps brighten from the (still readable) muted tone rather than fading in from near-invisible.
-    tl.from('[data-step]', { color: '#8a93a3', stagger: 0.7, duration: 0.2 }, 0);
-  });
   return (
-    <section ref={root} id="how" className="relative flex min-h-svh items-center">
-      <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center [&>*]:min-w-0">
+    <section id="how" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
+      <div className="grid gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:items-center [&>*]:min-w-0">
         <div>
-          <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-run">01 · build</p>
-          <h2 className="mt-3 text-[clamp(2rem,4.4vw,3.6rem)] font-semibold leading-[1.02] tracking-[-0.03em]">
-            Most of a deploy is <span className="font-serif font-normal italic">waiting.</span>
-          </h2>
-          <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted">
-            So every build streams to you live: queued with fair scheduling, built in a sandbox with
-            no network except the package registry, validated in a real browser before anyone sees
-            it.
-          </p>
-          <ol className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[12px] sm:gap-2">
-            {STEPS.map((s, i) => (
-              <li key={s} data-step className="flex items-center gap-2 text-fg">
-                <span className="text-ok">✓</span>
-                {s}
-                {i < STEPS.length - 1 && (
-                  // Connectors only where the steps fit on one line.
-                  <span className="relative hidden h-px w-8 overflow-hidden bg-line sm:block">
-                    <span data-step-fill className="absolute inset-0 bg-ok/70" />
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
+          <SectionHead
+            eyebrow="Builds"
+            title="Watch every build as it happens."
+            sub="Logs stream to your browser live. Builds are queued fairly, run in a sandbox with no network except the package registry, and are checked in a real browser before anyone sees them."
+          />
+          <FadeIn delay={100}>
+            <ol className="mt-8 flex flex-wrap gap-2 text-[13px]">
+              {STEPS.map((s) => (
+                <li
+                  key={s}
+                  className="flex items-center gap-1.5 rounded-full border border-white/8 bg-white/3 px-3 py-1 text-fg/90"
+                >
+                  <span className="text-ok">✓</span>
+                  {s}
+                </li>
+              ))}
+            </ol>
+          </FadeIn>
         </div>
-        <div className="glass overflow-hidden rounded-[10px] shadow-[0_40px_120px_-30px_rgba(0,0,0,0.9)]">
-          <div className="flex items-center gap-1.5 border-b border-line px-4 py-2.5">
-            <span className="size-2.5 rounded-full bg-line" />
-            <span className="size-2.5 rounded-full bg-line" />
-            <span className="size-2.5 rounded-full bg-line" />
-            <span className="ml-3 font-mono text-[11px] text-muted">
-              shop ▸ deploy #128 ▸ attempt 1 · node 22 · sandbox
-            </span>
+        <FadeIn delay={120}>
+          <div className="glass overflow-hidden rounded-2xl bg-panel/80 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)]">
+            <div className="flex items-center gap-1.5 border-b border-white/6 px-4 py-3">
+              <span className="size-2.5 rounded-full bg-white/10" />
+              <span className="size-2.5 rounded-full bg-white/10" />
+              <span className="size-2.5 rounded-full bg-white/10" />
+              <span className="ml-3 truncate font-mono text-[11px] text-muted">
+                shop ▸ deploy #128 ▸ attempt 1 · node 22 · sandbox
+              </span>
+            </div>
+            {/* Phones wrap long lines (with a hanging indent) instead of cutting them off. */}
+            <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-6 sm:text-[12px]">
+              {LINES.map(([p, t, cls]) => (
+                <div
+                  key={t}
+                  className={`whitespace-pre-wrap break-words pl-[2ch] -indent-[2ch] sm:whitespace-pre ${cls || 'text-fg/90'}`}
+                >
+                  <span className="mr-2 select-none text-muted/60">{p || ' '}</span>
+                  {t}
+                </div>
+              ))}
+            </pre>
           </div>
-          {/* Phones wrap long lines (with a hanging indent) instead of cutting them off. */}
-          <pre className="min-h-[300px] overflow-x-auto p-4 font-mono text-[11px] leading-6 sm:text-[12px]">
-            {LINES.map(([p, t, cls]) => (
-              <div
-                key={t}
-                data-line
-                className={`whitespace-pre-wrap break-words pl-[2ch] -indent-[2ch] sm:whitespace-pre ${cls || 'text-fg/90'}`}
-              >
-                <span className="mr-2 select-none text-muted/60">{p || ' '}</span>
-                {t}
-              </div>
-            ))}
-          </pre>
-        </div>
+        </FadeIn>
       </div>
     </section>
   );

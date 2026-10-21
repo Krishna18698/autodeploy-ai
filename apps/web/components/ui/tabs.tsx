@@ -17,7 +17,7 @@ export function Tabs<T extends string>({
     <div
       role="tablist"
       aria-label={id}
-      className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line [scrollbar-width:none]"
+      className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-white/6 [scrollbar-width:none]"
     >
       {tabs.map((t) => (
         <button
@@ -37,7 +37,7 @@ export function Tabs<T extends string>({
           {value === t.id && (
             <motion.span
               layoutId={`tab-${id}`}
-              className="absolute inset-x-2 bottom-0 h-px bg-run"
+              className="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-fg"
             />
           )}
         </button>
