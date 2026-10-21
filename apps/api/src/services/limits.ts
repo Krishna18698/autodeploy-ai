@@ -37,14 +37,15 @@ export async function usageFor(sql: Sql | Tx, orgId: string, env: LimitEnv): Pro
     }[]
   >`
     select
-      (select count(*)::int from deployments
-        where org_id = ${orgId} and created_at >= date_trunc('day', now())) as deploys_today,
+      -- From the ledger (0009): deleting a project doesn't give its deploys back.
+      (select coalesce(sum(deploys), 0)::int from org_usage
+        where org_id = ${orgId} and day = (now() at time zone 'utc')::date) as deploys_today,
       (select daily_deploy_quota from orgs where id = ${orgId}) as daily_quota,
       (select count(*)::int from projects where org_id = ${orgId}) as projects,
       (select count(*)::int from projects
         where org_id = ${orgId} and analysis->'mode'->>'value' = 'ssr') as server_projects,
-      (select sum(a.duration_ms) from deployment_attempts a join deployments d on d.id = a.deployment_id
-        where d.org_id = ${orgId} and a.started_at >= date_trunc('month', now())) as build_ms,
+      (select sum(build_ms) from org_usage
+        where org_id = ${orgId} and day >= date_trunc('month', now() at time zone 'utc')::date) as build_ms,
       (select sum(a.bytes) from artifacts a
         where a.id in (select artifact_id from deployments where org_id = ${orgId})) as storage`;
   return {

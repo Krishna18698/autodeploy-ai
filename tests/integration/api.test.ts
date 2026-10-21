@@ -447,6 +447,12 @@ describe('Per-account limits', () => {
     await expect(sql.begin((tx) => enforceDeployLimits(tx, org, env))).rejects.toMatchObject({
       code: 'build_minutes_exceeded',
     });
+    // Deleting the project gives none of it back (deploy, delete, repeat).
+    await sql`delete from projects where id = ${p.id}`;
+    expect(await usageFor(sql, org, env)).toMatchObject({
+      deploysToday: 1,
+      buildMinutesThisMonth: 6,
+    });
 
     // Storage: the org's artifacts count against it.
     const org2 = await makeOrg(sql);
