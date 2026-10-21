@@ -78,6 +78,24 @@ describe('AI gateway', () => {
     expect(p.calls).toBe(0);
   });
 
+  it('shows the data file a failing build script reads, though the error never names it', () => {
+    const sig = classify([
+      'SyntaxError: Expected double-quoted property name in JSON at position 41 (line 5 column 3)',
+      '    at JSON.parse (<anonymous>)',
+      '    at file:///workspace/build.mjs:2:18',
+    ]);
+    const ctx = buildFailureContext(
+      sig,
+      tree({
+        'build.mjs': "const nav = JSON.parse(readFileSync('src/nav.json', 'utf8'));",
+        'src/nav.json': '{ "links": ["home",] }',
+        'src/other.json': '{}',
+        'package.json': '{}',
+      }),
+    );
+    expect(ctx.filesIncluded).toEqual(['build.mjs', 'src/nav.json', 'package.json']);
+  });
+
   it('fences untrusted repo text so it cannot close the boundary', () => {
     const sig = classify(['src/a.ts(1,1): error TS2339: x']);
     const ctx = buildFailureContext(

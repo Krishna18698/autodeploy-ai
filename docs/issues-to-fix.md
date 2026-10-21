@@ -48,8 +48,9 @@ the last steps.
 
 **Evidence**
 - [x] OpenRouter measured on 2026-10-21 (3/4 fixed, 2/2 escalated, 0 false fixes).
-- [ ] **AI fallback shares the primary's model** (Nemotron 3 Ultra on both). It covers NVIDIA rate limits but not the model being withdrawn again; no non-NVIDIA free model on OpenRouter passed the eval (Cohere North Mini Code, MiniMax M3.1 Flash gave invalid output). Re-check monthly with the eval.
-- [ ] Widen the AI evaluation beyond the corpus's 6 AI cases with realistic failures.
+- [x] **AI fallback on a different provider** (2026-10-22): Cloudflare Workers AI (GPT-OSS 120B on Cloudflare's hardware) is the third repair provider, after NVIDIA and OpenRouter (both serve NVIDIA's Nemotron). Measured 10/12 fixed, 6/6 escalated, 0 false fixes over 3 runs, then 7/8, 3/3, 0 on the widened set. Workers AI needed the bare schema and parsed answers handled.
+- [x] **Wider AI evaluation** (2026-10-22): 5 realistic cases in `tests/ai-eval/cases.ts` (11 in all). They exposed a false fix (an outage hidden with try/catch) and a blind spot (a JSON file only the build script names); the context now includes files a failing script reads, and the rules forbid hiding outside failures.
+- [ ] **Non-unique edits get no second try:** on the JSON case the model picked text that occurs twice, which is rightly refused. One retry telling the model to quote more of the line would likely fix it.
 - [ ] Renew the `e2e-smoke` API token before 2027-01-06.
 
 ## Sign-in hardening (later)

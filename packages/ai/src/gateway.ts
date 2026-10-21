@@ -91,7 +91,7 @@ export class AiGateway {
   }
 
   proposePatch(context: string, diagnosis: Diagnosis) {
-    const prompt = `Diagnosis: ${diagnosis.summary}\nCause: ${diagnosis.cause}\n\nPropose the smallest change that fixes the build, as edits. Each edit replaces \`find\` with \`replace\` in \`path\`, which must be one of the files shown below. Copy \`find\` exactly from that file, keeping it to the changed part of a single line where you can (one edit per line), and long enough to occur only once. Fix the code the error points at: never add files, invent values, or edit build scripts or configuration to hide the error. Return no edits if unsure.\n\n${context}`;
+    const prompt = `Diagnosis: ${diagnosis.summary}\nCause: ${diagnosis.cause}\n\nPropose the smallest change that fixes the build, as edits. Each edit replaces \`find\` with \`replace\` in \`path\`, which must be one of the files shown below. Copy \`find\` exactly from that file, keeping it to the changed part of a single line where you can (one edit per line), and long enough to occur only once. Fix the code the error points at: never add files, invent values, or edit build scripts or configuration to hide the error. If the cause is outside the code (a service that is down, missing credentials, a package that does not exist), return no edits: wrapping it in try/catch, skipping it or returning placeholder data only hides it. Return no edits if unsure.\n\n${context}`;
     return this.call(this.o.providers, 'patch', PatchProposal, 'patch', prompt, 2000);
   }
 

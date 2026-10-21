@@ -19,9 +19,9 @@ export type Case = {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), 'repos');
 const pkg = (o: object) => JSON.stringify({ name: 'corpus', private: true, ...o }, null, 2);
-const writeDist = (dir = 'dist', title = 'ok') =>
+export const writeDist = (dir = 'dist', title = 'ok') =>
   `import { mkdirSync, writeFileSync } from 'node:fs';\nmkdirSync('${dir}', { recursive: true });\nwriteFileSync('${dir}/index.html', '<!doctype html><title>${title}</title><h1>${title}</h1>');\n`;
-const nodeBuild = (script: string, extra: object = {}) => ({
+export const nodeBuild = (script: string, extra: object = {}) => ({
   'package.json': pkg({ type: 'module', scripts: { build: 'node build.mjs' }, ...extra }),
   'build.mjs': script,
 });
