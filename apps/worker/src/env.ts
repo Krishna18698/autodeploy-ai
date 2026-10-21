@@ -70,7 +70,7 @@ const EnvSchema = z.object({
   AI_PROVIDERS: z
     .string()
     .default('')
-    .describe('comma list in priority order: nvidia,openrouter,mock'),
+    .describe('comma list in priority order: nvidia,openrouter,cloudflare,mock'),
   NVIDIA_API_KEY: z.string().optional(),
   // Checked 2026-10-18 on the free endpoint: answers in ~1 s with thinking off;
   // deepseek-v4.1-flash and the GLM models never answered (no reply in 150 s).
@@ -82,6 +82,9 @@ const EnvSchema = z.object({
   CF_ACCOUNT_ID: z.string().optional(),
   CF_AI_TOKEN: z.string().optional(),
   CF_AI_MODEL: z.string().default('@cf/qwen/qwen3-30b-a3b-fp8'),
+  // A repair model on Cloudflare's own hardware, so a model NVIDIA withdraws
+  // (both other providers serve NVIDIA's) doesn't stop AI repair.
+  CF_REPAIR_MODEL: z.string().default('@cf/openai/gpt-oss-120b'),
   AI_DAILY_CALL_BUDGET: z.coerce.number().int().min(0).default(300),
   // One account's share (a repair is about three calls).
   AI_CALLS_PER_ORG_PER_DAY: z.coerce.number().int().min(0).default(60),

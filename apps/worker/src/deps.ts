@@ -48,6 +48,8 @@ function providersFrom(env: Env, log: Logger): Provider[] {
       out.push(nvidia(env.NVIDIA_API_KEY, env.NVIDIA_MODEL, env.NVIDIA_THINKING));
     else if (name === 'openrouter' && env.OPENROUTER_API_KEY)
       out.push(openrouter(env.OPENROUTER_API_KEY, env.OPENROUTER_MODEL));
+    else if (name === 'cloudflare' && env.CF_ACCOUNT_ID && env.CF_AI_TOKEN)
+      out.push(workersAi(env.CF_ACCOUNT_ID, env.CF_AI_TOKEN, env.CF_REPAIR_MODEL, 'cloudflare'));
     else if (name === 'mock') out.push(new MockProvider());
     else log.warn({ provider: name }, 'AI provider listed but not configured; skipping');
   }

@@ -50,7 +50,11 @@ export class OpenAICompatibleProvider implements Provider {
     private readonly apiKey: string,
     readonly model: string,
     private readonly opts: {
-      structuredOutput: 'json_schema' | 'json_object' | 'none';
+      /**
+       * json_schema: OpenAI's { name, schema } envelope; json_schema_bare: the
+       * schema itself, which is what Workers AI enforces (it ignores the envelope).
+       */
+      structuredOutput: 'json_schema' | 'json_schema_bare' | 'json_object' | 'none';
       extraHeaders?: Record<string, string>;
       /** Appended to the last user message, e.g. Qwen3's "/no_think" switch. */
       userSuffix?: string;
@@ -65,9 +69,11 @@ export class OpenAICompatibleProvider implements Provider {
     const responseFormat =
       req.jsonSchema && this.opts.structuredOutput === 'json_schema'
         ? { type: 'json_schema', json_schema: req.jsonSchema }
-        : req.jsonSchema && this.opts.structuredOutput === 'json_object'
-          ? { type: 'json_object' }
-          : undefined;
+        : req.jsonSchema && this.opts.structuredOutput === 'json_schema_bare'
+          ? { type: 'json_schema', json_schema: req.jsonSchema.schema }
+          : req.jsonSchema && this.opts.structuredOutput === 'json_object'
+            ? { type: 'json_object' }
+            : undefined;
     const res = await withTimeout(
       req.timeoutMs,
       (signal) =>
@@ -107,11 +113,13 @@ export class OpenAICompatibleProvider implements Provider {
       );
     }
     const body = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
+      choices?: Array<{ message?: { content?: unknown }; finish_reason?: string }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
       model?: string;
     };
-    const content = body.choices?.[0]?.message?.content;
+    const raw = body.choices?.[0]?.message?.content;
+    // Workers AI hands a schema-constrained answer back already parsed.
+    const content = raw !== null && typeof raw === 'object' ? JSON.stringify(raw) : raw;
     if (typeof content !== 'string' || content === '')
       throw new ProviderError(
         this.name,
@@ -154,14 +162,23 @@ export const openrouter = (apiKey: string, model: string) =>
     extraBody: { reasoning: { effort: 'low' } },
   });
 
-export const workersAi = (accountId: string, apiToken: string, model: string) =>
+/**
+ * Cloudflare Workers AI. `name` tells a repair model ("cloudflare") apart from
+ * the classifier ("workers-ai"), so their breakers and usage don't mix.
+ */
+export const workersAi = (
+  accountId: string,
+  apiToken: string,
+  model: string,
+  name = 'workers-ai',
+) =>
   new OpenAICompatibleProvider(
-    'workers-ai',
+    name,
     `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`,
     apiToken,
     model,
     {
-      structuredOutput: 'json_schema',
+      structuredOutput: 'json_schema_bare',
       // Qwen3 reasons before answering by default and spends the whole
       // classifier budget (300 tokens) doing it; the answer never arrives.
       ...(/qwen3/i.test(model) && { userSuffix: '/no_think' }),
