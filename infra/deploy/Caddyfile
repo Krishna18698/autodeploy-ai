@@ -1,6 +1,12 @@
-# Internal reverse proxy: Cloudflare Tunnel → Caddy → two API replicas.
+# Internal reverse proxy: Cloudflare Tunnel → Caddy.
+#   app.<domain>  the dashboard as one site: /api and /auth go to the API
+#                 replicas, pages come from Vercel. One origin keeps cookies
+#                 first-party, Cloudflare's CF-Connecting-IP names the visitor,
+#                 and none of it spends the edge Worker's free 100k requests a
+#                 day, which users' sites share (audit 2026-10-22, #5).
+#   api.<domain>  the API replicas.
 # Active health checks take a replica out of rotation while it restarts.
-:8080 {
+(api) {
 	reverse_proxy api-1:4000 api-2:4000 {
 		lb_policy round_robin
 		lb_retries 2
@@ -9,5 +15,28 @@
 		health_timeout 2s
 		# Server-Sent Events: stream immediately, never buffer.
 		flush_interval -1
+	}
+}
+
+:8080 {
+	@app host {$APP_HOST:app.invalid}
+	handle @app {
+		@backend path /api/* /auth/*
+		handle @backend {
+			import api
+		}
+		handle {
+			reverse_proxy {$APP_ORIGIN:https://autodeploy-zeta.vercel.app} {
+				header_up Host {upstream_hostport}
+				header_up X-Forwarded-Host {host}
+				# Tells the dashboard this came through us, so it doesn't redirect here.
+				header_up X-Autodeploy-Edge 1
+				# Vercel's redirects name its own address; browsers only ever see ours.
+				header_down Location "^https://[^/]+\.vercel\.app" "https://{host}"
+			}
+		}
+	}
+	handle {
+		import api
 	}
 }

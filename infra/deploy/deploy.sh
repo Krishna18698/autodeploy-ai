@@ -30,6 +30,12 @@ wait_healthy() {
 # SKIP_PULL=1 when ship.sh built the images on this VM.
 [ "${SKIP_PULL:-}" = 1 ] || compose pull "${apis[@]}" worker gateway egress egress-runtime
 compose up -d --remove-orphans postgres valkey kafka egress egress-runtime caddy
+# The Caddyfile is bind-mounted, and unpacking a release replaces the file
+# rather than editing it, so a changed one needs a new container to be seen.
+if ! compose exec -T caddy cat /etc/caddy/Caddyfile | cmp -s - Caddyfile; then
+  echo "▸ Caddyfile changed: replacing caddy"
+  compose up -d --no-deps --force-recreate caddy
+fi
 for svc in "${apis[@]}"; do
   echo "▸ rolling $svc"
   compose up -d --no-deps "$svc"

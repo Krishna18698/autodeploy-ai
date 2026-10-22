@@ -196,6 +196,9 @@ services:
   caddy:
     image: caddy:2-alpine
     volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro]
+    environment:
+      APP_HOST: app.${PLATFORM_DOMAIN}
+      APP_ORIGIN: ${APP_ORIGIN:-https://autodeploy-zeta.vercel.app}
     # Only the host's cloudflared (systemd) reaches this; nothing is public.
     ports: ["127.0.0.1:8080:8080"]
     depends_on: [api-1, api-2]

@@ -1,6 +1,8 @@
 # DNS + tunnel + edge routing for the platform domain.
 #   <domain>, www.<domain>  → the edge Worker (redirects to the dashboard)
-#   app.<domain>  → the edge Worker (pages from Vercel, /api and /auth from the API)
+#   app.<domain>  → Cloudflare Tunnel → Caddy (pages from Vercel, /api and /auth
+#                   from the API), so the dashboard never spends the Worker's
+#                   daily request quota that users' sites share
 #   api.<domain>  → Cloudflare Tunnel → Caddy → API replicas
 #   *.<domain>    → the edge Worker (user sites)
 #
@@ -10,15 +12,22 @@
 
 locals {
   domains = concat([var.platform_domain], var.legacy_domains)
-  tunnel_hosts = flatten([
+  tunnel_hosts = concat(flatten([
     for d in local.domains : [
       { hostname = "api.${d}", service = "http://localhost:8080" },
       { hostname = "ssh.${d}", service = "ssh://localhost:22" },
       # SSR runtime gateway (ADR 0008); it rejects anything without the internal token.
       { hostname = "run.${d}", service = "http://localhost:8082" },
     ]
+    ]), [
+    # The dashboard: Caddy tells it from the API by hostname. (app. on a legacy
+    # domain stays with the Worker, which redirects it here.)
+    { hostname = "app.${var.platform_domain}", service = "http://localhost:8080" },
   ])
-  bypass = { for p in setproduct(local.domains, ["api", "ssh", "run"]) : "${p[1]}.${p[0]}" => p[0] }
+  bypass = merge(
+    { for p in setproduct(local.domains, ["api", "ssh", "run"]) : "${p[1]}.${p[0]}" => p[0] },
+    { "app.${var.platform_domain}" = var.platform_domain },
+  )
 }
 
 data "cloudflare_zone" "platform" {
@@ -58,10 +67,9 @@ resource "cloudflare_dns_record" "tunnel" {
 }
 
 # Hostnames the Worker answers itself: proxied records pointing at the discard
-# prefix (there is no origin). Vercel isn't attached to the domain; the Worker
-# fetches dashboard pages from it, so the browser only ever sees app.<domain>.
+# prefix (there is no origin). On a legacy domain app.<domain> only redirects.
 resource "cloudflare_dns_record" "app" {
-  for_each = toset(local.domains)
+  for_each = toset(var.legacy_domains)
   zone_id  = data.cloudflare_zone.platform[each.key].zone_id
   name     = "app.${each.key}"
   type     = "AAAA"
@@ -162,6 +170,12 @@ moved {
 moved {
   from = cloudflare_dns_record.app
   to   = cloudflare_dns_record.app["autodeploy.dpdns.org"]
+}
+# The dashboard's record became a tunnel record (2026-10-22): the same object,
+# replaced in one step, so there is never a second record for the name.
+moved {
+  from = cloudflare_dns_record.app["autodeploy.fyi"]
+  to   = cloudflare_dns_record.tunnel["app.autodeploy.fyi"]
 }
 moved {
   from = cloudflare_dns_record.sites

@@ -146,11 +146,11 @@ function forBrowser(res: Response): Response {
 }
 
 /**
- * app.<domain>: the dashboard. The edge serves it rather than attaching the
- * domain to Vercel: API and sign-in calls go straight to the API (no extra hop,
- * SSE streams untouched),
- * pages come from Vercel. The browser only ever sees app.<domain>, so cookies
- * and the API's origin check work as if it were one site.
+ * app.<domain>: the dashboard, as one site: API and sign-in calls go straight
+ * to the API, pages come from Vercel, so cookies and the API's origin check
+ * work as if it were one. Caddy on the VM does this now (a Worker bypass route
+ * keeps the dashboard off the daily request quota users' sites share); this
+ * stays as the fallback if that route is removed.
  */
 async function serveApp(request: Request, env: Env & { APP_ORIGIN: string }, host: string) {
   const url = new URL(request.url);
