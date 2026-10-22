@@ -20,7 +20,8 @@ export default function NewProjectPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const [repoUrl, setRepoUrl] = useState('');
-  const [rootDir, setRootDir] = useState('.');
+  // Empty means the top of the repository (shown as the placeholder).
+  const [rootDir, setRootDir] = useState('');
   const [result, setResult] = useState<Result | null>(null);
   const [slug, setSlug] = useState('');
   const [slugState, setSlugState] = useState<{ available: boolean; reason?: string } | null>(null);
@@ -53,7 +54,10 @@ export default function NewProjectPage() {
     setError(null);
     setResult(null);
     try {
-      const r = await post<Result>('/api/v1/analyze', { repoUrl: url.trim(), rootDir });
+      const r = await post<Result>('/api/v1/analyze', {
+        repoUrl: url.trim(),
+        rootDir: rootDir.trim() || '.',
+      });
       setResult(r);
       setSlug(r.suggestedSlug);
     } catch (err) {
@@ -79,7 +83,7 @@ export default function NewProjectPage() {
     try {
       const r = await post<{ project: { id: string }; deploymentId: string | null }>(
         '/api/v1/projects',
-        { repoUrl: repoUrl.trim(), rootDir, slug, deploy: true },
+        { repoUrl: repoUrl.trim(), rootDir: rootDir.trim() || '.', slug, deploy: true },
         { idempotencyKey: newIdempotencyKey('create') },
       );
       await qc.invalidateQueries({ queryKey: ['projects'] });
@@ -134,7 +138,8 @@ export default function NewProjectPage() {
           <input
             id="root"
             value={rootDir}
-            onChange={(e) => setRootDir(e.target.value || '.')}
+            placeholder="."
+            onChange={(e) => setRootDir(e.target.value)}
             className="h-10 w-full rounded-md border border-line bg-panel px-3 font-mono text-[16px] text-fg outline-none focus:border-run/60 sm:text-[13px]"
           />
         </label>

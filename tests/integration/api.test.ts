@@ -448,6 +448,23 @@ describe("Joining an org takes the invitee's consent", () => {
   });
 });
 
+describe('Analysing a repository', () => {
+  it('says when the root directory is not in the repository, instead of analysing the top', async () => {
+    const s = await login('root-dir-user');
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/v1/analyze',
+      headers: { cookie: s.cookie, 'x-csrf-token': s.csrf },
+      payload: { repoUrl: `file://${resolve('tests/fixtures/vite-ok')}`, rootDir: '.apps/web' },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.json()).toMatchObject({
+      code: 'root_dir_not_found',
+      detail: expect.stringContaining('.apps/web'),
+    });
+  });
+});
+
 describe('GitHub sign-in in a browser', () => {
   it('sends failures back to the sign-in page with a fixed code, never JSON', async () => {
     const stale = await app.inject({ url: '/auth/github/callback?code=x&state=y' });

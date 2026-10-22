@@ -20,7 +20,7 @@ export type Inference<T> = { value: T; evidence: Evidence[] };
  * Bump whenever analyze() reaches different conclusions for the same repo, so
  * cached analyses (API and worker, keyed by commit) are recomputed. v2: SSR.
  */
-export const ANALYSIS_VERSION = 4; // v4: server frameworks beyond Next.js
+export const ANALYSIS_VERSION = 5; // v5: a missing root directory is an error, not the top level
 
 export type Framework =
   | 'next'

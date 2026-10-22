@@ -176,6 +176,10 @@ async function analyzeUncached(
         ANALYSIS_LIMITS,
       );
     const tree = await readTree(dir);
+    // A folder that isn't there is an answer, not a reason to analyze the top level.
+    const sub = rootDir.replace(/^\.(\/|$)/, '').replace(/\/$/, '');
+    if (sub && !tree.files.some((f) => f.startsWith(`${sub}/`)))
+      throw badRequest('root_dir_not_found', `There's no folder ${sub} in this repository.`);
     const analysis = analyze(tree, rootDir);
     if (src.kind === 'github')
       await deps.valkey.set(cacheKey, JSON.stringify(analysis), 'EX', 7 * 24 * 3600);
