@@ -1,0 +1,96 @@
+name: deploy
+
+# Deploys main once CI has passed on it: the VM (ship.sh over SSH through the
+# Cloudflare tunnel, reusing the .env.prod already on the VM, so production
+# secrets are never stored here), the edge Worker and the dashboard on Vercel,
+# then checks they answer. Terraform stays a manual step.
+#
+# Secrets (Settings → Environments → production):
+#   DEPLOY_SSH_KEY        a key only CI uses; its public half is in the VM's authorized_keys
+#   DEPLOY_KNOWN_HOSTS    the VM's host key, so CI never trusts an impostor
+#   CLOUDFLARE_API_TOKEN  Workers Scripts: Edit, nothing else
+#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+# Automatic deploys run only while the repository variable AUTO_DEPLOY is
+# "true" (Settings → Variables): unset it to pause them. A manual run
+# (Actions → deploy → Run workflow) works either way.
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Only pushes to main (never a pull request's CI run), and only when CI passed.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.AUTO_DEPLOY == 'true' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: SSH to the VM through the tunnel
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          curl -fsSL -o /tmp/cloudflared.deb \
+            https://github.com/cloudflare/cloudflared/releases/download/2026.10.0/cloudflared-linux-amd64.deb
+          sudo dpkg -i /tmp/cloudflared.deb >/dev/null
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'EOF'
+          Host autodeploy-vm
+            HostName ssh.autodeploy.fyi
+            User ubuntu
+            IdentityFile ~/.ssh/deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 20
+            ProxyCommand cloudflared access ssh --hostname %h
+          EOF
+          ssh autodeploy-vm true
+
+      - name: VM (API, worker, gateway)
+        run: ENV_ON_VM=1 infra/deploy/ship.sh autodeploy-vm
+
+      - name: Edge Worker
+        working-directory: apps/edge
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: pnpm exec wrangler deploy --env production
+
+      - name: Dashboard (Vercel)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel@65.1.0 deploy --prod --yes --token "$VERCEL_TOKEN"
+
+      - name: Live
+        run: |
+          curl -fsS --retry 6 --retry-all-errors --max-time 10 https://api.autodeploy.fyi/healthz
+          curl -fsS -o /dev/null --retry 6 --retry-all-errors --max-time 10 https://app.autodeploy.fyi/login
+          echo "✓ deployed ${{ github.event.workflow_run.head_sha || github.sha }}"

@@ -5,6 +5,9 @@
 #     needs, only for that run:     terraform apply -var bootstrap_ssh_cidr=<your ip>/32
 #   Every time after:               ./ship.sh autodeploy-vm      (SSH over the tunnel)
 #   On a 1 OCPU / 6 GB VM:          SMALL=1 ./ship.sh …          (docker-compose.small.yml)
+#   From CI (no .env.prod there):   ENV_ON_VM=1 ./ship.sh autodeploy-vm
+#     reuses the copy the last ship from the Mac left at /opt/autodeploy/.env.prod,
+#     so production secrets never have to be stored in GitHub.
 #
 # Idempotent: each step checks before it acts. Only committed files are sent
 # (git archive), so local env files and keys never leave the Mac except
@@ -14,16 +17,22 @@ target=${1:?usage: ship.sh <ssh target>}
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 envfile="$here/.env.prod"
-[ -f "$envfile" ] || { echo "missing $envfile" >&2; exit 1; }
+[ "${ENV_ON_VM:-}" = 1 ] || [ -f "$envfile" ] || { echo "missing $envfile" >&2; exit 1; }
 if [ -n "$(git -C "$root" status --porcelain --untracked-files=no -- apps packages infra/deploy infra/sandbox)" ]; then
   echo "Uncommitted changes in apps/packages/infra; ship deploys HEAD only. Commit first." >&2
   exit 1
 fi
 tag=$(git -C "$root" rev-parse --short=12 HEAD)
-owner=$(grep '^GHCR_OWNER=' "$envfile" | cut -d= -f2)
-domain=$(grep '^PLATFORM_DOMAIN=' "$envfile" | cut -d= -f2)
 dir=/opt/autodeploy
 remote() { ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "$target" "$@"; }
+if [ "${ENV_ON_VM:-}" = 1 ]; then
+  env_value() { remote "sudo grep '^$1=' $dir/.env.prod | cut -d= -f2"; }
+  remote "sudo test -f $dir/.env.prod" || { echo "no $dir/.env.prod on the VM: ship once from the Mac first" >&2; exit 1; }
+else
+  env_value() { grep "^$1=" "$envfile" | cut -d= -f2; }
+fi
+owner=$(env_value GHCR_OWNER)
+domain=$(env_value PLATFORM_DOMAIN)
 step() { printf '\n▸ %s\n' "$*"; }
 
 step "waiting for first-boot setup (Docker + gVisor)"
@@ -41,6 +50,9 @@ sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd'
 step "Cloudflare Tunnel connector (systemd)"
 if remote 'systemctl is-active --quiet cloudflared'; then
   echo "already running"
+elif [ "${ENV_ON_VM:-}" = 1 ]; then
+  echo "cloudflared is not running on the VM; ship from the Mac to install it" >&2
+  exit 1
 else
   remote 'curl -fsSL -o /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb && sudo dpkg -i /tmp/cloudflared.deb >/dev/null'
   # The token is piped, never put on a command line or in shell history.
@@ -57,8 +69,14 @@ git -C "$root" archive --format=tar HEAD |
 
 step ".env.prod (mode 600)"
 gid=$(remote "getent group docker | cut -d: -f3")
-sed -e "s/^DOCKER_GID=.*/DOCKER_GID=$gid/" -e "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" "$envfile" |
-  remote "sudo install -m 600 /dev/stdin $dir/src/infra/deploy/.env.prod"
+if [ "${ENV_ON_VM:-}" = 1 ]; then
+  remote "sudo sed -e 's/^DOCKER_GID=.*/DOCKER_GID=$gid/' -e 's/^IMAGE_TAG=.*/IMAGE_TAG=$tag/' $dir/.env.prod |
+    sudo install -m 600 /dev/stdin $dir/src/infra/deploy/.env.prod"
+else
+  # Also kept outside src/ (replaced each ship) for ENV_ON_VM=1 ships from CI.
+  sed -e "s/^DOCKER_GID=.*/DOCKER_GID=$gid/" -e "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" "$envfile" |
+    remote "sudo install -m 600 /dev/stdin $dir/src/infra/deploy/.env.prod && sudo install -m 600 $dir/src/infra/deploy/.env.prod $dir/.env.prod"
+fi
 
 step "runtime bundles dir (SSR)"
 remote "sudo mkdir -p /var/lib/autodeploy/runtimes && sudo chown 1000:1000 /var/lib/autodeploy/runtimes"
