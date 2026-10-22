@@ -1,6 +1,6 @@
 // Cuts the recording into the landing page video: people-paced parts at normal
-// speed, the waiting (builds, the AI at work, publishing) sped up and labelled
-// as such. Nothing is cut out or reordered.
+// speed, the waiting (the build, the AI at work) sped up and labelled as such,
+// ending on the deployment turning live. Nothing in between is cut or reordered.
 //   node tests/demo/edit.mjs   (after record-self-heal.ts; needs ffmpeg)
 // Writes apps/web/public/demo/self-heal.mp4 and self-heal.jpg (the poster: the
 // AI's patch on screen).
@@ -18,15 +18,15 @@ if (!video) throw new Error('no recording in tests/demo/out');
 const m = JSON.parse(readFileSync(join(outDir, 'marks.json'), 'utf8'));
 const pub = join(here, '../../apps/web/public/demo');
 
-// [from, to, speed]
+// [from, to, speed]. It ends on the deployment turning live (the recorder
+// waits 2.5 s there before it opens the site, which the video leaves out).
 const segments = [
   [0, m.analysis, 1.5],
   [m.analysis, m.building, 1],
   [m.building, m.failed, 4],
   [m.failed, m.patched, 8],
   [m.patched, m.approve, 1],
-  [m.approve, m.live, 4],
-  [m.live, m.end, 1],
+  [m.approve, m.live + 2.3, 1],
 ].filter(([a, b]) => b > a);
 
 // "4× speed" labels as images (any ffmpeg can overlay; not every one can draw text).
@@ -60,7 +60,7 @@ const parts = segments.map(([a, b, s], i) => {
   seen.set(s, k + 1);
   return `${cut}[c${i}];[c${i}][l${s}_${k}]overlay=x=W-w-24:y=24:shortest=1[v${i}]`;
 });
-const filter = `${[...splits, ...parts].join(';')};${segments.map((_, i) => `[v${i}]`).join('')}concat=n=${segments.length}:v=1:a=0,fps=30[out]`;
+const filter = `${[...splits, ...parts].join(';')};${segments.map((_, i) => `[v${i}]`).join('')}concat=n=${segments.length}:v=1:a=0,tpad=stop_mode=clone:stop_duration=1.5,fps=30[out]`;
 execFileSync('ffmpeg', [
   '-y',
   '-loglevel',
@@ -108,5 +108,5 @@ writeFileSync(
   join(here, '../../apps/web/components/landing/demo-version.ts'),
   `// Written by tests/demo/edit.mjs: the recording's fingerprint, so a new one gets a new URL.\nexport const DEMO_VERSION = '${version}';\n`,
 );
-const length = segments.reduce((t, [a, b, s]) => t + (b - a) / s, 0);
+const length = segments.reduce((t, [a, b, s]) => t + (b - a) / s, 1.5);
 console.log(`self-heal.mp4: ${length.toFixed(1)} s (from ${m.end.toFixed(0)} s recorded)`);

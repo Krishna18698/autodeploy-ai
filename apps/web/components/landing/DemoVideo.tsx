@@ -31,7 +31,7 @@ export function DemoVideo() {
         <span aria-hidden className="text-[10px]">
           ▶
         </span>{' '}
-        Watch a self-heal, 36s
+        Watch a self-heal, 31s
       </button>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the click only closes on the backdrop; Escape already closes a native <dialog> */}
       <dialog
@@ -68,7 +68,7 @@ export function DemoVideo() {
         )}
         <p className="px-4 py-2 font-mono text-[11px] text-muted">
           Recorded on the live product: a real build failure, fixed by the production AI and
-          approved by a person. Waiting is sped up (and labelled); nothing is cut.
+          approved by a person. Waiting is sped up, and labelled as such.
         </p>
       </dialog>
     </>

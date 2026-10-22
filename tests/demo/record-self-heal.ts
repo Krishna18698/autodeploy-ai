@@ -34,7 +34,7 @@ const context = await browser.newContext({
   recordVideo: { dir: out, size: { width: 1280, height: 760 } },
 });
 const started = Date.now();
-const marks: Record<string, number> = {};
+const marks: Record<string, number | string> = {};
 const mark = (name: string) => {
   marks[name] = (Date.now() - started) / 1000;
   console.log(`${marks[name].toFixed(1)}s  ${name}`);
@@ -98,6 +98,7 @@ try {
   await page.goto(`https://${slug}.autodeploy.dpdns.org/`);
   await pause(4500);
   mark('end');
+  marks.site = `https://${slug}.autodeploy.dpdns.org`;
   console.log(`live at ${live.url}`);
 } catch (err) {
   // What the screen showed when it went wrong.

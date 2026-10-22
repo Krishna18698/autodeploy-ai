@@ -13,8 +13,10 @@ sped up:
   approves it, opens the live site, then deletes the project. It writes the
   video and `marks.json` (when each phase happened) to `out/`.
 - `edit.mjs`: keeps the people-paced parts at normal speed and speeds up the
-  waiting (build 4×, the AI and the rebuild 8×, publishing 4×), each sped-up
-  part labelled; nothing is cut or reordered. It also takes the poster frame.
+  waiting (build 4×, the AI and the rebuild 8×), each sped-up part labelled,
+  and ends on the deployment turning live. It also takes the poster frame and
+  writes the recording's fingerprint into the page, so caches can't show an
+  old video.
 
 ```bash
 pnpm tsx tests/demo/record-self-heal.ts   # signs in with infra/deploy/.e2e-token
