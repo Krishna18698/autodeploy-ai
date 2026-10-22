@@ -24,7 +24,7 @@ export function DemoVideo() {
       <button
         type="button"
         onClick={show}
-        className="flex items-center gap-2 rounded-full border border-line bg-panel/50 px-4 py-2.5 text-sm text-fg/90 transition-colors hover:border-muted"
+        className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/8 bg-white/4 px-5 text-[14px] text-fg transition-colors hover:bg-white/7"
       >
         <span aria-hidden className="text-[10px]">
           ▶
