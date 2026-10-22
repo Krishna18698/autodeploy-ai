@@ -14,7 +14,7 @@ export function AuthCard({
     <main className="grid min-h-svh place-items-center px-4 py-10">
       <div className="glass w-full max-w-sm rounded-2xl bg-panel/80 p-7 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)]">
         <Link href="/" className="mb-7 inline-flex" aria-label="AutoDeploy home">
-          <Logo size={22} />
+          <Logo size={30} />
         </Link>
         <h1 className="text-[20px] font-semibold tracking-tight">{title}</h1>
         {children}
