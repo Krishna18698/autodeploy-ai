@@ -7,9 +7,11 @@ import {
   CreatedWebhook,
   CreateTokenBody,
   CreateWebhookBody,
+  Invitation,
   Member,
   Page,
   PageQuery,
+  PendingInvitation,
   Quota,
   UpdateMemberBody,
   WebhookDelivery,
@@ -58,22 +60,150 @@ export const orgRoutes =
       },
     );
 
+    // Adding someone invites them: they join only by accepting.
     app.post(
       '/api/v1/members',
       {
         preHandler: requireRole('admin'),
-        config: { audit: 'member.add' },
-        schema: { tags: ['org'], body: AddMemberBody },
+        config: { audit: 'member.invite' },
+        schema: {
+          tags: ['org'],
+          body: AddMemberBody,
+          response: { 202: z.object({ invited: z.literal(true) }) },
+        },
       },
       async (req, reply) => {
-        const [user] = await deps.sql<
-          { id: string }[]
-        >`select id from users where lower(login) = lower(${req.body.login})`;
+        const a = authOf(req);
+        const [user] = await deps.sql<{ id: string; email: string | null }[]>`
+          select id, email from users where lower(login) = lower(${req.body.login})`;
         if (!user) throw notFound('User (they must sign in to AutoDeploy once first)');
-        await deps.sql`insert into memberships (org_id, user_id, role) values (${authOf(req).orgId}, ${user.id}, ${req.body.role})
-          on conflict (org_id, user_id) do nothing`;
+        const [member] = await deps.sql`
+          select 1 from memberships where org_id = ${a.orgId} and user_id = ${user.id}`;
+        if (member) throw conflict('already_member', 'They are already a member.');
+        await deps.sql`
+          insert into invitations (org_id, user_id, role, invited_by)
+          values (${a.orgId}, ${user.id}, ${req.body.role}, ${a.userId})
+          on conflict (org_id, user_id) do update set role = excluded.role, invited_by = excluded.invited_by`;
         req.auditTarget = { type: 'user', id: user.id, metadata: { role: req.body.role } };
+        if (user.email) {
+          const [org] = await deps.sql<
+            { name: string }[]
+          >`select name from orgs where id = ${a.orgId}`;
+          await deps
+            .sendEmail({
+              to: user.email,
+              subject: `${a.login} invited you to ${org?.name ?? 'an organisation'} on AutoDeploy`,
+              text: `${a.login} invited you to join ${org?.name ?? 'their organisation'} on AutoDeploy as ${req.body.role}.\n\nAccept or decline it here: ${deps.env.APP_URL}/overview\n\nNothing changes until you accept.`,
+            })
+            .catch((err: unknown) => req.log.warn({ err }, 'invitation email failed'));
+        }
+        return reply.code(202).send({ invited: true as const });
+      },
+    );
+
+    app.get(
+      '/api/v1/members/invitations',
+      {
+        preHandler: requireRole('admin'),
+        schema: { tags: ['org'], response: { 200: z.array(PendingInvitation) } },
+      },
+      async (req) => {
+        const rows = await deps.sql<{ id: string; login: string; role: Role; created_at: Date }[]>`
+          select i.id, u.login, i.role, i.created_at from invitations i join users u on u.id = i.user_id
+          where i.org_id = ${authOf(req).orgId} order by i.created_at`;
+        return rows.map((r) => ({
+          id: r.id,
+          login: r.login,
+          role: r.role,
+          createdAt: r.created_at.toISOString(),
+        }));
+      },
+    );
+
+    app.delete(
+      '/api/v1/members/invitations/:id',
+      {
+        preHandler: requireRole('admin'),
+        config: { audit: 'member.invite_cancel' },
+        schema: { tags: ['org'], params: Params },
+      },
+      async (req, reply) => {
+        const rows = await deps.sql`
+          delete from invitations where id = ${req.params.id} and org_id = ${authOf(req).orgId} returning id`;
+        if (rows.length === 0) throw notFound('Invitation');
+        req.auditTarget = { type: 'invitation', id: req.params.id };
         return reply.code(204).send();
+      },
+    );
+
+    // The invited person's side: their invitations, accept, decline.
+    app.get(
+      '/api/v1/invitations',
+      {
+        preHandler: requireRole(),
+        schema: { tags: ['org'], response: { 200: z.array(Invitation) } },
+      },
+      async (req) => {
+        const rows = await deps.sql<
+          {
+            id: string;
+            org_id: string;
+            org_name: string;
+            org_slug: string;
+            role: Role;
+            invited_by: string | null;
+            created_at: Date;
+          }[]
+        >`
+          select i.id, o.id as org_id, o.name as org_name, o.slug as org_slug, i.role,
+            u.login as invited_by, i.created_at
+          from invitations i join orgs o on o.id = i.org_id left join users u on u.id = i.invited_by
+          where i.user_id = ${authOf(req).userId} order by i.created_at`;
+        return rows.map((r) => ({
+          id: r.id,
+          org: { id: r.org_id, name: r.org_name, slug: r.org_slug },
+          role: r.role,
+          invitedBy: r.invited_by,
+          createdAt: r.created_at.toISOString(),
+        }));
+      },
+    );
+
+    app.post(
+      '/api/v1/invitations/:id/accept',
+      {
+        preHandler: requireRole(),
+        config: { audit: 'member.join' },
+        schema: { tags: ['org'], params: Params, response: { 204: z.null() } },
+      },
+      async (req, reply) => {
+        const a = authOf(req);
+        // From a browser session: an API token acts within one org, not across them.
+        if (a.via !== 'session') throw forbidden('Accept invitations from a browser session');
+        await deps.sql.begin(async (tx) => {
+          const [inv] = await tx<{ org_id: string; role: Role }[]>`
+            delete from invitations where id = ${req.params.id} and user_id = ${a.userId}
+            returning org_id, role`;
+          if (!inv) throw notFound('Invitation');
+          await tx`insert into memberships (org_id, user_id, role) values (${inv.org_id}, ${a.userId}, ${inv.role})
+            on conflict (org_id, user_id) do nothing`;
+        });
+        req.auditTarget = { type: 'invitation', id: req.params.id };
+        return reply.code(204).send(null);
+      },
+    );
+
+    app.post(
+      '/api/v1/invitations/:id/decline',
+      {
+        preHandler: requireRole(),
+        schema: { tags: ['org'], params: Params, response: { 204: z.null() } },
+      },
+      async (req, reply) => {
+        const rows = await deps.sql`
+          delete from invitations where id = ${req.params.id} and user_id = ${authOf(req).userId} returning id`;
+        if (rows.length === 0) throw notFound('Invitation');
+        return reply.code(204).send(null);
       },
     );
 

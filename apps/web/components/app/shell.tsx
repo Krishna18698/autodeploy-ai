@@ -5,10 +5,12 @@ import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/logo';
 import { Kbd } from '@/components/ui/panel';
+import { useToast } from '@/components/ui/toast';
 import { ApiError, post } from '@/lib/api';
-import { useAllRepairs, useMe, useQuota } from '@/lib/queries';
+import { useAllRepairs, useMe, useMyInvitations, useQuota } from '@/lib/queries';
 import { CommandPalette } from './command-palette';
 
 const NAV = [
@@ -143,6 +145,30 @@ export function Shell({ children }: { children: ReactNode }) {
               );
             })}
           </ul>
+          {/* Phones: the top bar is hidden, so its org switcher and sign-out live here. */}
+          <div className="mt-3 flex flex-col gap-2 border-t border-white/6 px-3 pt-3 lg:hidden">
+            <label className="text-[12px] text-muted" htmlFor="org-mobile">
+              Organisation
+            </label>
+            <select
+              id="org-mobile"
+              value={me.data.org.id}
+              onChange={(e) => switchOrg(e.target.value)}
+              className="h-10 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
+            >
+              {me.data.orgs.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name} · {o.role}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center justify-between py-1 text-[13px] text-muted">
+              <span>{me.data.user.login}</span>
+              <button type="button" onClick={logout} className="py-2 hover:text-fg">
+                Sign out
+              </button>
+            </div>
+          </div>
         </nav>
         <div className="mt-auto hidden border-t border-white/6 px-4 py-3 text-[12px] text-muted lg:block">
           {quota.data && (
@@ -209,11 +235,68 @@ export function Shell({ children }: { children: ReactNode }) {
           key={pathname}
           className="page-in mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8"
         >
+          <Invitations />
           {children}
         </main>
       </div>
       <CommandPalette />
     </div>
+  );
+}
+
+/** Teams people have been invited to: they join only by accepting here. */
+function Invitations() {
+  const invites = useMyInvitations();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!invites.data?.length) return null;
+  const answer = async (id: string, choice: 'accept' | 'decline', orgName: string) => {
+    setBusy(id);
+    try {
+      await post(`/api/v1/invitations/${id}/${choice}`);
+      if (choice === 'accept')
+        toast(`You joined ${orgName}. Switch to it from the organisation menu.`, 'ok');
+      await qc.invalidateQueries({ queryKey: ['invites'] });
+      await qc.invalidateQueries({ queryKey: ['me'] });
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Failed', 'fail');
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <section aria-label="Invitations" className="mb-6 flex flex-col gap-2">
+      {invites.data.map((i) => (
+        <div
+          key={i.id}
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-run/25 bg-run/5 px-4 py-3 text-[13px]"
+        >
+          <span className="min-w-0 flex-1">
+            {i.invitedBy ? <strong className="font-medium">{i.invitedBy}</strong> : 'Someone'}{' '}
+            invited you to join <strong className="font-medium">{i.org.name}</strong> as {i.role}.
+          </span>
+          <span className="flex gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy === i.id}
+              onClick={() => answer(i.id, 'decline', i.org.name)}
+            >
+              Decline
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              loading={busy === i.id}
+              onClick={() => answer(i.id, 'accept', i.org.name)}
+            >
+              Accept
+            </Button>
+          </span>
+        </div>
+      ))}
+    </section>
   );
 }
 

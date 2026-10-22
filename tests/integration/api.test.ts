@@ -439,6 +439,69 @@ describe('Deleting an account', () => {
   });
 });
 
+describe("Joining an org takes the invitee's consent", () => {
+  it('invites, changes nothing until accepted, and lets only the invitee answer', async () => {
+    const tag = randomBytes(3).toString('hex');
+    const owner = await login(`inv-owner-${tag}`);
+    const guest = await login(`inv-guest-${tag}`);
+    const other = await login(`inv-other-${tag}`);
+    const as = (s: Session) => ({ cookie: s.cookie, 'x-csrf-token': s.csrf });
+    const invite = (login: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/v1/members',
+        headers: as(owner),
+        payload: { login, role: 'member' },
+      });
+    const [{ org_id: orgId } = { org_id: '' }] = await deps.sql<{ org_id: string }[]>`
+      select m.org_id from memberships m join users u on u.id = m.user_id where u.login = ${`inv-owner-${tag}`}`;
+    const membersOf = async () =>
+      (
+        await deps.sql<{ login: string }[]>`
+          select u.login from memberships m join users u on u.id = m.user_id where m.org_id = ${orgId}`
+      ).map((r) => r.login);
+
+    expect((await invite(`inv-guest-${tag}`)).statusCode).toBe(202);
+    expect(await membersOf()).not.toContain(`inv-guest-${tag}`);
+    const pending = await app.inject({ url: '/api/v1/members/invitations', headers: as(owner) });
+    expect(pending.json().map((p: { login: string }) => p.login)).toEqual([`inv-guest-${tag}`]);
+
+    const mine = (await app.inject({ url: '/api/v1/invitations', headers: as(guest) })).json();
+    expect(mine).toHaveLength(1);
+    const id = mine[0].id as string;
+    const answer = (s: Session, what: 'accept' | 'decline') =>
+      app.inject({ method: 'POST', url: `/api/v1/invitations/${id}/${what}`, headers: as(s) });
+    expect((await answer(other, 'accept')).statusCode).toBe(404);
+    expect((await answer(guest, 'accept')).statusCode).toBe(204);
+    expect(await membersOf()).toContain(`inv-guest-${tag}`);
+    expect((await invite(`inv-guest-${tag}`)).statusCode).toBe(409);
+
+    // Declining and cancelling leave no membership behind.
+    expect((await invite(`inv-other-${tag}`)).statusCode).toBe(202);
+    const theirs = (await app.inject({ url: '/api/v1/invitations', headers: as(other) })).json();
+    const decline = await app.inject({
+      method: 'POST',
+      url: `/api/v1/invitations/${theirs[0].id}/decline`,
+      headers: as(other),
+    });
+    expect(decline.statusCode).toBe(204);
+    expect(await membersOf()).not.toContain(`inv-other-${tag}`);
+    expect((await invite(`inv-other-${tag}`)).statusCode).toBe(202);
+    const [inv] = (
+      await app.inject({ url: '/api/v1/members/invitations', headers: as(owner) })
+    ).json();
+    const cancel = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/members/invitations/${inv.id}`,
+      headers: as(owner),
+    });
+    expect(cancel.statusCode).toBe(204);
+    expect((await app.inject({ url: '/api/v1/invitations', headers: as(other) })).json()).toEqual(
+      [],
+    );
+  });
+});
+
 describe('GitHub sign-in in a browser', () => {
   it('sends failures back to the sign-in page with a fixed code, never JSON', async () => {
     const stale = await app.inject({ url: '/auth/github/callback?code=x&state=y' });

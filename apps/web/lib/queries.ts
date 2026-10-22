@@ -8,8 +8,10 @@ import type {
   DeploymentEvent,
   DeploymentSummary,
   EnvVar,
+  Invitation,
   Me,
   Member,
+  PendingInvitation,
   Project,
   Quota,
   Repair,
@@ -105,6 +107,19 @@ export const useMembers = () =>
   useQuery({
     queryKey: ['members'],
     queryFn: () => api<Array<T<typeof Member>>>('/api/v1/members'),
+  });
+/** Admins: invitations this org has sent that nobody has answered yet. */
+export const usePendingInvites = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['invites', 'pending'],
+    queryFn: () => api<Array<T<typeof PendingInvitation>>>('/api/v1/members/invitations'),
+    enabled,
+  });
+/** Invitations waiting for the signed-in person. */
+export const useMyInvitations = () =>
+  useQuery({
+    queryKey: ['invites', 'mine'],
+    queryFn: () => api<Array<T<typeof Invitation>>>('/api/v1/invitations'),
   });
 export const useTokens = () =>
   useQuery({

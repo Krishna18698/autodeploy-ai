@@ -57,6 +57,21 @@ export const Member = z.object({
 });
 
 export const AddMemberBody = z.object({ login: z.string().min(1), role: Role.exclude(['owner']) });
+/** An invitation as the invited person sees it. */
+export const Invitation = z.object({
+  id: Id,
+  org: z.object({ id: Id, name: z.string(), slug: z.string() }),
+  role: Role,
+  invitedBy: z.string().nullable(),
+  createdAt: Timestamp,
+});
+/** A pending invitation as the org's admins see it. */
+export const PendingInvitation = z.object({
+  id: Id,
+  login: z.string(),
+  role: Role,
+  createdAt: Timestamp,
+});
 export const UpdateMemberBody = z.object({ role: Role });
 
 // --- analysis --------------------------------------------------------------

@@ -13,6 +13,7 @@ import {
   useDeliveries,
   useMe,
   useMembers,
+  usePendingInvites,
   useQuota,
   useTokens,
   useWebhooks,
@@ -121,15 +122,26 @@ function GitHubLink() {
 
 function Team({ canEdit }: { canEdit: boolean }) {
   const members = useMembers();
+  const invites = usePendingInvites(canEdit);
   const toast = useToast();
   const [login, setLogin] = useState('');
   const [role, setRole] = useState('member');
+  // Adding someone invites them; they join when they accept.
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await post('/api/v1/members', { login, role });
       setLogin('');
-      await members.refetch();
+      toast(`Invitation sent. ${login} joins when they accept.`, 'ok');
+      await invites.refetch();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Failed', 'fail');
+    }
+  };
+  const cancelInvite = async (id: string) => {
+    try {
+      await del(`/api/v1/members/invitations/${id}`);
+      await invites.refetch();
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Failed', 'fail');
     }
@@ -150,8 +162,8 @@ function Team({ canEdit }: { canEdit: boolean }) {
             required
             value={login}
             onChange={(e) => setLogin(e.target.value)}
-            placeholder="GitHub login"
-            aria-label="GitHub login"
+            placeholder="Username"
+            aria-label="Username to invite"
             className={`${input} sm:flex-1`}
           />
           <select
@@ -165,7 +177,7 @@ function Team({ canEdit }: { canEdit: boolean }) {
             <option value="admin">admin</option>
           </select>
           <Button type="submit" variant="primary">
-            Add
+            Invite
           </Button>
         </form>
       )}
@@ -200,6 +212,23 @@ function Team({ canEdit }: { canEdit: boolean }) {
           </li>
         ))}
       </ul>
+      {canEdit && invites.data && invites.data.length > 0 && (
+        <div className="mt-5">
+          <h3 className="mb-2 text-[12px] text-muted">Invited, not joined yet</h3>
+          <ul className="divide-y divide-line">
+            {invites.data.map((i) => (
+              <li key={i.id} className="flex items-center gap-3 py-2.5 text-[13px]">
+                <span className="flex-1">
+                  {i.login} <span className="text-muted">as {i.role}</span>
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => cancelInvite(i.id)}>
+                  Cancel
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Panel>
   );
 }
