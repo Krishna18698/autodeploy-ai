@@ -2,7 +2,7 @@ import { safeEqual, sha256Hex } from '@autodeploy/crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { Deps } from '../deps.js';
-import { forbidden, unauthorized } from '../lib/errors.js';
+import { AppError, forbidden, unauthorized } from '../lib/errors.js';
 
 export type Role = 'owner' | 'admin' | 'member' | 'viewer';
 export type Scope = 'read' | 'deploy' | 'admin';
@@ -19,11 +19,18 @@ export type Auth = {
   csrfToken?: string;
   tokenId?: string;
   scopes?: Scope[];
+  /** Sessions only: the user has an authenticator, and when this session last showed a code. */
+  mfaEnabled?: boolean;
+  mfaVerifiedAt?: Date | null;
 };
+
+/** A signed-in session that still has to show an authenticator code. */
+export type PendingMfa = { userId: string; sessionHash: string };
 
 declare module 'fastify' {
   interface FastifyRequest {
     auth: Auth | null;
+    pendingMfa: PendingMfa | null;
   }
 }
 
@@ -78,7 +85,10 @@ async function resolveToken(deps: Deps, raw: string): Promise<Auth | null> {
   };
 }
 
-async function resolveSession(deps: Deps, raw: string): Promise<Auth | null> {
+async function resolveSession(
+  deps: Deps,
+  raw: string,
+): Promise<{ auth: Auth | null; pending: PendingMfa | null }> {
   const hash = sha256Hex(raw);
   const [row] = await deps.sql<
     {
@@ -88,17 +98,24 @@ async function resolveSession(deps: Deps, raw: string): Promise<Auth | null> {
       login: string;
       github_id: string | null;
       last_seen_at: Date;
+      mfa_pending: boolean;
+      mfa_verified_at: Date | null;
+      mfa_enabled: boolean;
     }[]
   >`
-    select s.user_id, s.org_id, s.csrf_token, u.login, u.github_id, s.last_seen_at
+    select s.user_id, s.org_id, s.csrf_token, u.login, u.github_id, s.last_seen_at,
+           s.mfa_pending, s.mfa_verified_at, (t.confirmed_at is not null) as mfa_enabled
     from sessions s join users u on u.id = s.user_id
+    left join user_totp t on t.user_id = s.user_id
     where s.token_hash = ${hash} and s.expires_at > now()`;
-  if (!row) return null;
+  if (!row) return { auth: null, pending: null };
+  // Signed in, but the authenticator code is still to come: not signed in yet.
+  if (row.mfa_pending) return { auth: null, pending: { userId: row.user_id, sessionHash: hash } };
   // Active org: the session's choice if still a member, else the first membership.
   const [m] = await deps.sql<{ org_id: string; role: Role }[]>`
     select org_id, role from memberships where user_id = ${row.user_id}
     order by (org_id = ${row.org_id}) desc nulls last, created_at limit 1`;
-  if (!m) return null;
+  if (!m) return { auth: null, pending: null };
   if (Date.now() - row.last_seen_at.getTime() > 5 * 60_000) {
     // Sliding expiry, written at most every 5 minutes per session.
     void deps.sql`update sessions set last_seen_at = now(), expires_at = now() + interval '14 days' where token_hash = ${hash}`.catch(
@@ -106,19 +123,25 @@ async function resolveSession(deps: Deps, raw: string): Promise<Auth | null> {
     );
   }
   return {
-    userId: row.user_id,
-    login: row.login,
-    githubId: row.github_id === null ? null : Number(row.github_id),
-    orgId: m.org_id,
-    role: m.role,
-    via: 'session',
-    sessionHash: hash,
-    csrfToken: row.csrf_token,
+    auth: {
+      userId: row.user_id,
+      login: row.login,
+      githubId: row.github_id === null ? null : Number(row.github_id),
+      orgId: m.org_id,
+      role: m.role,
+      via: 'session',
+      sessionHash: hash,
+      csrfToken: row.csrf_token,
+      mfaEnabled: row.mfa_enabled,
+      mfaVerifiedAt: row.mfa_verified_at,
+    },
+    pending: null,
   };
 }
 
 export const authPlugin = fp(async (app: FastifyInstance, deps: Deps) => {
   app.decorateRequest('auth', null);
+  app.decorateRequest('pendingMfa', null);
 
   app.addHook('onRequest', async (req) => {
     const header = req.headers.authorization;
@@ -128,7 +151,11 @@ export const authPlugin = fp(async (app: FastifyInstance, deps: Deps) => {
       return;
     }
     const cookie = req.cookies[sessionCookie(deps.env)];
-    if (cookie) req.auth = await resolveSession(deps, cookie);
+    if (cookie) {
+      const s = await resolveSession(deps, cookie);
+      req.auth = s.auth;
+      req.pendingMfa = s.pending;
+    }
 
     // CSRF: cookie-authenticated writes must carry the session's token and,
     // when the browser sends one, an Origin we serve.
@@ -156,6 +183,22 @@ export function requireRole(role: Role = 'viewer') {
     if (!a) throw unauthorized();
     if (RANK[a.role] < RANK[role]) throw forbidden(`Requires the ${role} role`);
   };
+}
+
+/** How long a shown authenticator code covers dangerous actions in a session. */
+export const MFA_FRESH_MS = 10 * 60_000;
+
+/**
+ * preHandler for dangerous actions (deleting things, new credentials, access
+ * changes): a session whose user has an authenticator must have shown a code
+ * in the last 10 minutes. API tokens are credentials already; users without
+ * an authenticator are unaffected.
+ */
+export async function requireRecentMfa(req: FastifyRequest) {
+  const a = req.auth;
+  if (a?.via !== 'session' || !a.mfaEnabled) return;
+  if (a.mfaVerifiedAt && Date.now() - a.mfaVerifiedAt.getTime() < MFA_FRESH_MS) return;
+  throw new AppError(403, 'mfa_required', 'Enter a code from your authenticator app to continue.');
 }
 
 /** The authenticated principal; use after a requireRole() guard. */

@@ -21,7 +21,7 @@ import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { sitesDomain } from '../env.js';
 import { AppError, badRequest, conflict, notFound } from '../lib/errors.js';
-import { authOf, requireRole } from '../plugins/auth.js';
+import { authOf, requireRecentMfa, requireRole } from '../plugins/auth.js';
 import { createDeployment } from '../services/deployments.js';
 import { enforceProjectLimit } from '../services/limits.js';
 import { decodeCursor, encodeCursor, type ProjectRow, toProject } from '../services/mappers.js';
@@ -338,7 +338,7 @@ export const projectRoutes =
     app.delete(
       '/api/v1/projects/:id',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'project.delete' },
         schema: { tags: ['projects'], params: z.object({ id: z.uuid() }) },
       },

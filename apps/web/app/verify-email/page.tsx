@@ -19,7 +19,9 @@ function VerifyInner() {
     if (!token || sent.current) return;
     sent.current = true;
     post('/auth/email/verify', { token })
-      .then(() => router.replace('/overview'))
+      .then((r) =>
+        router.replace((r as { twoFactor?: boolean }).twoFactor ? '/login/2fa' : '/overview'),
+      )
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : 'Could not reach AutoDeploy'),
       );

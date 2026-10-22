@@ -26,8 +26,8 @@ function ResetInner() {
     setLoading(true);
     setError(null);
     try {
-      await post('/auth/email/reset', { token, password });
-      router.replace('/overview');
+      const r = await post<{ twoFactor?: boolean }>('/auth/email/reset', { token, password });
+      router.replace(r.twoFactor ? '/login/2fa' : '/overview');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not reach AutoDeploy');
       setLoading(false);

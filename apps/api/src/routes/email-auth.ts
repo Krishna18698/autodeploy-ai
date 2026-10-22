@@ -92,7 +92,12 @@ export const emailAuthRoutes =
     });
     const accepted = { ok: true as const };
     const Accepted = z.object({ ok: z.literal(true) });
-    const SignedIn = z.object({ ok: z.literal(true), csrfToken: z.string() });
+    // twoFactor: the account has an authenticator, so the session waits for its code.
+    const SignedIn = z.object({
+      ok: z.literal(true),
+      csrfToken: z.string(),
+      twoFactor: z.boolean(),
+    });
 
     // At most one account email per address a minute, so nobody can flood a
     // stranger's inbox by signing up with their address. A throttled request
@@ -179,8 +184,7 @@ export const emailAuthRoutes =
           return { userId, orgId: await orgOf(tx, userId) };
         });
         if (!orgId) throw forbidden('This account has no organisation.');
-        const csrfToken = await startSession(deps, req, reply, userId, orgId);
-        return { ok: true as const, csrfToken };
+        return { ok: true as const, ...(await startSession(deps, req, reply, userId, orgId)) };
       },
     );
 
@@ -235,8 +239,7 @@ export const emailAuthRoutes =
         }
         const orgId = await deps.sql.begin((tx) => orgOf(tx, row.user_id));
         if (!orgId) throw forbidden('This account has no organisation.');
-        const csrfToken = await startSession(deps, req, reply, row.user_id, orgId);
-        return { ok: true as const, csrfToken };
+        return { ok: true as const, ...(await startSession(deps, req, reply, row.user_id, orgId)) };
       },
     );
 
@@ -293,8 +296,7 @@ export const emailAuthRoutes =
         // They proved they own the address: a pause from wrong guesses ends.
         if (email) await deps.valkey.del(`login-fails:${sha256Hex(email)}`);
         if (!orgId) throw forbidden('This account has no organisation.');
-        const csrfToken = await startSession(deps, req, reply, userId, orgId);
-        return { ok: true as const, csrfToken };
+        return { ok: true as const, ...(await startSession(deps, req, reply, userId, orgId)) };
       },
     );
   };

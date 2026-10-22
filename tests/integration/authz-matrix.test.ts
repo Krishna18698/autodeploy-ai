@@ -75,6 +75,13 @@ const POLICY: Record<string, Rule> = {
   'DELETE /api/v1/me': { need: 'viewer', body: (c) => ({ confirm: c.self }) },
   'POST /api/v1/session/org': { need: 'viewer', body: (c) => ({ orgId: c.orgId }) },
 
+  'GET /api/v1/me/2fa': { need: 'viewer' },
+  'POST /api/v1/me/2fa/setup': { need: 'viewer' },
+  'POST /api/v1/me/2fa/enable': { need: 'viewer', body: () => ({ code: '000000' }) },
+  'POST /api/v1/me/2fa/verify': { need: 'viewer', body: () => ({ code: '000000' }) },
+  'POST /api/v1/me/2fa/recovery-codes': { need: 'viewer' },
+  'DELETE /api/v1/me/2fa': { need: 'viewer', body: () => ({ code: '000000' }) },
+
   'GET /api/v1/projects': { need: 'viewer' },
   'POST /api/v1/projects': {
     need: 'member',

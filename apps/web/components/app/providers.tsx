@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { Toaster } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api';
 import { reportClientError } from '@/lib/report-error';
+import { CodePrompt } from './code-prompt';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
@@ -35,7 +36,10 @@ export function Providers({ children }: { children: ReactNode }) {
   }, []);
   return (
     <QueryClientProvider client={client}>
-      <Toaster>{children}</Toaster>
+      <Toaster>
+        {children}
+        <CodePrompt />
+      </Toaster>
     </QueryClientProvider>
   );
 }

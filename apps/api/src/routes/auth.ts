@@ -10,7 +10,7 @@ import type { Deps } from '../deps.js';
 import { githubAppConfigured } from '../env.js';
 import { clientIp } from '../lib/client-ip.js';
 import { badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
-import { authOf, requireRole, sessionCookie } from '../plugins/auth.js';
+import { authOf, requireRecentMfa, requireRole, sessionCookie } from '../plugins/auth.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
 import { isPlatformAdmin } from './admin.js';
 
@@ -100,19 +100,26 @@ export async function ensurePersonalOrg(
   return org.id;
 }
 
+/**
+ * Every sign-in ends here. An account with an authenticator gets a session
+ * that can only take the code (twoFactor: true); the dashboard asks for it.
+ */
 export async function startSession(
   deps: Deps,
   req: FastifyRequest,
   reply: FastifyReply,
   userId: string,
   orgId: string,
-) {
+): Promise<{ csrfToken: string; twoFactor: boolean }> {
   const token = randomToken(32);
   const csrf = randomToken(24);
+  const [mfa] = await deps.sql<{ on: boolean }[]>`
+    select true as on from user_totp where user_id = ${userId} and confirmed_at is not null`;
+  const twoFactor = Boolean(mfa);
   await deps.sql`
-    insert into sessions (token_hash, user_id, org_id, csrf_token, ip, user_agent, expires_at)
+    insert into sessions (token_hash, user_id, org_id, csrf_token, ip, user_agent, expires_at, mfa_pending)
     values (${sha256Hex(token)}, ${userId}, ${orgId}, ${csrf}, ${clientIp(req)}, ${req.headers['user-agent']?.slice(0, 300) ?? null},
-            now() + ${`${SESSION_DAYS} days`}::interval)`;
+            now() + ${`${SESSION_DAYS} days`}::interval, ${twoFactor})`;
   reply.setCookie(sessionCookie(deps.env), token, {
     httpOnly: true,
     secure: deps.env.NODE_ENV === 'production',
@@ -120,7 +127,7 @@ export async function startSession(
     path: '/',
     maxAge: SESSION_DAYS * 86400,
   });
-  return csrf;
+  return { csrfToken: csrf, twoFactor };
 }
 
 export const authRoutes =
@@ -266,8 +273,8 @@ export const authRoutes =
           email: gh.email,
           avatarUrl: gh.avatar_url,
         });
-        await startSession(deps, req, reply, userId, orgId);
-        return reply.redirect(`${deps.env.APP_URL}/overview`);
+        const { twoFactor } = await startSession(deps, req, reply, userId, orgId);
+        return reply.redirect(`${deps.env.APP_URL}${twoFactor ? '/login/2fa' : '/overview'}`);
       },
     );
 
@@ -297,14 +304,13 @@ export const authRoutes =
           email: null,
           avatarUrl: null,
         });
-        const csrfToken = await startSession(deps, req, reply, userId, orgId);
-        return { ok: true, csrfToken };
+        return { ok: true, ...(await startSession(deps, req, reply, userId, orgId)) };
       },
     );
 
     app.post('/auth/logout', { schema: { hide: true } }, async (req, reply) => {
-      if (req.auth?.sessionHash)
-        await deps.sql`delete from sessions where token_hash = ${req.auth.sessionHash}`;
+      const hash = req.auth?.sessionHash ?? req.pendingMfa?.sessionHash;
+      if (hash) await deps.sql`delete from sessions where token_hash = ${hash}`;
       reply.clearCookie(sessionCookie(deps.env), {
         path: '/',
       });
@@ -360,7 +366,7 @@ export const authRoutes =
     app.patch(
       '/api/v1/me',
       {
-        preHandler: requireRole(),
+        preHandler: [requireRole(), requireRecentMfa],
         config: { audit: 'user.update' },
         schema: {
           tags: ['auth'],
@@ -382,7 +388,7 @@ export const authRoutes =
     app.delete(
       '/api/v1/me',
       {
-        preHandler: requireRole(),
+        preHandler: [requireRole(), requireRecentMfa],
         config: { rateLimit: { limit: 5, windowMs: 60_000, key: 'principal' } },
         schema: { tags: ['auth'], body: z.object({ confirm: z.string().max(100) }) },
       },

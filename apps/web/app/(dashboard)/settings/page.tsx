@@ -16,6 +16,7 @@ import {
   usePendingInvites,
   useQuota,
   useTokens,
+  useTwoFactor,
   useWebhooks,
 } from '@/lib/queries';
 
@@ -74,6 +75,7 @@ export default function SettingsPage() {
         {tab === 'team' && <Team canEdit={Boolean(admin)} />}
         {tab === 'account' && (
           <div className="flex flex-col gap-5">
+            <TwoFactor />
             <GitHubLink />
             <Notifications />
             <DeleteAccount />
@@ -279,6 +281,209 @@ function Notifications() {
 }
 
 /** Deletes the account and every org it alone owns; typed confirmation, sessions only. */
+function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+  const toast = useToast();
+  const text = `AutoDeploy recovery codes (each works once)\n\n${codes.join('\n')}\n`;
+  const download = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.download = 'autodeploy-recovery-codes.txt';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  return (
+    <div>
+      <p className="mb-3 text-[13px] text-muted">
+        Save these somewhere safe, like a password manager. If you lose your phone, each one signs
+        you in once. They won’t be shown again.
+      </p>
+      <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-lg border border-line bg-bg p-4 font-mono text-[13px] sm:grid-cols-5">
+        {codes.map((c) => (
+          <li key={c}>{c}</li>
+        ))}
+      </ul>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          onClick={() =>
+            navigator.clipboard.writeText(text).then(
+              () => toast('Copied', 'ok'),
+              () => {},
+            )
+          }
+        >
+          Copy
+        </Button>
+        <Button size="sm" onClick={download}>
+          Download
+        </Button>
+        <Button size="sm" variant="primary" onClick={onDone}>
+          I’ve saved them
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Two-step sign-in: an authenticator app's code at sign-in and before risky changes.
+function TwoFactor() {
+  const status = useTwoFactor();
+  const toast = useToast();
+  const [setup, setSetup] = useState<{ secret: string; qrSvg: string } | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [code, setCode] = useState('');
+  const [turningOff, setTurningOff] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const fail = (err: unknown) => toast(err instanceof ApiError ? err.message : 'Failed', 'fail');
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const start = () =>
+    run(async () => {
+      setSetup(await post<{ secret: string; qrSvg: string }>('/api/v1/me/2fa/setup'));
+      setCode('');
+    });
+  const turnOn = (e: React.FormEvent) => {
+    e.preventDefault();
+    return run(async () => {
+      const r = await post<{ recoveryCodes: string[] }>('/api/v1/me/2fa/enable', { code });
+      setSetup(null);
+      setCode('');
+      setCodes(r.recoveryCodes);
+    });
+  };
+  const turnOff = (e: React.FormEvent) => {
+    e.preventDefault();
+    return run(async () => {
+      await del('/api/v1/me/2fa', { code });
+      setTurningOff(false);
+      setCode('');
+      toast('Two-step sign-in is off', 'ok');
+      await status.refetch();
+    });
+  };
+  const newCodes = () =>
+    run(async () => {
+      setCodes(
+        (await post<{ recoveryCodes: string[] }>('/api/v1/me/2fa/recovery-codes')).recoveryCodes,
+      );
+    });
+
+  const codeInput = (
+    <input
+      value={code}
+      onChange={(e) => setCode(e.target.value)}
+      placeholder="6-digit code"
+      aria-label="Code from your authenticator app"
+      autoComplete="one-time-code"
+      inputMode="numeric"
+      className={`${input} sm:w-40`}
+    />
+  );
+
+  return (
+    <Panel title="Two-step sign-in">
+      {codes ? (
+        <RecoveryCodes
+          codes={codes}
+          onDone={() => {
+            setCodes(null);
+            void status.refetch();
+          }}
+        />
+      ) : setup ? (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          {/* biome-ignore lint/performance/noImgElement: a data URL made by the API; next/image adds nothing */}
+          <img
+            src={setup.qrSvg}
+            alt="QR code to scan with your authenticator app"
+            width={168}
+            height={168}
+            className="shrink-0 rounded-lg bg-white p-1"
+          />
+          <div className="min-w-0 flex-1 text-[13px]">
+            <p className="text-muted">
+              Scan this with your authenticator app (Google Authenticator, Microsoft Authenticator,
+              1Password…), then enter the code it shows.
+            </p>
+            <p className="mt-3 text-muted">Can’t scan? Type this key into the app instead:</p>
+            <p className="mt-1 break-all font-mono text-[13px] text-fg">
+              {setup.secret.match(/.{1,4}/g)?.join(' ')}
+            </p>
+            <form onSubmit={turnOn} className="mt-4 flex flex-col gap-2 sm:flex-row">
+              {codeInput}
+              <Button
+                type="submit"
+                variant="primary"
+                loading={busy}
+                disabled={code.trim().length < 6}
+              >
+                Turn on
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setSetup(null)}>
+                Cancel
+              </Button>
+            </form>
+          </div>
+        </div>
+      ) : status.data?.enabled ? (
+        <div className="text-[13px]">
+          <p>
+            <span className="text-ok">● On.</span>{' '}
+            <span className="text-muted">
+              Signing in and risky changes ask for a code. {status.data.recoveryCodesLeft} recovery
+              codes left.
+            </span>
+          </p>
+          {turningOff ? (
+            <form onSubmit={turnOff} className="mt-3 flex flex-col gap-2 sm:flex-row">
+              {codeInput}
+              <Button
+                type="submit"
+                variant="danger"
+                loading={busy}
+                disabled={code.trim().length < 6}
+              >
+                Turn off
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setTurningOff(false)}>
+                Cancel
+              </Button>
+            </form>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" onClick={newCodes} loading={busy}>
+                New recovery codes
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setTurningOff(true)}>
+                Turn off
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3 text-[13px] sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-muted">
+            Ask for a code from an authenticator app when you sign in and before risky changes, so a
+            stolen password alone isn’t enough.
+          </p>
+          <Button onClick={start} loading={busy} className="shrink-0">
+            Set up
+          </Button>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function DeleteAccount() {
   const me = useMe();
   const toast = useToast();

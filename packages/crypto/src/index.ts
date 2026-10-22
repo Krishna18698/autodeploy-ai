@@ -160,3 +160,5 @@ export async function verifyPassword(password: string, stored: string): Promise<
 /** Checked when no account matches, so a wrong email takes as long as a wrong password. */
 export const DUMMY_PASSWORD_HASH =
   'scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+export * from './totp.js';

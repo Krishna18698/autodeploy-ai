@@ -24,7 +24,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
-import { authOf, type Role, rankOf, requireRole } from '../plugins/auth.js';
+import { authOf, type Role, rankOf, requireRecentMfa, requireRole } from '../plugins/auth.js';
 import { usageFor } from '../services/limits.js';
 
 const Params = z.object({ id: z.uuid() });
@@ -64,7 +64,7 @@ export const orgRoutes =
     app.post(
       '/api/v1/members',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'member.invite' },
         schema: {
           tags: ['org'],
@@ -210,7 +210,7 @@ export const orgRoutes =
     app.patch(
       '/api/v1/members/:id',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'member.role' },
         schema: { tags: ['org'], params: Params, body: UpdateMemberBody },
       },
@@ -238,7 +238,7 @@ export const orgRoutes =
     app.delete(
       '/api/v1/members/:id',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'member.remove' },
         schema: { tags: ['org'], params: Params },
       },
@@ -299,7 +299,7 @@ export const orgRoutes =
     app.post(
       '/api/v1/tokens',
       {
-        preHandler: requireRole(),
+        preHandler: [requireRole(), requireRecentMfa],
         config: { audit: 'token.create' },
         schema: { tags: ['tokens'], body: CreateTokenBody, response: { 201: CreatedToken } },
       },
@@ -383,7 +383,7 @@ export const orgRoutes =
     app.post(
       '/api/v1/webhooks',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'webhook.create' },
         schema: { tags: ['webhooks'], body: CreateWebhookBody, response: { 201: CreatedWebhook } },
       },

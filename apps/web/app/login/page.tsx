@@ -37,6 +37,9 @@ function LoginInner() {
   const [loading, setLoading] = useState<'email' | 'dev' | null>(null);
   const next = safeNext(params.get('next'));
   const goNext = () => router.replace(next);
+  // An account with an authenticator signs in, then shows a code.
+  const afterSignIn = (r: { twoFactor?: boolean }) =>
+    r.twoFactor ? router.replace(`/login/2fa?next=${encodeURIComponent(next)}`) : goNext();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,8 +50,8 @@ function LoginInner() {
         await post('/auth/email/signup', { email, password });
         setSentTo(email);
       } else {
-        await post('/auth/email/login', { email, password });
-        goNext();
+        const r = await post<{ twoFactor?: boolean }>('/auth/email/login', { email, password });
+        afterSignIn(r);
         return;
       }
     } catch (err) {
@@ -61,8 +64,7 @@ function LoginInner() {
     setLoading('dev');
     setError(null);
     try {
-      await post('/auth/dev-login', {});
-      goNext();
+      afterSignIn(await post<{ twoFactor?: boolean }>('/auth/dev-login', {}));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not reach the API');
       setLoading(null);

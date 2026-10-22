@@ -27,6 +27,7 @@ import { healthRoutes } from './routes/health.js';
 import { internalRoutes } from './routes/internal.js';
 import { orgRoutes } from './routes/org.js';
 import { projectRoutes } from './routes/projects.js';
+import { twoFactorRoutes } from './routes/two-factor.js';
 
 export async function buildApp(deps: Deps) {
   const { env } = deps;
@@ -132,6 +133,7 @@ export async function buildApp(deps: Deps) {
   await app.register(deploymentRoutes(deps));
   await app.register(orgRoutes(deps));
   await app.register(adminRoutes(deps));
+  await app.register(twoFactorRoutes(deps));
   await app.register(internalRoutes(deps));
   await app.register(clientErrorRoutes(deps));
   // Encapsulated so its raw-body JSON parser doesn't affect other routes.

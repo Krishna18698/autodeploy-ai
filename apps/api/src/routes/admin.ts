@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { type Env, sitesDomain } from '../env.js';
 import { conflict, forbidden, notFound, unauthorized } from '../lib/errors.js';
-import { type Auth, authOf } from '../plugins/auth.js';
+import { type Auth, authOf, requireRecentMfa } from '../plugins/auth.js';
 
 // Abuse handling for platform admins (PLATFORM_ADMIN_GITHUB_IDS): find a site
 // by its address, owner or account, take it down or suspend its account, and
@@ -149,7 +149,7 @@ export const adminRoutes =
     app.post(
       '/api/v1/admin/sites/:id/takedown',
       {
-        preHandler: requireAdmin,
+        preHandler: [requireAdmin, requireRecentMfa],
         schema: { tags: ['admin'], params: Params, body: AdminReason, response: { 202: Queued } },
       },
       async (req, reply) => {
@@ -178,7 +178,7 @@ export const adminRoutes =
     app.post(
       '/api/v1/admin/sites/:id/restore',
       {
-        preHandler: requireAdmin,
+        preHandler: [requireAdmin, requireRecentMfa],
         schema: { tags: ['admin'], params: Params, response: { 202: Queued } },
       },
       async (req, reply) => {
@@ -204,7 +204,7 @@ export const adminRoutes =
     app.post(
       '/api/v1/admin/orgs/:id/suspend',
       {
-        preHandler: requireAdmin,
+        preHandler: [requireAdmin, requireRecentMfa],
         schema: { tags: ['admin'], params: Params, body: AdminReason, response: { 202: Queued } },
       },
       async (req, reply) => {
@@ -235,7 +235,7 @@ export const adminRoutes =
     app.post(
       '/api/v1/admin/orgs/:id/unsuspend',
       {
-        preHandler: requireAdmin,
+        preHandler: [requireAdmin, requireRecentMfa],
         schema: { tags: ['admin'], params: Params, response: { 202: Queued } },
       },
       async (req, reply) => {

@@ -23,9 +23,16 @@ export function setCsrfToken(t: string | null) {
   csrfToken = t;
 }
 
+// A dangerous action can ask for a fresh authenticator code (403 mfa_required):
+// the dashboard's prompt asks for one, then the request is sent once more.
+let askForCode: (() => Promise<boolean>) | null = null;
+export function setCodePrompt(fn: (() => Promise<boolean>) | null) {
+  askForCode = fn;
+}
+
 export async function api<T>(
   path: string,
-  init: RequestInit & { idempotencyKey?: string } = {},
+  init: RequestInit & { idempotencyKey?: string; retried?: boolean } = {},
 ): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase();
   const headers = new Headers(init.headers);
@@ -36,7 +43,12 @@ export async function api<T>(
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(res.status, body ?? {});
+  if (!res.ok) {
+    if (res.status === 403 && body?.code === 'mfa_required' && askForCode && !init.retried) {
+      if (await askForCode()) return api<T>(path, { ...init, retried: true });
+    }
+    throw new ApiError(res.status, body ?? {});
+  }
   return body as T;
 }
 
