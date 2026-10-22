@@ -33,57 +33,29 @@ export function Closing() {
           </div>
         </div>
       </section>
+      {/* Only what someone looks for at the bottom of a page: a way in, the API,
+          and the legal pages (which sign-in providers also expect to find). */}
       <footer className="border-t border-white/6">
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 text-[13px] sm:grid-cols-2 sm:px-6 lg:grid-cols-5">
-          <div>
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 text-[13px] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex items-center gap-4">
             <Logo />
-            <p className="mt-3 max-w-xs text-muted">
-              Self-healing deployments for static sites and server-rendered apps.
-            </p>
+            <span className="text-[12px] text-muted">© {new Date().getFullYear()}</span>
           </div>
-          {[
-            [
-              'Product',
-              [
-                ['Features', '#features'],
-                ['How it works', '#how'],
-                ['Recovery', '#recovery'],
-                ['Numbers', '#numbers'],
-              ],
-            ],
-            [
-              'Engineering',
-              [
-                ['Under the hood', '#architecture'],
-                ['API reference', 'https://api.autodeploy.fyi/docs'],
-              ],
-            ],
-            [
-              'Project',
-              [
-                ['Dashboard', '/overview'],
+          <nav aria-label="Footer">
+            <ul className="flex flex-wrap gap-x-5 gap-y-2">
+              {[
                 ['Sign in', '/login'],
-                ['GitHub', 'https://github.com/Krishna18698'],
-              ],
-            ],
-            ['Legal', LEGAL_PAGES.map(([label, href]) => [label, href])],
-          ].map(([title, links]) => (
-            <div key={title as string}>
-              <div className="text-[13px] font-medium text-fg">{title as string}</div>
-              <ul className="mt-3 flex flex-col gap-2">
-                {(links as string[][]).map(([l, h]) => (
-                  <li key={l}>
-                    <a href={h} className="text-muted transition-colors hover:text-fg">
-                      {l}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-        <div className="mx-auto max-w-6xl px-4 pb-8 text-[12px] text-muted sm:px-6">
-          © {new Date().getFullYear()} AutoDeploy
+                ['API reference', 'https://api.autodeploy.fyi/docs'],
+                ...LEGAL_PAGES,
+              ].map(([label, href]) => (
+                <li key={label}>
+                  <a href={href} className="text-muted transition-colors hover:text-fg">
+                    {label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </div>
       </footer>
     </>
