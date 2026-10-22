@@ -42,9 +42,7 @@ export function DemoVideo() {
         className="m-auto w-[min(1100px,calc(100vw-32px))] rounded-[10px] border border-line bg-panel p-0 text-fg backdrop:bg-black/70 backdrop:backdrop-blur-sm"
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <p className="text-[13px] text-muted">
-            A build fails on a code error → AI writes the fix → it’s tested → you approve → live
-          </p>
+          <p className="text-[13px] text-muted">Build fails → AI fixes it → you approve → live</p>
           <button
             type="button"
             onClick={close}
@@ -66,9 +64,8 @@ export function DemoVideo() {
             className="block aspect-[1280/760] w-full bg-bg"
           />
         )}
-        <p className="px-4 py-2 font-mono text-[11px] text-muted">
-          Recorded on the live product: a real build failure, fixed by the production AI and
-          approved by a person. Waiting is sped up, and labelled as such.
+        <p className="px-4 py-2 text-[12px] text-muted">
+          A real run on AutoDeploy. Waiting is sped up.
         </p>
       </dialog>
     </>
