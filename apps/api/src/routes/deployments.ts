@@ -210,21 +210,20 @@ export const deploymentRoutes =
         },
       },
       async (req) => {
-        const rows = await withOrg(
-          deps.sql,
-          authOf(req).orgId,
-          (tx) =>
-            tx<
-              {
-                id: number;
-                type: string;
-                from_status: string | null;
-                to_status: string | null;
-                payload: Record<string, unknown>;
-                created_at: Date;
-              }[]
-            >`select id, type, from_status, to_status, payload, created_at from deployment_events where deployment_id = ${req.params.id} order by id`,
-        );
+        const rows = await withOrg(deps.sql, authOf(req).orgId, async (tx) => {
+          const [d] = await tx`select 1 from deployments where id = ${req.params.id}`;
+          if (!d) throw notFound('Deployment');
+          return tx<
+            {
+              id: number;
+              type: string;
+              from_status: string | null;
+              to_status: string | null;
+              payload: Record<string, unknown>;
+              created_at: Date;
+            }[]
+          >`select id, type, from_status, to_status, payload, created_at from deployment_events where deployment_id = ${req.params.id} order by id`;
+        });
         return rows.map((r) => ({
           id: String(r.id),
           type: r.type,
@@ -251,10 +250,10 @@ export const deploymentRoutes =
         },
       },
       async (req) => {
-        const chunks = await withOrg(
-          deps.sql,
-          authOf(req).orgId,
-          (tx) => tx<
+        const chunks = await withOrg(deps.sql, authOf(req).orgId, async (tx) => {
+          const [d] = await tx`select 1 from deployments where id = ${req.params.id}`;
+          if (!d) throw notFound('Deployment');
+          return tx<
             {
               attempt_no: number;
               seq: number;
@@ -267,8 +266,8 @@ export const deploymentRoutes =
           select a.attempt_no, c.seq, c.first_line, c.line_count, c.storage_key, a.status
           from deployment_attempts a join build_log_chunks c on c.attempt_id = a.id
           where a.deployment_id = ${req.params.id} ${req.query.attempt ? tx`and a.attempt_no = ${req.query.attempt}` : tx``}
-          order by a.attempt_no, c.seq`,
-        );
+          order by a.attempt_no, c.seq`;
+        });
         // Cursor = global line index across the selected attempts; serve up to ~2000 lines per page.
         const lines: Array<{ seq: number; attemptNo: number; text: string }> = [];
         let index = 0;
@@ -387,12 +386,12 @@ export const deploymentRoutes =
         schema: { tags: ['repairs'], params: Params, response: { 200: z.array(Repair) } },
       },
       async (req) => {
-        const rows = await withOrg(
-          deps.sql,
-          authOf(req).orgId,
-          (tx) => tx<RepairRow[]>`
-          select * from repair_attempts where deployment_id = ${req.params.id} order by created_at`,
-        );
+        const rows = await withOrg(deps.sql, authOf(req).orgId, async (tx) => {
+          const [d] = await tx`select 1 from deployments where id = ${req.params.id}`;
+          if (!d) throw notFound('Deployment');
+          return tx<RepairRow[]>`
+          select * from repair_attempts where deployment_id = ${req.params.id} order by created_at`;
+        });
         return rows.map(toRepair);
       },
     );

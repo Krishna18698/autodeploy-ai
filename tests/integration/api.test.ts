@@ -49,24 +49,6 @@ async function login(login: string): Promise<Session> {
   return { cookie, csrf: r.json().csrfToken };
 }
 
-/** Puts an existing user into another org with a role, and makes that the session's org. */
-async function joinAs(
-  s: Session,
-  orgId: string,
-  role: 'owner' | 'admin' | 'member' | 'viewer',
-  login: string,
-) {
-  const [u] = await deps.sql<{ id: string }[]>`select id from users where login = ${login}`;
-  await deps.sql`insert into memberships (org_id, user_id, role) values (${orgId}, ${u!.id}, ${role}) on conflict (org_id, user_id) do update set role = excluded.role`;
-  const r = await app.inject({
-    method: 'POST',
-    url: '/api/v1/session/org',
-    headers: { cookie: s.cookie, 'x-csrf-token': s.csrf },
-    payload: { orgId },
-  });
-  expect(r.statusCode).toBe(204);
-}
-
 describe('API security', () => {
   it('requires a session or token, and rejects cookie writes without CSRF or from foreign origins', async () => {
     expect((await app.inject({ url: '/api/v1/projects' })).statusCode).toBe(401);
@@ -91,54 +73,7 @@ describe('API security', () => {
     expect(evil.statusCode).toBe(403);
   });
 
-  it('enforces roles per endpoint (authorization matrix)', async () => {
-    const org = await makeOrg(deps.sql);
-    const project = await makeProject(deps.sql, org);
-    const matrix: Array<{
-      method: 'GET' | 'POST' | 'PUT' | 'PATCH';
-      url: string;
-      payload?: object;
-      min: 'viewer' | 'member' | 'admin';
-    }> = [
-      { method: 'GET', url: '/api/v1/projects', min: 'viewer' },
-      { method: 'GET', url: `/api/v1/projects/${project.id}`, min: 'viewer' },
-      { method: 'GET', url: '/api/v1/deployments', min: 'viewer' },
-      { method: 'GET', url: `/api/v1/projects/${project.id}/env`, min: 'member' },
-      {
-        method: 'PUT',
-        url: `/api/v1/projects/${project.id}/env/SECRET_KEY`,
-        payload: { value: 'v' },
-        min: 'admin',
-      },
-      {
-        method: 'PATCH',
-        url: `/api/v1/projects/${project.id}`,
-        payload: { name: 'renamed' },
-        min: 'admin',
-      },
-      { method: 'GET', url: '/api/v1/webhooks', min: 'admin' },
-      { method: 'GET', url: '/api/v1/audit', min: 'admin' },
-    ];
-    const rank = { viewer: 0, member: 1, admin: 2, owner: 3 } as const;
-    for (const role of ['viewer', 'member', 'admin'] as const) {
-      const name = `matrix-${role}-${org.slice(0, 6)}`;
-      const s = await login(name);
-      await joinAs(s, org, role, name);
-      for (const e of matrix) {
-        const r = await app.inject({
-          method: e.method,
-          url: e.url,
-          headers: { cookie: s.cookie, 'x-csrf-token': s.csrf },
-          ...(e.payload && { payload: e.payload }),
-        });
-        const allowed = rank[role] >= rank[e.min];
-        expect(
-          allowed ? r.statusCode < 400 : r.statusCode === 403,
-          `${role} ${e.method} ${e.url} → ${r.statusCode}`,
-        ).toBe(true);
-      }
-    }
-  });
+  // Roles per endpoint: tests/integration/authz-matrix.test.ts covers every route.
 
   it('never exposes another org’s resources (404, not 403)', async () => {
     const victim = await makeOrg(deps.sql);

@@ -445,10 +445,10 @@ export const orgRoutes =
         schema: { tags: ['webhooks'], params: Params, response: { 200: z.array(WebhookDelivery) } },
       },
       async (req) => {
-        const rows = await withOrg(
-          deps.sql,
-          authOf(req).orgId,
-          (tx) => tx<
+        const rows = await withOrg(deps.sql, authOf(req).orgId, async (tx) => {
+          const [ep] = await tx`select 1 from webhook_endpoints where id = ${req.params.id}`;
+          if (!ep) throw notFound('Webhook');
+          return tx<
             {
               id: string;
               event_type: string;
@@ -460,8 +460,8 @@ export const orgRoutes =
               created_at: Date;
             }[]
           >`select id, event_type, status, attempts, response_status, response_ms, last_error, created_at
-          from webhook_deliveries where endpoint_id = ${req.params.id} order by created_at desc limit 50`,
-        );
+          from webhook_deliveries where endpoint_id = ${req.params.id} order by created_at desc limit 50`;
+        });
         return rows.map((r) => ({
           id: r.id,
           eventType: r.event_type,

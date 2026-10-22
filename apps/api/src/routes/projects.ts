@@ -367,12 +367,12 @@ export const projectRoutes =
         },
       },
       async (req) => {
-        const rows = await withOrg(
-          deps.sql,
-          authOf(req).orgId,
-          (tx) => tx<{ key: string; preview: string; updated_at: Date }[]>`
-          select key, preview, updated_at from env_vars where project_id = ${req.params.id} order by key`,
-        );
+        const rows = await withOrg(deps.sql, authOf(req).orgId, async (tx) => {
+          const [p] = await tx`select 1 from projects where id = ${req.params.id}`;
+          if (!p) throw notFound('Project');
+          return tx<{ key: string; preview: string; updated_at: Date }[]>`
+          select key, preview, updated_at from env_vars where project_id = ${req.params.id} order by key`;
+        });
         return rows.map((r) => ({
           key: r.key,
           preview: r.preview,
