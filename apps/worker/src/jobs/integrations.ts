@@ -1,6 +1,8 @@
 import { lookup } from 'node:dns/promises';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { isIP } from 'node:net';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { isIP, type LookupFunction } from 'node:net';
 import { join, posix } from 'node:path';
 import { parseUnifiedDiff } from '@autodeploy/core';
 import { decrypt, hmacSha256Hex } from '@autodeploy/crypto';
@@ -24,20 +26,75 @@ const PRIVATE_V4 = [
   /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
 ];
 
-/** SSRF guard: resolve the host and refuse private/loopback/link-local targets. */
-async function assertPublicHost(url: URL, allowLocal: boolean) {
-  if (allowLocal) return;
+/** True for addresses inside our network or the VM: loopback, private, link-local, CGNAT. */
+export function isPrivateAddress(address: string): boolean {
+  // An IPv4 address wrapped in IPv6 (::ffff:10.0.0.1) is still that IPv4 address.
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];
+  if (mapped) return isPrivateAddress(mapped);
+  if (isIP(address) === 4) return PRIVATE_V4.some((re) => re.test(address));
+  const a = address.toLowerCase();
+  return (
+    a === '::' || a === '::1' || /^f[cd]/.test(a) || /^fe[89ab]/.test(a) || a.startsWith('::ffff:')
+  );
+}
+
+/**
+ * SSRF guard: resolve the host once and refuse private/loopback/link-local
+ * targets. Returns the checked address, which the request then connects to,
+ * so a DNS answer that changes between check and connect (rebinding) can't
+ * point it somewhere private.
+ */
+async function publicAddress(url: URL): Promise<{ address: string; family: number }> {
   const addrs = isIP(url.hostname)
     ? [{ address: url.hostname, family: isIP(url.hostname) }]
     : await lookup(url.hostname, { all: true });
-  for (const a of addrs) {
-    const v4 = a.family === 4 && PRIVATE_V4.some((re) => re.test(a.address));
-    const v6 =
-      a.family === 6 &&
-      (a.address === '::1' || /^f[cd]/i.test(a.address) || /^fe80/i.test(a.address));
-    if (v4 || v6)
+  for (const a of addrs)
+    if (isPrivateAddress(a.address))
       throw new PermanentError(`refusing to deliver to a private address (${a.address})`);
-  }
+  const first = addrs[0];
+  if (!first) throw new PermanentError(`${url.hostname} has no address`);
+  return first;
+}
+
+/** A DNS lookup that always answers with the address already checked. */
+function pinnedLookup(pin: { address: string; family: number }): LookupFunction {
+  return (_host, options, callback) => {
+    // Node asks for every address when it races IPv4 and IPv6 connections.
+    if ((options as { all?: boolean }).all)
+      (callback as unknown as (e: null, a: Array<{ address: string; family: number }>) => void)(
+        null,
+        [pin],
+      );
+    else callback(null, pin.address, pin.family);
+  };
+}
+
+/** POSTs to `url` over a connection pinned to `pin` (TLS still checks the real hostname). */
+export function postPinned(
+  url: URL,
+  headers: Record<string, string>,
+  body: string,
+  pin: { address: string; family: number } | null,
+  signal: AbortSignal,
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
+    const req = send(
+      url,
+      {
+        method: 'POST',
+        headers: { ...headers, 'content-length': String(Buffer.byteLength(body)) },
+        signal,
+        ...(pin && { lookup: pinnedLookup(pin) }),
+      },
+      (res) => {
+        res.resume(); // the body isn't needed; redirects aren't followed
+        resolve(res.statusCode ?? 0);
+      },
+    );
+    req.on('error', reject);
+    req.end(body);
+  });
 }
 
 export async function deliverWebhook(deps: Deps, ctx: JobContext): Promise<void> {
@@ -74,11 +131,12 @@ export async function deliverWebhook(deps: Deps, ctx: JobContext): Promise<void>
   let status: number | null = null;
   let error: string | null = null;
   try {
-    await assertPublicHost(url, deps.env.NODE_ENV !== 'production');
-    const res = await withTimeout(10_000, (signal) =>
-      fetch(url, {
-        method: 'POST',
-        headers: {
+    // Local development may deliver to localhost; production only to public addresses.
+    const pin = deps.env.NODE_ENV === 'production' ? await publicAddress(url) : null;
+    status = await withTimeout(10_000, (signal) =>
+      postPinned(
+        url,
+        {
           'content-type': 'application/json',
           'user-agent': 'AutoDeploy-Webhooks/1.0',
           'x-autodeploy-event': d.event_type,
@@ -86,12 +144,11 @@ export async function deliverWebhook(deps: Deps, ctx: JobContext): Promise<void>
           'x-autodeploy-signature': signature,
         },
         body,
-        redirect: 'manual',
+        pin,
         signal,
-      }),
+      ),
     );
-    status = res.status;
-    if (res.status < 200 || res.status >= 300) error = `HTTP ${res.status}`;
+    if (status < 200 || status >= 300) error = `HTTP ${status}`;
   } catch (err) {
     error = (err as Error).message;
     if (err instanceof PermanentError) {
