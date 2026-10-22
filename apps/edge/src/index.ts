@@ -72,10 +72,17 @@ const SECURITY_HEADERS: Record<string, string> = {
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
 };
 
-async function resolveRoute(env: Env, host: string, route: SiteRoute): Promise<RouteValue | null> {
+/** A site a platform admin took down: every address answers with a notice. */
+type TakenDown = { takenDown: true };
+
+async function resolveRoute(
+  env: Env,
+  host: string,
+  route: SiteRoute,
+): Promise<RouteValue | TakenDown | null> {
   if (env.ROUTE_MODE === 'kv' && env.ROUTES) {
-    // KV reads are edge-cached for 30 s: a rollback is visible within that.
-    return env.ROUTES.get<RouteValue>(routeKey(route), { type: 'json', cacheTtl: 30 });
+    // KV reads are edge-cached for 30 s: a rollback (or a takedown) is visible within that.
+    return env.ROUTES.get<RouteValue | TakenDown>(routeKey(route), { type: 'json', cacheTtl: 30 });
   }
   const res = await fetch(`${env.API_URL}/internal/routes/${encodeURIComponent(host)}`, {
     headers: { 'x-internal-token': env.INTERNAL_TOKEN },
@@ -274,6 +281,9 @@ export default {
     }
     const target = await resolveRoute(env, reqHost, route);
     if (!target) return notFound('No deployment is live at this address.');
+    // 451: unavailable for legal reasons (an abuse report, or the terms of service).
+    if ('takenDown' in target)
+      return notFound('This site has been taken down for breaking the terms of service.', 451);
     // Static sites are read-only; a server-rendered one takes any method (forms, API routes).
     if (target.mode !== 'ssr' && !isRead) {
       return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } });

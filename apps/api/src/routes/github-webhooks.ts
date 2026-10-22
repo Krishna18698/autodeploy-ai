@@ -86,7 +86,9 @@ export async function githubWebhookRoutes(app: FastifyInstance, deps: Deps) {
 
 async function projectsFor(deps: Deps, fullName: string) {
   return deps.sql<{ id: string; org_id: string; default_branch: string; slug: string }[]>`
-    select id, org_id, default_branch, slug from projects where lower(repo_full_name) = lower(${fullName})`;
+    select p.id, p.org_id, p.default_branch, p.slug from projects p join orgs o on o.id = p.org_id
+    where lower(p.repo_full_name) = lower(${fullName})
+      and p.taken_down_at is null and o.suspended_at is null`;
 }
 
 async function onPush(deps: Deps, e: PushEvent): Promise<number> {

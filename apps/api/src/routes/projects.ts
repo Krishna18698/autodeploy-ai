@@ -27,6 +27,7 @@ import { enforceProjectLimit } from '../services/limits.js';
 import { decodeCursor, encodeCursor, type ProjectRow, toProject } from '../services/mappers.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
 import { analyzeSource, resolveSource, suggestSlug } from '../services/sources.js';
+import { assertNotSuspended } from '../services/takedown.js';
 
 export const projectRoutes =
   (deps: Deps): FastifyPluginAsyncZod =>
@@ -154,6 +155,7 @@ export const projectRoutes =
       },
       async (req, reply) => {
         const a = authOf(req);
+        await assertNotSuspended(deps.sql, a.orgId, deps.env.PLATFORM_DOMAIN);
         const src = await resolveSource(deps, req.body.repoUrl, undefined, a);
         const analysis = await analyzeSource(deps, src, req.body.rootDir, a.orgId);
         const slug = (

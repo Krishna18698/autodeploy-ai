@@ -51,6 +51,9 @@ const EnvSchema = z
     // below). Set it to restrict sign-in to listed GitHub logins; new email
     // sign-ups are closed while it is set.
     ALLOWED_GITHUB_LOGINS: list,
+    // GitHub account ids (numeric, they never change hands) allowed to take
+    // sites down and suspend accounts: Admin in the dashboard.
+    PLATFORM_ADMIN_GITHUB_IDS: list,
     // Account email (verify address, reset password). Unset: logged, not sent.
     RESEND_API_KEY: z.string().optional(),
     EMAIL_FROM: z.string().default('AutoDeploy <onboarding@resend.dev>'),

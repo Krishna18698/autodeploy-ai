@@ -16,7 +16,7 @@ See [audit-2026-10-22.md](audit-2026-10-22.md): 2 × P1, 5 × P2, 11 × P3, 4 ×
 ## Before public
 
 **Site isolation (from the 2026-10-22 audit, finding #1)**
-- [ ] **Admin takedown tool:** take a site offline and suspend its account in minutes (today it means editing the database). Needed before opening sign-ups, to act on abuse reports.
+- [x] **Admin takedown tool** (2026-10-22): Admin in the dashboard, for the GitHub ids in `PLATFORM_ADMIN_GITHUB_IDS`. Find a site by any of its addresses, account or owner; take it down or suspend its account (every site), with a reason emailed to the owners and kept in their audit log. Every address answers 451 with a notice within a minute; deploys, rollbacks and new projects are refused; nothing (route reconcile, a build finishing) puts it back except Restore / Lift suspension.
 - [ ] **A sites domain of our own on the Public Suffix List:** user sites now live on `autodeploy.dpdns.org`, separate from the dashboard (dpdns.org is on the list, so browsers and Safe Browsing treat it apart from autodeploy.fyi). But all user sites share that one entry, so one site can set cookies for another and one phishing site can get every user site flagged. Vercel's fix: `vercel.app` is itself on the list. Ours: buy a sites domain for 2+ years (the list requires it; free dpdns renews yearly) and submit it; approval takes weeks, browsers pick it up over months.
 
 Status on 2026-10-22. The owner's order: finish the product first; opening
@@ -40,7 +40,7 @@ the last steps.
 **Upkeep**
 - [x] **Permanent domain:** autodeploy.fyi (Cloudflare Registrar, bought 2026-10-21). autodeploy.dpdns.org redirects to it; drop it from `legacy_domains` once nothing links there (its free registration lapses June 2027). The eu.org application is no longer needed.
 - [ ] **Renew autodeploy.fyi** each October (auto-renew on in Cloudflare).
-- [ ] Confirm a real error shows up in Sentry (only the key-check test event so far).
+- [x] Sentry: errors arrive and are emailed (AUTODEPLOY-1 to -3, confirmed 2026-10-22).
 - [ ] Set the Grafana service account back to Viewer (audit #17).
 
 **Done since 2026-10-19**

@@ -12,7 +12,16 @@ import {
   NEXT_SERVER,
   routeKey,
 } from '@autodeploy/core';
-import { activate, recordEvent, routeValue, transition } from '@autodeploy/db';
+import {
+  activate,
+  isTakenDown,
+  recordEvent,
+  restoreRoutes,
+  routeValue,
+  TAKEN_DOWN,
+  takeDownRoutes,
+  transition,
+} from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
 import { enqueue } from '@autodeploy/queue';
 import { retry } from '@autodeploy/resilience';
@@ -450,14 +459,16 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
                 runtime_workdir: ssr.workdir,
               }
             : {};
+        // A site taken down while this built gets the notice at its new addresses too.
+        const served = (await isTakenDown(deps.sql, d.project_id)) ? TAKEN_DOWN : value;
         await deps.routes.put(
           routeKey({ kind: 'deployment', slug: d.slug, number: d.number }),
-          value,
+          served,
         );
         if (d.kind === 'preview' && d.pr_number !== null)
           await deps.routes.put(
             routeKey({ kind: 'preview', slug: d.slug, pr: d.pr_number }),
-            value,
+            served,
           );
 
         await deps.sql.begin(async (tx) => {
@@ -575,11 +586,29 @@ export async function activateDeployment(deps: Deps, ctx: JobContext): Promise<v
 async function activateInner(deps: Deps, deploymentId: string): Promise<void> {
   const d = await loadDeployment(deps, deploymentId);
   if (d?.status !== 'READY' || d.kind !== 'production') return;
+  if (await isTakenDown(deps.sql, d.project_id)) {
+    deps.log.warn({ deploymentId }, 'not activated: the site is taken down');
+    return;
+  }
   const r = await activate(deps.sql, deps.routes, deploymentId, 'promote', 'autodeploy');
   deps.log.info(
     { deploymentId, ms: Math.round(r.ms), previous: r.previousId },
     'deployment activated',
   );
+}
+
+/**
+ * Makes a project's addresses match the database: the "taken down" notice
+ * while it (or its account) is down, otherwise what is live. Queued by the
+ * admin actions; running it twice is harmless.
+ */
+export async function refreshRoutes(deps: Deps, ctx: JobContext): Promise<void> {
+  const { projectId } = ctx.job.payload as { projectId: string };
+  const down = await isTakenDown(deps.sql, projectId);
+  const n = down
+    ? await takeDownRoutes(deps.sql, deps.routes, projectId)
+    : await restoreRoutes(deps.sql, deps.routes, projectId);
+  deps.log.info({ projectId, down, addresses: n }, 'site routes refreshed');
 }
 
 export async function removeRoute(deps: Deps, ctx: JobContext): Promise<void> {

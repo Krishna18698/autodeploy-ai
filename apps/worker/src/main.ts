@@ -9,6 +9,7 @@ import {
   activateDeployment,
   buildDeployment,
   prepareDeployment,
+  refreshRoutes,
   removeRoute,
 } from './jobs/deployment.js';
 import { commitStatus, deliverWebhook, openRepairPr } from './jobs/integrations.js';
@@ -75,6 +76,7 @@ const light = new Runner(deps, {
     'deployment.recover': (c) => recoverDeployment(deps, c),
     'deployment.activate': (c) => activateDeployment(deps, c),
     'routes.remove': (c) => removeRoute(deps, c),
+    'routes.refresh': (c) => refreshRoutes(deps, c),
     'webhook.deliver': (c) => deliverWebhook(deps, c),
     'github.status': (c) => commitStatus(deps, c),
     'repair.open_pr': (c) => openRepairPr(deps, c),

@@ -12,6 +12,7 @@ import { clientIp } from '../lib/client-ip.js';
 import { badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
 import { authOf, requireRole, sessionCookie } from '../plugins/auth.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
+import { isPlatformAdmin } from './admin.js';
 
 const SESSION_DAYS = 14;
 const stateCookie = (env: { NODE_ENV: string }) =>
@@ -345,6 +346,7 @@ export const authRoutes =
             avatarUrl: user.avatar_url,
             email: user.email,
             githubConnected: a.githubId !== null,
+            platformAdmin: isPlatformAdmin(deps.env, a),
           },
           org,
           orgs,

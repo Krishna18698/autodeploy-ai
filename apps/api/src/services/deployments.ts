@@ -4,6 +4,7 @@ import { currentTraceparent } from '@autodeploy/telemetry';
 import type { Deps } from '../deps.js';
 import { AppError } from '../lib/errors.js';
 import { enforceDeployLimits } from './limits.js';
+import { assertServable } from './takedown.js';
 
 export type CreateDeploymentInput = {
   orgId: string;
@@ -30,6 +31,7 @@ export async function createDeployment(
 ): Promise<{ id: string; number: number }> {
   const traceparent = currentTraceparent();
   return withOrg(deps.sql, input.orgId, async (tx) => {
+    await assertServable(tx, input.projectId, deps.env.PLATFORM_DOMAIN);
     await enforceDeployLimits(tx, input.orgId, deps.env);
 
     // A newer production build makes older not-yet-started ones pointless.

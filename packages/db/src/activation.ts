@@ -3,6 +3,7 @@ import type { Sql, Tx } from './client.js';
 import { transition } from './deployments.js';
 import { appendOutbox } from './outbox.js';
 import { type RouteStore, type RouteValue, routeValue } from './routes.js';
+import { isTakenDown } from './takedown.js';
 
 export type ActivationResult = { activatedId: string; previousId: string | null; ms: number };
 
@@ -52,6 +53,8 @@ export async function activate(
       >`
         select id, slug, active_deployment_id, version from projects where id = ${dep.project_id} for update`;
       if (!project) throw new Error('project not found');
+      // A taken-down site stays down whatever finishes building.
+      if (await isTakenDown(tx, project.id)) throw new Error('site is taken down');
       if (project.active_deployment_id === dep.id) {
         return { activatedId: dep.id, previousId: dep.id, ms: performance.now() - started };
       }
@@ -106,15 +109,18 @@ export async function activate(
 
 /**
  * Rewrites every project's production route from the database, the source of
- * truth (a KV write can fail after a commit, or be edited by hand). Returns how
- * many routes were written.
+ * truth (a KV write can fail after a commit, or be edited by hand). Taken-down
+ * sites are left alone (their addresses hold the notice). Returns how many
+ * routes were written.
  */
 export async function reconcileRoutes(sql: Sql, routes: RouteStore): Promise<number> {
   const rows = await sql<
     { slug: string; id: string; number: number; sha256: string; mode: 'static' | 'ssr' }[]
   >`
     select p.slug, d.id, d.number, a.sha256, d.mode from projects p
-    join deployments d on d.id = p.active_deployment_id join artifacts a on a.id = d.artifact_id`;
+    join orgs o on o.id = p.org_id
+    join deployments d on d.id = p.active_deployment_id join artifacts a on a.id = d.artifact_id
+    where p.taken_down_at is null and o.suspended_at is null`;
   for (const r of rows)
     await routes.put(
       routeKey({ kind: 'production', slug: r.slug }),

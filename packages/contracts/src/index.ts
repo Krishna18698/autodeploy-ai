@@ -41,6 +41,7 @@ export const Me = z.object({
     githubConnected: z
       .boolean()
       .describe('false for an email account that has not linked a GitHub account'),
+    platformAdmin: z.boolean().describe('May take sites down and suspend accounts'),
   }),
   org: z.object({ id: Id, slug: z.string(), name: z.string(), role: Role }),
   orgs: z.array(z.object({ id: Id, slug: z.string(), name: z.string(), role: Role })),
@@ -490,3 +491,31 @@ export const DomainEvent = z.object({
   traceparent: z.string().optional(),
 });
 export type DomainEvent = z.infer<typeof DomainEvent>;
+
+// --- platform admin (abuse handling) ----------------------------------------
+export const AdminSite = z.object({
+  projectId: Id,
+  slug: z.string(),
+  url: z.string(),
+  repo: z.string(),
+  createdAt: Timestamp,
+  live: z.boolean().describe('Has a production deployment'),
+  takenDownAt: Timestamp.nullable(),
+  takenDownReason: z.string().nullable(),
+  org: z.object({
+    id: Id,
+    name: z.string(),
+    slug: z.string(),
+    suspendedAt: Timestamp.nullable(),
+    suspendedReason: z.string().nullable(),
+  }),
+  owners: z.array(z.object({ login: z.string(), email: z.string().nullable() })),
+});
+export const AdminReason = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3)
+    .max(500)
+    .describe('Shown to the account owner and kept in their audit log'),
+});

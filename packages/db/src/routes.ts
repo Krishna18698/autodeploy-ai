@@ -32,9 +32,13 @@ export function routeValue(d: {
   };
 }
 
+/** What a taken-down site's addresses hold: the edge answers with a notice. */
+export const TAKEN_DOWN = { takenDown: true } as const;
+export type TakenDown = typeof TAKEN_DOWN;
+
 export interface RouteStore {
   readonly name: string;
-  put(key: string, value: RouteValue): Promise<void>;
+  put(key: string, value: RouteValue | TakenDown): Promise<void>;
   delete(key: string): Promise<void>;
 }
 
@@ -53,7 +57,7 @@ export class CloudflareKvRouteStore implements RouteStore {
     return `https://api.cloudflare.com/client/v4/accounts/${this.o.accountId}/storage/kv/namespaces/${this.o.namespaceId}/values/${encodeURIComponent(key)}`;
   }
 
-  async put(key: string, value: RouteValue): Promise<void> {
+  async put(key: string, value: RouteValue | TakenDown): Promise<void> {
     const res = await fetch(this.url(key), {
       method: 'PUT',
       headers: { authorization: `Bearer ${this.o.apiToken}`, 'content-type': 'text/plain' },

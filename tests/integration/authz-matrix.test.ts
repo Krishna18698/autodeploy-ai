@@ -46,7 +46,8 @@ afterAll(async () => {
 });
 
 type Role = 'viewer' | 'member' | 'admin' | 'owner';
-type Need = 'public' | Role;
+/** staff: platform admins only, so no role in any org is enough. */
+type Need = 'public' | Role | 'staff';
 const RANK: Record<Role, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
 
 /** One org's worth of every kind of resource a route can name. */
@@ -139,6 +140,12 @@ const POLICY: Record<string, Rule> = {
   'POST /api/v1/webhooks/{id}/test': { need: 'admin' },
 
   'GET /api/v1/audit': { need: 'admin' },
+
+  'GET /api/v1/admin/sites': { need: 'staff' },
+  'POST /api/v1/admin/sites/{id}/takedown': { need: 'staff', body: () => ({ reason: 'abuse' }) },
+  'POST /api/v1/admin/sites/{id}/restore': { need: 'staff' },
+  'POST /api/v1/admin/orgs/{id}/suspend': { need: 'staff', body: () => ({ reason: 'abuse' }) },
+  'POST /api/v1/admin/orgs/{id}/unsuspend': { need: 'staff' },
   'GET /api/v1/quota': { need: 'viewer' },
   'GET /api/v1/analytics': { need: 'viewer' },
 };
@@ -233,6 +240,8 @@ function fill(path: string, f: Fixtures) {
       env: f.envKey,
       slugs: f.project.slug,
       deliveries: f.delivery,
+      sites: f.project.id,
+      orgs: f.orgId,
     };
     const v = name === 'deliveryId' ? f.delivery : pick[seg];
     if (!v) throw new Error(`No fixture for {${name}} after /${seg} in ${path}`);
@@ -345,7 +354,7 @@ describe('Authorization matrix (every route in the API description)', () => {
       for (const op of ordered(ops)) {
         const rule = POLICY[op]!;
         if (rule.need === 'public') continue;
-        const allowed = RANK[role] >= RANK[rule.need];
+        const allowed = rule.need !== 'staff' && RANK[role] >= RANK[rule.need];
         if (allowed && rule.live) continue;
         const r = await call(op, s, { f, self: s.login, orgId: f.orgId });
         const ok = allowed ? r.statusCode !== 401 && r.statusCode !== 403 : r.statusCode === 403;

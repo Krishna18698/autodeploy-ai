@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  AdminSite,
   AnalyticsSummary,
   ApiToken,
   AuditEvent,
@@ -107,6 +108,16 @@ export const useMembers = () =>
   useQuery({
     queryKey: ['members'],
     queryFn: () => api<Array<T<typeof Member>>>('/api/v1/members'),
+  });
+/** Platform admins: sites matching a search, or every one taken down. */
+export const useAdminSites = (q: string, down: boolean) =>
+  useQuery({
+    queryKey: ['admin-sites', q, down],
+    queryFn: () =>
+      api<Array<T<typeof AdminSite>>>(
+        `/api/v1/admin/sites?${down ? 'state=down' : `q=${encodeURIComponent(q)}`}`,
+      ),
+    enabled: down || q.length > 0,
   });
 /** Admins: invitations this org has sent that nobody has answered yet. */
 export const usePendingInvites = (enabled: boolean) =>

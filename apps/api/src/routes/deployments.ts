@@ -30,6 +30,7 @@ import {
 } from '../services/mappers.js';
 import { resolveSource } from '../services/sources.js';
 import { streamDeployment } from '../services/stream.js';
+import { assertServable } from '../services/takedown.js';
 
 const Params = z.object({ id: z.uuid() });
 
@@ -368,6 +369,7 @@ export const deploymentRoutes =
             `Can only roll back to a previously live deployment (this one is ${target.status}).`,
           );
         }
+        await assertServable(deps.sql, req.params.id, deps.env.PLATFORM_DOMAIN);
         const result = await activate(deps.sql, routes, target.id, 'rollback', a.login);
         req.auditTarget = {
           type: 'deployment',

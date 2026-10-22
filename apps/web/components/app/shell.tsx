@@ -13,6 +13,11 @@ import { ApiError, post } from '@/lib/api';
 import { useAllRepairs, useMe, useMyInvitations, useQuota } from '@/lib/queries';
 import { CommandPalette } from './command-palette';
 
+const ADMIN_NAV = {
+  href: '/admin',
+  label: 'Admin',
+  icon: 'M10 2.5l6 2.5v4.5c0 4-2.6 6.9-6 8-3.4-1.1-6-4-6-8V5z',
+};
 const NAV = [
   // Line icons on a 20px grid.
   {
@@ -106,7 +111,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
         <nav aria-label="Main" className={`${menu ? 'block' : 'hidden'} px-2 pb-3 lg:block`}>
           <ul className="flex flex-col gap-0.5">
-            {NAV.map((n) => {
+            {[...NAV, ...(me.data.user.platformAdmin ? [ADMIN_NAV] : [])].map((n) => {
               const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
               return (
                 <li key={n.href}>

@@ -17,6 +17,7 @@ import { authPlugin } from './plugins/auth.js';
 import { registerErrorHandling } from './plugins/errors.js';
 import { idempotencyPlugin } from './plugins/idempotency.js';
 import { rateLimitPlugin } from './plugins/rate-limit.js';
+import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { clientErrorRoutes } from './routes/client-errors.js';
 import { deploymentRoutes } from './routes/deployments.js';
@@ -130,6 +131,7 @@ export async function buildApp(deps: Deps) {
   await app.register(projectRoutes(deps));
   await app.register(deploymentRoutes(deps));
   await app.register(orgRoutes(deps));
+  await app.register(adminRoutes(deps));
   await app.register(internalRoutes(deps));
   await app.register(clientErrorRoutes(deps));
   // Encapsulated so its raw-body JSON parser doesn't affect other routes.
