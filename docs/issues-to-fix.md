@@ -9,6 +9,10 @@ Small things noticed while using the product; newest last.
   small screens, full sweep on desktop. (`apps/web/components/landing/sections/Wipe.tsx`)
 - [x] **Import env keys from a .env file**, or add them by hand. Done 2026-10-18: Environment → Import .env (paste or choose a file; keys previewed, bad lines reported, saved in one transaction).
 
+## Audit 2026-10-22
+
+See [audit-2026-10-22.md](audit-2026-10-22.md): 2 × P1, 4 × P2, 11 × P3, 4 × P4, each with evidence and a fix.
+
 ## Before public
 
 Status on 2026-10-22. The owner's order: finish the product first; opening
