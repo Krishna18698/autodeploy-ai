@@ -9,3 +9,6 @@ ssh_public_key        = "ssh-ed25519 AAAA..."
 cloudflare_api_token  = "..."
 cloudflare_account_id = "..."
 platform_domain       = "autodeploy.eu.org"
+
+# Who may SSH to the VM through Cloudflare Access (access.tf)
+access_owner_email = "you@example.com"

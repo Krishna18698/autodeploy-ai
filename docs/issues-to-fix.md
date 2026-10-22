@@ -44,6 +44,7 @@ the last steps.
 **Upkeep**
 - [x] **Permanent domain:** autodeploy.fyi (Cloudflare Registrar, bought 2026-10-21). autodeploy.dpdns.org redirects to it; drop it from `legacy_domains` once nothing links there (its free registration lapses June 2027). The eu.org application is no longer needed.
 - [ ] **Renew autodeploy.fyi** each October (auto-renew on in Cloudflare).
+- [ ] **Renew the deploy's Access service token** before it lapses (1 year from when `access.tf` is applied): `terraform apply -replace=cloudflare_zero_trust_access_service_token.deploy`, then update the two `CF_ACCESS_*` GitHub secrets.
 - [x] Sentry: errors arrive and are emailed (AUTODEPLOY-1 to -3, confirmed 2026-10-22).
 - [ ] Set the Grafana service account back to Viewer (audit #17).
 

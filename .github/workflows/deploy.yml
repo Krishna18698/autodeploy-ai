@@ -8,6 +8,9 @@ name: deploy
 # Secrets (Settings → Environments → production):
 #   DEPLOY_SSH_KEY        a key only CI uses; its public half is in the VM's authorized_keys
 #   DEPLOY_KNOWN_HOSTS    the VM's host key, so CI never trusts an impostor
+#   CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET
+#                         the Access service token (Terraform output) that lets it past
+#                         the second check in front of SSH
 #   CLOUDFLARE_API_TOKEN  Workers Scripts: Edit, nothing else
 #   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
 # Automatic deploys run only while the repository variable AUTO_DEPLOY is
@@ -39,6 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
+    env:
+      # Cloudflare Access in front of SSH lets this deploy through by its service token.
+      TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,7 +76,7 @@ jobs:
             IdentitiesOnly yes
             StrictHostKeyChecking yes
             ServerAliveInterval 20
-            ProxyCommand cloudflared access ssh --hostname %h
+            ProxyCommand cloudflared access ssh --hostname %h --service-token-id "$TUNNEL_SERVICE_TOKEN_ID" --service-token-secret "$TUNNEL_SERVICE_TOKEN_SECRET"
           EOF
           ssh autodeploy-vm true
 
