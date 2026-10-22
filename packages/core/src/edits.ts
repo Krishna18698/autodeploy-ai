@@ -36,16 +36,34 @@ export function applyEdits(
       continue;
     }
     if (e.find === '') return { ok: false, error: `the edit to ${path} has nothing to replace` };
-    const at = text.indexOf(e.find);
-    if (at < 0) return { ok: false, error: `the text to replace was not found in ${path}` };
-    if (text.indexOf(e.find, at + 1) >= 0)
-      return { ok: false, error: `the text to replace appears more than once in ${path}` };
+    const found = occurrences(text, e.find);
+    if (found.length === 0)
+      return { ok: false, error: `the text to replace was not found in ${path}` };
+    // The retry is told where each copy is, so it can quote enough to pick one.
+    if (found.length > 1)
+      return {
+        ok: false,
+        error: `the text to replace appears more than once in ${path} (starting on lines ${found.map((f) => f.line).join(', ')})`,
+      };
+    const at = found[0]?.at as number;
     now.set(path, text.slice(0, at) + e.replace + text.slice(at + e.find.length));
   }
   const files = [...now]
     .filter(([p, after]) => after !== null && after !== before.get(p))
     .map(([path, after]) => ({ path, before: before.get(path) ?? null, after: after ?? '' }));
   return { ok: true, files };
+}
+
+/** Where `find` occurs in `text`: offset and 1-based starting line. */
+function occurrences(text: string, find: string) {
+  const out: { at: number; line: number }[] = [];
+  let line = 1;
+  let counted = 0;
+  for (let at = text.indexOf(find); at >= 0; at = text.indexOf(find, at + 1)) {
+    for (; counted < at; counted++) if (text.charCodeAt(counted) === 10) line++;
+    out.push({ at, line });
+  }
+  return out;
 }
 
 const CONTEXT = 3;

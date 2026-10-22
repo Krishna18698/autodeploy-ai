@@ -87,6 +87,20 @@ describe('AI edits become real diffs', () => {
     });
   });
 
+  it('says where text that occurs more than once is, for the retry', () => {
+    const json = '{\n  "links": [\n    "home",\n    "about",\n  ]\n}\n';
+    const read = (p: string) => (p === 'nav.json' ? json : undefined);
+    expect(applyEdits(read, [{ path: 'nav.json', find: '",', replace: '"' }])).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('starting on lines 3, 4'),
+    });
+    const r = applyEdits(read, [
+      { path: 'nav.json', find: '"about",\n  ]', replace: '"about"\n  ]' },
+    ]);
+    if (!r.ok) throw new Error(r.error);
+    expect(JSON.parse(r.files[0]?.after ?? '')).toEqual({ links: ['home', 'about'] });
+  });
+
   it('reads fixture diffs back as edits', () => {
     const diff = unifiedDiff('src/cfg.ts', 'a\nport = 3000;\nb\n', "a\nport = '3000';\nb\n");
     const edits = diffToEdits(diff);
