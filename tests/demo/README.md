@@ -1,21 +1,22 @@
 # Demo recording
 
-`apps/web/public/demo/self-heal.mp4` (shown from the landing page's "Watch a
-self-heal" button) is recorded, not edited: a real run of the local stack.
+`apps/web/public/demo/self-heal.mp4` (the landing page's "Watch a self-heal")
+is a real run on the live product, real AI included, with only the waiting
+sped up:
 
 - `acme-shop/`: a small Vite + TypeScript shop with a real type error
-  (`TS2322` in `src/price.ts`). `.autodeploy/mock-fix.diff` is what the mock AI
-  provider proposes; with a real provider configured, the model writes the fix.
-- `record-self-heal.ts`: imports it, waits for the failed build, the AI patch,
-  the rebuild and validation, approves it, and opens the live site.
+  (`TS2322` in `src/price.ts`). The recorder imports it from this repository
+  on GitHub, so it must be on `main`. (`.autodeploy/mock-fix.diff` is only for
+  the local stack's mock AI provider.)
+- `record-self-heal.ts`: imports it through the dashboard, waits for the
+  failed build, the production AI's patch, the rebuild and the browser check,
+  approves it, opens the live site, then deletes the project. It writes the
+  video and `marks.json` (when each phase happened) to `out/`.
+- `edit.mjs`: keeps the people-paced parts at normal speed and speeds up the
+  waiting (build 4×, the AI and the rebuild 8×, publishing 4×), each sped-up
+  part labelled; nothing is cut or reordered. It also takes the poster frame.
 
 ```bash
-cp -R tests/demo/acme-shop /tmp/acme-shop
-pnpm infra:up
-APP_URL=http://localhost:3100 ./scripts/dev.sh start api
-./scripts/dev.sh start worker && ./scripts/dev.sh start edge
-(cd apps/web && pnpm build && API_URL=http://127.0.0.1:4000 npx next start -p 3100) &
-pnpm tsx tests/demo/record-self-heal.ts /tmp/acme-shop
-ffmpeg -i tests/demo/out/*.webm -vf "setpts=PTS/1.15,fps=30" -c:v libx264 -crf 27 \
-  -pix_fmt yuv420p -movflags +faststart -an apps/web/public/demo/self-heal.mp4
+pnpm tsx tests/demo/record-self-heal.ts   # signs in with infra/deploy/.e2e-token
+node tests/demo/edit.mjs                  # needs ffmpeg
 ```

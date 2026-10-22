@@ -2,7 +2,8 @@
 
 import { useRef, useState } from 'react';
 
-// The "watch a self-heal" recording (tests/demo/record-self-heal.ts). The video
+// The "watch a self-heal" recording (tests/demo/record-self-heal.ts, cut by
+// tests/demo/edit.mjs): a real heal on the live product. The video
 // only loads once the dialog opens, so it costs the landing page nothing.
 export function DemoVideo() {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -29,7 +30,7 @@ export function DemoVideo() {
         <span aria-hidden className="text-[10px]">
           ▶
         </span>{' '}
-        Watch a self-heal, 38s
+        Watch a self-heal, 36s
       </button>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the click only closes on the backdrop; Escape already closes a native <dialog> */}
       <dialog
@@ -65,7 +66,8 @@ export function DemoVideo() {
           />
         )}
         <p className="px-4 py-2 font-mono text-[11px] text-muted">
-          Recorded on the local stack; the AI step uses the deterministic mock provider.
+          Recorded on the live product: a real build failure, fixed by the production AI and
+          approved by a person. Waiting is sped up (and labelled); nothing is cut.
         </p>
       </dialog>
     </>
