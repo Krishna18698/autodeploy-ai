@@ -14,6 +14,15 @@ variable "access_owner_email" {
   description = "Who may SSH to the VM (Cloudflare Access emails them a one-time code)."
 }
 
+# "Email me a code": the sign-in the owner uses. (Zero Trust starts with only
+# "Sign in with Cloudflare"; both are offered.)
+resource "cloudflare_zero_trust_access_identity_provider" "email_code" {
+  account_id = var.cloudflare_account_id
+  name       = "Email code"
+  type       = "onetimepin"
+  config     = {}
+}
+
 resource "cloudflare_zero_trust_access_service_token" "deploy" {
   account_id = var.cloudflare_account_id
   name       = "github-actions-deploy"
