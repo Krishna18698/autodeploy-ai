@@ -5,7 +5,8 @@
 // Writes apps/web/public/demo/self-heal.mp4 and self-heal.jpg (the poster: the
 // AI's patch on screen).
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
@@ -97,5 +98,15 @@ execFileSync('ffmpeg', [
   '3',
   join(pub, 'self-heal.jpg'),
 ]);
+// A new recording gets a new address: browsers and Cloudflare keep the video
+// for hours, and would otherwise go on showing the old one under the same URL.
+const version = createHash('sha256')
+  .update(readFileSync(join(pub, 'self-heal.mp4')))
+  .digest('hex')
+  .slice(0, 10);
+writeFileSync(
+  join(here, '../../apps/web/components/landing/demo-version.ts'),
+  `// Written by tests/demo/edit.mjs: the recording's fingerprint, so a new one gets a new URL.\nexport const DEMO_VERSION = '${version}';\n`,
+);
 const length = segments.reduce((t, [a, b, s]) => t + (b - a) / s, 0);
 console.log(`self-heal.mp4: ${length.toFixed(1)} s (from ${m.end.toFixed(0)} s recorded)`);

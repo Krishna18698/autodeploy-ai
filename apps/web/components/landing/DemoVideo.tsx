@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { DEMO_VERSION } from './demo-version';
 
 // The "watch a self-heal" recording (tests/demo/record-self-heal.ts, cut by
 // tests/demo/edit.mjs): a real heal on the live product. The video
@@ -56,8 +57,8 @@ export function DemoVideo() {
         {open && (
           <video
             ref={video}
-            src="/demo/self-heal.mp4"
-            poster="/demo/self-heal.jpg"
+            src={`/demo/self-heal.mp4?v=${DEMO_VERSION}`}
+            poster={`/demo/self-heal.jpg?v=${DEMO_VERSION}`}
             controls
             muted
             playsInline
