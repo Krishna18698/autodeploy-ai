@@ -17,6 +17,10 @@ AutoDeploy (by repository URL plus root directory) and checks live:
   analyzes a built fixture and starts it the way the runtime does, without Docker.
 - `needs-env`: fails until `E2E_GREETING` is set, to exercise the
   failure → environment variable → deploy again path.
+- `hostile-build`: tries to leave the build sandbox (internet, cloud metadata,
+  the API, Postgres, Valkey, the gateway, the host, files outside its folder,
+  the Docker socket) and prints a project secret; the build still succeeds so
+  the test can read each outcome, and the secret's redaction, from its log.
 
 Each prints a marker the test looks for. Lockfiles are committed so installs
 are reproducible.

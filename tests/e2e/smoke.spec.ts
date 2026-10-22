@@ -533,6 +533,52 @@ for (const width of [977, 390]) {
   });
 }
 
+test('a hostile build stays in its sandbox, and its secret stays out of the log', async ({
+  page,
+}) => {
+  // Created through the API so the secret is set before the only build.
+  const req = page.request;
+  let headers: Record<string, string> = {};
+  if (!REMOTE) {
+    const r = await req.post('/auth/dev-login', { data: { login: `e2e-smoke-${RUN}` } });
+    headers = { 'x-csrf-token': (await r.json()).csrfToken };
+  }
+  const src = source('hostile-build');
+  const made = await req.post('/api/v1/projects', {
+    headers,
+    data: { repoUrl: src.url, rootDir: src.root, slug: `e2e-hostile-${RUN}`, deploy: false },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  const { project } = (await made.json()) as { project: { id: string } };
+  created.push(project.id);
+  const secret = `e2e-s3cret-${RUN}-${Math.random().toString(36).slice(2, 10)}`;
+  const put = await req.put(`/api/v1/projects/${project.id}/env/E2E_SECRET`, {
+    headers,
+    data: { value: secret },
+  });
+  expect(put.ok(), await put.text()).toBe(true);
+  const dep = await req.post(`/api/v1/projects/${project.id}/deployments`, { headers, data: {} });
+  expect(dep.ok(), await dep.text()).toBe(true);
+  const d = await waitSettled(req, ((await dep.json()) as { id: string }).id);
+  expect(d.status).toBe('ACTIVE');
+
+  const { lines } = await api<{ lines: { text: string }[] }>(
+    req,
+    `/api/v1/deployments/${d.id}/logs`,
+  );
+  const text = lines.map((l) => l.text).join('\n');
+  const got = Object.fromEntries(
+    [...text.matchAll(/escape: ([\w-]+): (.*)$/gm)].map((m) => [m[1], m[2]?.trim()]),
+  );
+  console.log('  sandbox:', got);
+  for (const way of ['internet', 'metadata', 'api', 'postgres', 'valkey', 'gateway', 'host-ssh'])
+    expect(got[way], way).toMatch(/^blocked/);
+  expect(got['write-outside']).toMatch(/^denied/);
+  expect(got['host-files']).toBe('[]');
+  expect(got.secret).toBe('the token is [redacted]');
+  expect(text).not.toContain(secret);
+});
+
 test('a dashboard crash can be reported, and only from the dashboard', async ({ page }) => {
   const report = {
     kind: 'error',

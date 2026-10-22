@@ -1,0 +1,44 @@
+name: zap
+
+# OWASP ZAP against the live product, run by hand (Actions → zap → Run):
+# a passive baseline of the dashboard, and the API's OpenAPI description in
+# safe mode (-S: passive only; no attack traffic at production). The active
+# API scan runs against a local stack, see tests/security/README.md.
+# Reports are attached to the run; warnings don't fail it, failures do.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: Dashboard URL
+        default: https://app.autodeploy.fyi
+      api_url:
+        description: API URL
+        default: https://api.autodeploy.fyi
+
+permissions:
+  contents: read
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_URL: ${{ inputs.app_url }}
+      API_URL: ${{ inputs.api_url }}
+    steps:
+      - run: mkdir -p zap && chmod 777 zap
+      - name: Dashboard baseline (passive)
+        run: |
+          docker run --rm -v "$PWD/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t "$APP_URL/" -m 2 -I -r web-report.html -J web-report.json
+      - name: API description (passive)
+        if: always()
+        run: |
+          docker run --rm -v "$PWD/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+            zap-api-scan.py -t "$API_URL/openapi.json" -f openapi -S -I -r api-report.html -J api-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-reports
+          path: zap/
