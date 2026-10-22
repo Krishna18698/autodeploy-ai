@@ -42,8 +42,8 @@ export function DemoVideo() {
         className="m-auto w-[min(1100px,calc(100vw-32px))] rounded-[10px] border border-line bg-panel p-0 text-fg backdrop:bg-black/70 backdrop:backdrop-blur-sm"
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <p className="font-mono text-[12px] text-muted">
-            TS2322 → AI patch → rebuilt &amp; validated → approved → live
+          <p className="text-[13px] text-muted">
+            A build fails on a code error → AI writes the fix → it’s tested → you approve → live
           </p>
           <button
             type="button"
