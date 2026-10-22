@@ -24,6 +24,13 @@ const EnvSchema = z
     SENTRY_DSN: z.url().optional(),
     API_PORT: z.coerce.number().int().positive().default(4000),
     PLATFORM_DOMAIN: z.string().min(1),
+    // Users' sites live on their own registrable domain (on the Public Suffix
+    // List), so a site can't set cookies for the dashboard or get its domain
+    // flagged. Unset: sites share PLATFORM_DOMAIN (local development).
+    SITES_DOMAIN: z
+      .string()
+      .optional()
+      .transform((v) => v || undefined),
     APP_URL: z.url().default('http://localhost:3000'),
     API_PUBLIC_URL: z.url().default('http://localhost:4000'),
     /** Server-rendered projects per org: each can hold a container awake (ADR 0008). */
@@ -96,3 +103,7 @@ export function githubAppConfigured(env: Env): boolean {
       env.GITHUB_APP_PRIVATE_KEY,
   );
 }
+
+/** The domain users' sites are served under. */
+export const sitesDomain = (env: Pick<Env, 'SITES_DOMAIN' | 'PLATFORM_DOMAIN'>) =>
+  env.SITES_DOMAIN ?? env.PLATFORM_DOMAIN;

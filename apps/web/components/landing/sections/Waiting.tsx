@@ -11,7 +11,7 @@ const LINES = [
   ['', 'dist/assets/index-Bgopu29T.js  142.18 kB │ gzip: 45.71 kB', 'text-muted'],
   ['', '✓ built in 1.82s', 'text-ok'],
   ['▸', 'validating in headless Chromium… 200 OK, 0 errors', 'text-run'],
-  ['▸', 'live at shop.autodeploy.fyi', 'text-ok'],
+  ['▸', 'live at shop.autodeploy.dpdns.org', 'text-ok'],
 ] as const;
 const STEPS = ['Analyze', 'Queue', 'Build', 'Validate', 'Live'];
 

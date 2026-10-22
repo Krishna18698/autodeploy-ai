@@ -15,6 +15,10 @@ See [audit-2026-10-22.md](audit-2026-10-22.md): 2 × P1, 4 × P2, 11 × P3, 4 ×
 
 ## Before public
 
+**Site isolation (from the 2026-10-22 audit, finding #1)**
+- [ ] **Admin takedown tool:** take a site offline and suspend its account in minutes (today it means editing the database). Needed before opening sign-ups, to act on abuse reports.
+- [ ] **A sites domain of our own on the Public Suffix List:** user sites now live on `autodeploy.dpdns.org`, separate from the dashboard (dpdns.org is on the list, so browsers and Safe Browsing treat it apart from autodeploy.fyi). But all user sites share that one entry, so one site can set cookies for another and one phishing site can get every user site flagged. Vercel's fix: `vercel.app` is itself on the list. Ours: buy a sites domain for 2+ years (the list requires it; free dpdns renews yearly) and submit it; approval takes weeks, browsers pick it up over months.
+
 Status on 2026-10-22. The owner's order: finish the product first; opening
 sign-ups, making the GitHub App public and making the repository public are
 the last steps.

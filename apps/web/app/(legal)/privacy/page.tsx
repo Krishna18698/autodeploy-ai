@@ -75,18 +75,22 @@ export default function Privacy() {
       <p>
         When a build fails and AI repair is on for the project, an excerpt of the build log and the
         source files it points to are sent to AI providers to suggest a fix: <strong>NVIDIA</strong>{' '}
-        (build.nvidia.com) first, <strong>OpenRouter</strong> as a fallback, and{' '}
-        <strong>Cloudflare Workers AI</strong> to classify the error. Known secrets and environment
-        variable values are masked in logs before anything is stored or sent. These are free tiers,
-        and the providers may keep inputs under their own terms. AI repair is on by default; switch
-        it off per project in its Build settings if you don&rsquo;t want its code shared. A
-        suggested fix is never applied to your repository without your approval.
+        (build.nvidia.com) first, then <strong>OpenRouter</strong>, then{' '}
+        <strong>Cloudflare Workers AI</strong> if the others are unavailable. Cloudflare Workers AI
+        also receives the log excerpt to classify the error. Known secrets and environment variable
+        values are masked in logs before anything is stored or sent. These are free tiers, and the
+        providers may keep inputs under their own terms. AI repair is on by default; switch it off
+        per project in its Build settings if you don&rsquo;t want its code shared. A suggested fix
+        is never applied to your repository without your approval.
       </p>
 
       <h2>4. Who processes data for me</h2>
       <ul>
         <li>Oracle Cloud: servers and database (Mumbai, India)</li>
-        <li>Cloudflare: network, edge serving of sites, Workers AI (worldwide)</li>
+        <li>
+          Cloudflare: network, edge serving of sites, Workers AI for error classification and AI
+          repair (worldwide)
+        </li>
         <li>Vercel: hosting for this dashboard (worldwide)</li>
         <li>Backblaze B2: built sites, logs, screenshots and encrypted backups (USA)</li>
         <li>GitHub: sign-in and fetching your repositories (USA)</li>

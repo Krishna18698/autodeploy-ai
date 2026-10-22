@@ -11,7 +11,7 @@ const STAGES: Stage[] = [
   { id: 'build', label: 'Build', sub: 'pnpm build' },
   { id: 'recover', label: 'Recover', sub: 'rule R-004 · node engine' },
   { id: 'validate', label: 'Validate', sub: 'chromium · 0 errors' },
-  { id: 'live', label: 'Live', sub: 'shop.autodeploy.fyi' },
+  { id: 'live', label: 'Live', sub: 'shop.autodeploy.dpdns.org' },
 ];
 
 // One loop of the story: build fails, a rule repairs it, it rebuilds and goes live.

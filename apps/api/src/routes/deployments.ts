@@ -15,6 +15,7 @@ import { enqueue, requestCancel } from '@autodeploy/queue';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
+import { sitesDomain } from '../env.js';
 import { AppError, conflict, notFound, unavailable } from '../lib/errors.js';
 import { authOf, requireRole } from '../plugins/auth.js';
 import { createDeployment } from '../services/deployments.js';
@@ -35,7 +36,8 @@ const Params = z.object({ id: z.uuid() });
 export const deploymentRoutes =
   (deps: Deps): FastifyPluginAsyncZod =>
   async (app) => {
-    const { PLATFORM_DOMAIN: domain, API_PUBLIC_URL: apiUrl } = deps.env;
+    const domain = sitesDomain(deps.env);
+    const apiUrl = deps.env.API_PUBLIC_URL;
     const routes = new PostgresRouteStore();
 
     async function load(orgId: string, id: string) {

@@ -19,6 +19,7 @@ import { withOrg } from '@autodeploy/db';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
+import { sitesDomain } from '../env.js';
 import { AppError, badRequest, conflict, notFound } from '../lib/errors.js';
 import { authOf, requireRole } from '../plugins/auth.js';
 import { createDeployment } from '../services/deployments.js';
@@ -30,7 +31,7 @@ import { analyzeSource, resolveSource, suggestSlug } from '../services/sources.j
 export const projectRoutes =
   (deps: Deps): FastifyPluginAsyncZod =>
   async (app) => {
-    const domain = deps.env.PLATFORM_DOMAIN;
+    const domain = sitesDomain(deps.env);
     const heavy = { rateLimit: { limit: 20, windowMs: 60_000 } };
 
     // The repo picker: repositories the GitHub App can see *for this user* —
@@ -102,7 +103,7 @@ export const projectRoutes =
       async (req) => {
         const a = authOf(req);
         const src = await resolveSource(deps, req.body.repoUrl, req.body.ref, a);
-        const analysis = await analyzeSource(deps, src, req.body.rootDir);
+        const analysis = await analyzeSource(deps, src, req.body.rootDir, a.orgId);
         return {
           repo: { fullName: src.fullName, ref: src.ref, commitSha: src.commitSha },
           analysis,
@@ -123,7 +124,7 @@ export const projectRoutes =
       },
       async (req) => {
         const slug = req.params.slug.toLowerCase();
-        const domain = deps.env.PLATFORM_DOMAIN;
+        const domain = sitesDomain(deps.env);
         if (RESERVED_LABELS.has(slug))
           return { slug, domain, available: false, reason: 'reserved' };
         if (!isValidSlug(slug))
@@ -154,7 +155,7 @@ export const projectRoutes =
       async (req, reply) => {
         const a = authOf(req);
         const src = await resolveSource(deps, req.body.repoUrl, undefined, a);
-        const analysis = await analyzeSource(deps, src, req.body.rootDir);
+        const analysis = await analyzeSource(deps, src, req.body.rootDir, a.orgId);
         const slug = (
           req.body.slug ?? (await firstFreeSlug(deps, suggestSlug(src.fullName)))
         ).toLowerCase();

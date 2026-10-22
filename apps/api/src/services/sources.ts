@@ -12,7 +12,7 @@ import {
   readTree,
 } from '@autodeploy/github';
 import type { Deps } from '../deps.js';
-import { badRequest } from '../lib/errors.js';
+import { AppError, badRequest } from '../lib/errors.js';
 
 // Resolves "what code is this?" for a repo URL + ref, and analyzes it.
 // Analysis is a pure function of (repo, commit, root dir), so it's cached
@@ -126,15 +126,43 @@ export async function resolveSource(
   };
 }
 
+// Analysis runs inside the API (512 MB): a smaller download cap than builds
+// get, and one uncached analysis per account at a time, so a burst of large
+// repositories can't fill its disk or memory.
+const ANALYSIS_LIMITS = { maxBytes: 100 * 1024 * 1024, maxFiles: 20_000 };
+const ANALYSIS_LOCK_S = 120;
+
 export async function analyzeSource(
   deps: Deps,
   src: ResolvedSource,
   rootDir = '.',
+  orgId?: string,
 ): Promise<Analysis> {
   const cacheKey = `analysis:v${ANALYSIS_VERSION}:${src.fullName}:${src.commitSha}:${rootDir}`;
   const cached = src.kind === 'github' ? await deps.valkey.get(cacheKey) : null;
   if (cached) return JSON.parse(cached) as Analysis;
 
+  const lock = orgId ? `analysis-running:${orgId}` : null;
+  if (lock && (await deps.valkey.set(lock, '1', 'EX', ANALYSIS_LOCK_S, 'NX')) !== 'OK')
+    throw new AppError(
+      429,
+      'analysis_busy',
+      'Another analysis is running for this account. Try again in a moment.',
+      { headers: { 'retry-after': '10' } },
+    );
+  try {
+    return await analyzeUncached(deps, src, rootDir, cacheKey);
+  } finally {
+    if (lock) await deps.valkey.del(lock);
+  }
+}
+
+async function analyzeUncached(
+  deps: Deps,
+  src: ResolvedSource,
+  rootDir: string,
+  cacheKey: string,
+): Promise<Analysis> {
   await mkdir(deps.env.WORK_DIR, { recursive: true });
   const dir = await mkdtemp(join(deps.env.WORK_DIR, 'analyze-'));
   try {
@@ -145,6 +173,7 @@ export async function analyzeSource(
         src.commitSha,
         dir,
         await readToken(deps, src.installationId),
+        ANALYSIS_LIMITS,
       );
     const tree = await readTree(dir);
     const analysis = analyze(tree, rootDir);

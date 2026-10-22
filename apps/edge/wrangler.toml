@@ -25,8 +25,10 @@ workers_dev = false
 
 [env.production.vars]
 PLATFORM_DOMAIN = "autodeploy.fyi"
-# Earlier domains: every address on them redirects to the same one on PLATFORM_DOMAIN.
-LEGACY_DOMAINS = "autodeploy.dpdns.org"
+# Users' sites: dpdns.org is on the Public Suffix List, so autodeploy.dpdns.org is
+# a separate site from autodeploy.fyi to browsers and Safe Browsing. Site
+# addresses on autodeploy.fyi redirect here; app./www. here go to the dashboard.
+SITES_DOMAIN = "autodeploy.dpdns.org"
 ROUTE_MODE = "kv"
 API_URL = "https://api.autodeploy.fyi"
 APP_ORIGIN = "https://autodeploy-zeta.vercel.app"

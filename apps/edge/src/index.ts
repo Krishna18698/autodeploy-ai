@@ -28,18 +28,30 @@ export interface Env {
   APP_ORIGIN?: string;
   /** The SSR runtime gateway (ADR 0008), reached through the tunnel. */
   RUNTIME_URL?: string;
-  /** Earlier platform domains, comma-separated: their addresses redirect to PLATFORM_DOMAIN. */
-  LEGACY_DOMAINS?: string;
+  /**
+   * Where users' sites live: a separate registrable domain (on the Public
+   * Suffix List), so a site can neither set cookies for the dashboard nor get
+   * the dashboard's domain flagged. Unset: sites share PLATFORM_DOMAIN.
+   */
+  SITES_DOMAIN?: string;
 }
 
-/** The same address under the current platform domain, for a host under an earlier one. */
-export function movedHost(host: string, env: Pick<Env, 'PLATFORM_DOMAIN' | 'LEGACY_DOMAINS'>) {
-  for (const old of (env.LEGACY_DOMAINS ?? '')
-    .split(',')
-    .map((d) => d.trim())
-    .filter(Boolean)) {
-    if (host === old) return `app.${env.PLATFORM_DOMAIN}`;
-    if (host.endsWith(`.${old}`)) return `${host.slice(0, -old.length)}${env.PLATFORM_DOMAIN}`;
+const sitesOf = (env: Pick<Env, 'PLATFORM_DOMAIN' | 'SITES_DOMAIN'>) =>
+  env.SITES_DOMAIN || env.PLATFORM_DOMAIN;
+
+/**
+ * Where an address lives now, for one on the wrong domain: a site address on
+ * the dashboard's domain moves to the sites domain, and the dashboard's own
+ * names on the sites domain (its earlier home) point back to the dashboard.
+ */
+export function movedHost(host: string, env: Pick<Env, 'PLATFORM_DOMAIN' | 'SITES_DOMAIN'>) {
+  const app = env.PLATFORM_DOMAIN;
+  const sites = sitesOf(env);
+  if (sites === app) return null;
+  if (host === sites || host === `app.${sites}` || host === `www.${sites}`) return `app.${app}`;
+  if (host.endsWith(`.${app}`)) {
+    const label = host.slice(0, -app.length - 1);
+    if (!label.includes('.') && !RESERVED_LABELS.has(label)) return `${label}.${sites}`;
   }
   return null;
 }
@@ -71,8 +83,16 @@ async function resolveRoute(env: Env, host: string, route: SiteRoute): Promise<R
   return res.ok ? ((await res.json()) as RouteValue) : null;
 }
 
-function candidates(pathname: string): string[] {
-  const p = decodeURIComponent(pathname).replace(/^\/+/, '');
+/** The path as a storage key, or null when its %-encoding is malformed (e.g. "/%"). */
+export function decodePath(pathname: string): string | null {
+  try {
+    return decodeURIComponent(pathname).replace(/^\/+/, '');
+  } catch {
+    return null;
+  }
+}
+
+function candidates(p: string): string[] {
   if (p.split('/').some((seg) => seg === '..')) return [];
   if (p === '' || p.endsWith('/')) return [`${p}index.html`];
   const hasExt = /\.[a-z0-9]{1,8}$/i.test(p);
@@ -223,16 +243,24 @@ export default {
       return Response.redirect(`https://${moved}${url.pathname}${url.search}`, isRead ? 301 : 308);
     // The bare domain and www have no pages of their own; the landing page lives
     // with the dashboard. Temporary, so the apex can get its own page later.
+    // HSTS here, on the bare domain, covers every subdomain (all HTTPS already)
+    // and makes the domain eligible for browsers' preload list.
     if (reqHost === env.PLATFORM_DOMAIN || reqHost === `www.${env.PLATFORM_DOMAIN}`)
-      return Response.redirect(`https://${appHost}${url.pathname}${url.search}`, 302);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: `https://${appHost}${url.pathname}${url.search}`,
+          'strict-transport-security': 'max-age=63072000; includeSubDomains; preload',
+        },
+      });
     if (env.APP_ORIGIN && reqHost === appHost)
       return serveApp(request, env as Env & { APP_ORIGIN: string }, appHost);
-    const route = parseSiteHost(reqHost, env.PLATFORM_DOMAIN);
+    const route = parseSiteHost(reqHost, sitesOf(env));
     if (!route) {
-      // app/api/www and the bare domain have origins of their own: pass through.
-      // Anything else under the domain is a mistyped site address; answer it
-      // here instead of passing it on to an origin that doesn't exist (a 522).
-      const suffix = `.${env.PLATFORM_DOMAIN}`;
+      // api/run/ssh have origins of their own: pass through. Anything else
+      // under the sites domain is a mistyped site address; answer it here
+      // instead of passing it on to an origin that doesn't exist (a 522).
+      const suffix = `.${sitesOf(env)}`;
       const label = reqHost.endsWith(suffix) ? reqHost.slice(0, -suffix.length) : '';
       if (!label || RESERVED_LABELS.has(label)) return fetch(request);
       return notFound('No site lives at this address.');
@@ -285,7 +313,8 @@ export default {
     if (target.mode === 'ssr') {
       // Build assets and public/ files come straight from storage (cached at
       // the edge, no container woken); pages and API routes go to the server.
-      const key = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+      // An undecodable path is the app's to answer, not a storage key.
+      const key = decodePath(url.pathname);
       if (isRead && key && files?.has(key)) {
         const asset = await tryKey(key).catch(() => null);
         if (asset) return withDeployment(asset, target, request.method);
@@ -293,9 +322,11 @@ export default {
       return proxyRuntime(request, env, reqHost, target, url);
     }
 
+    const staticPath = decodePath(url.pathname);
+    if (staticPath === null) return notFound('This address is not valid.', 400);
     try {
       let res: Response | null = null;
-      for (const key of candidates(url.pathname)) {
+      for (const key of candidates(staticPath)) {
         res = await tryKey(key);
         if (res) break;
       }

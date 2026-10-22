@@ -7,9 +7,10 @@ export const LEGAL = {
   courts: 'Bengaluru, Karnataka',
   /** Public contact and grievance address (Cloudflare Email Routing forwards it). */
   email: 'hello@autodeploy.fyi',
-  effective: '21 October 2026',
+  effective: '22 October 2026',
   appUrl: 'https://app.autodeploy.fyi',
-  siteDomain: 'autodeploy.fyi',
+  /** Where users' sites live: apart from the dashboard (see the edge's SITES_DOMAIN). */
+  siteDomain: 'autodeploy.dpdns.org',
 } as const;
 
 export const LEGAL_PAGES = [

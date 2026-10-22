@@ -3,6 +3,7 @@ import { safeEqual } from '@autodeploy/crypto';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
+import { sitesDomain } from '../env.js';
 import { forbidden, notFound } from '../lib/errors.js';
 
 // Origin-side route resolution for the edge Worker in local development (in
@@ -33,7 +34,7 @@ export const internalRoutes =
         const token = req.headers['x-internal-token'];
         if (typeof token !== 'string' || !safeEqual(token, deps.env.INTERNAL_TOKEN))
           throw forbidden();
-        const route = parseSiteHost(req.params.host, deps.env.PLATFORM_DOMAIN);
+        const route = parseSiteHost(req.params.host, sitesDomain(deps.env));
         if (!route) throw notFound('Site');
 
         const rows =

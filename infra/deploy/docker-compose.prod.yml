@@ -7,6 +7,8 @@ name: autodeploy
 x-app-env: &app-env
   NODE_ENV: production
   PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+  # Users' sites, on a separate registrable domain (see the API's env.ts).
+  SITES_DOMAIN: ${SITES_DOMAIN:-}
   APP_URL: https://app.${PLATFORM_DOMAIN}
   API_PUBLIC_URL: https://api.${PLATFORM_DOMAIN}
   DATABASE_URL: postgres://autodeploy:${POSTGRES_PASSWORD}@postgres:5432/autodeploy

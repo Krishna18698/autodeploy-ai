@@ -122,7 +122,7 @@ tests/     fixtures (failure corpus)
 
 **Live** at [app.autodeploy.fyi](https://app.autodeploy.fyi)
 (free for everyone, with per-account limits; sites are served at
-`<name>.autodeploy.fyi`):
+`<name>.autodeploy.dpdns.org`):
 
 - API, worker, SSR gateway, Postgres, Valkey and Kafka on one Oracle Cloud
   Always Free VM (Ampere A1), reached only through a Cloudflare Tunnel.

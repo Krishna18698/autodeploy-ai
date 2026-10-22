@@ -32,7 +32,8 @@ export function sendProblem(
     .code(status)
     .type('application/problem+json')
     .send({
-      type: `https://autodeploy.dev/problems/${code}`,
+      // A URI we own (RFC 9457 type); `code` carries the same name for programs.
+      type: `https://autodeploy.fyi/problems/${code}`,
       title: TITLES[status] ?? 'Error',
       status,
       code,

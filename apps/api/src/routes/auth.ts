@@ -8,7 +8,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { githubAppConfigured } from '../env.js';
-import { AppError, badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
 import { authOf, requireRole, sessionCookie } from '../plugins/auth.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
 
@@ -192,35 +192,56 @@ export const authRoutes =
       '/auth/github/callback',
       {
         config: strict,
-        schema: { hide: true, querystring: z.object({ code: z.string(), state: z.string() }) },
+        schema: {
+          hide: true,
+          // GitHub sends `error` instead of `code` when the person cancels.
+          querystring: z.object({
+            code: z.string().optional(),
+            state: z.string().optional(),
+            error: z.string().optional(),
+          }),
+        },
       },
       async (req, reply) => {
+        // A person lands here in a browser: failures go back to the sign-in
+        // page with a code it turns into a fixed message (never text from the URL).
+        const toLogin = (error: 'expired' | 'cancelled' | 'github' | 'closed' | 'relogin') =>
+          reply.redirect(`${deps.env.APP_URL}/login?error=${error}`);
         const [linkState, linkUser] = (req.cookies[linkCookie(deps.env)] ?? '').split('.');
         const linking = Boolean(linkState) && linkState === req.query.state;
         if (linking) reply.clearCookie(linkCookie(deps.env), { path: '/' });
         else {
           const expected = req.cookies[stateCookie(deps.env)];
           reply.clearCookie(stateCookie(deps.env), { path: '/' });
-          if (!expected || expected !== req.query.state)
-            throw forbidden('OAuth state mismatch; start sign-in again');
+          if (req.query.error) return toLogin('cancelled');
+          if (!expected || expected !== req.query.state) return toLogin('expired');
         }
-        const token = await exchangeOAuthCode(
-          {
-            clientId: deps.env.GITHUB_APP_CLIENT_ID ?? '',
-            clientSecret: deps.env.GITHUB_APP_CLIENT_SECRET ?? '',
-          },
-          req.query.code,
-        );
-        const res = await fetch('https://api.github.com/user', {
-          headers: { authorization: `Bearer ${token}`, 'user-agent': 'autodeploy' },
-        });
-        if (!res.ok) throw new AppError(502, 'github_error', 'Could not read your GitHub profile');
-        const gh = (await res.json()) as GitHubUser;
+        if (req.query.error || !req.query.code)
+          return linking
+            ? reply.redirect(`${deps.env.APP_URL}/settings?tab=account`)
+            : toLogin('cancelled');
+        let gh: GitHubUser;
+        try {
+          const token = await exchangeOAuthCode(
+            {
+              clientId: deps.env.GITHUB_APP_CLIENT_ID ?? '',
+              clientSecret: deps.env.GITHUB_APP_CLIENT_SECRET ?? '',
+            },
+            req.query.code,
+          );
+          const res = await fetch('https://api.github.com/user', {
+            headers: { authorization: `Bearer ${token}`, 'user-agent': 'autodeploy' },
+          });
+          if (!res.ok) throw new Error(`GitHub /user ${res.status}`);
+          gh = (await res.json()) as GitHubUser;
+        } catch (err) {
+          req.log.warn({ err }, 'GitHub sign-in failed');
+          return toLogin('github');
+        }
         if (linking) {
           // Still the same signed-in person who started it.
           const a = req.auth;
-          if (a?.via !== 'session' || a.userId !== linkUser)
-            throw forbidden('Sign in again, then connect GitHub.');
+          if (a?.via !== 'session' || a.userId !== linkUser) return toLogin('relogin');
           const settings = `${deps.env.APP_URL}/settings?tab=account&github=`;
           const linked = await deps.sql`
             update users set github_id = ${gh.id}, name = coalesce(name, ${gh.name}),
@@ -235,9 +256,7 @@ export const authRoutes =
           return reply.redirect(`${settings}${linked.length ? 'connected' : 'taken'}`);
         }
         const allow = deps.env.ALLOWED_GITHUB_LOGINS;
-        if (allow.length > 0 && !allow.includes(gh.login.toLowerCase())) {
-          throw forbidden('Sign-ups are not open yet.');
-        }
+        if (allow.length > 0 && !allow.includes(gh.login.toLowerCase())) return toLogin('closed');
         const { userId, orgId } = await upsertUserWithOrg(deps.sql, {
           githubId: gh.id,
           login: gh.login,

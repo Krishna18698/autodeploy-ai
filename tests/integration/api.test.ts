@@ -439,6 +439,18 @@ describe('Deleting an account', () => {
   });
 });
 
+describe('GitHub sign-in in a browser', () => {
+  it('sends failures back to the sign-in page with a fixed code, never JSON', async () => {
+    const stale = await app.inject({ url: '/auth/github/callback?code=x&state=y' });
+    expect(stale.statusCode).toBe(302);
+    expect(stale.headers.location).toMatch(/\/login\?error=expired$/);
+    const cancelled = await app.inject({
+      url: '/auth/github/callback?error=access_denied&state=y',
+    });
+    expect(cancelled.headers.location).toMatch(/\/login\?error=cancelled$/);
+  });
+});
+
 describe('Per-account limits', () => {
   const env = {
     MAX_PROJECTS_PER_ORG: 2,

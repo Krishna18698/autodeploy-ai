@@ -14,10 +14,13 @@ import * as tar from 'tar';
 export type RepoRef = { owner: string; repo: string };
 
 export function parseRepoUrl(url: string): RepoRef {
-  const m = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(
-    url.trim(),
-  );
-  if (!m?.[1] || !m[2])
+  // Owners are GitHub logins (letters, digits, hyphens); repo names may hold
+  // dots (".github") but "." and ".." would walk up the API's URL path.
+  const m =
+    /^(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(
+      url.trim(),
+    );
+  if (!m?.[1] || !m[2] || m[2] === '.' || m[2] === '..')
     throw new Error('expected a GitHub repository URL like https://github.com/owner/repo');
   return { owner: m[1], repo: m[2] };
 }

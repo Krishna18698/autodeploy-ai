@@ -7,10 +7,19 @@ import { AuthCard, Field, Notice } from '@/components/app/auth-card';
 import { Providers } from '@/components/app/providers';
 import { Button } from '@/components/ui/button';
 import { ApiError, post } from '@/lib/api';
+import { safeNext } from '@/lib/safe-next';
 
 // Local development and the local e2e build only; never shown in production.
 const DEV_LOGIN =
   process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_DEV_LOGIN === '1';
+
+const SIGN_IN_ERRORS: Record<string, string> = {
+  expired: 'That sign-in link expired or was already used. Please try again.',
+  cancelled: 'GitHub sign-in was cancelled.',
+  github: 'GitHub didn’t answer as expected. Please try again in a moment.',
+  closed: 'Sign-ups are not open yet.',
+  relogin: 'Sign in again, then connect GitHub from Settings.',
+};
 
 function LoginInner() {
   const router = useRouter();
@@ -20,11 +29,14 @@ function LoginInner() {
   );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // Set by the GitHub sign-in when it sends someone back: fixed messages only.
+  const [error, setError] = useState<string | null>(
+    () => SIGN_IN_ERRORS[params.get('error') ?? ''] ?? null,
+  );
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [loading, setLoading] = useState<'email' | 'dev' | null>(null);
-  const next = params.get('next') ?? '/overview';
-  const goNext = () => router.replace(next.startsWith('/') ? next : '/overview');
+  const next = safeNext(params.get('next'));
+  const goNext = () => router.replace(next);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -58,7 +58,12 @@ function page(status: number, message: string) {
 }
 
 const server = createServer(async (req, res) => {
-  if (req.url === '/__gateway/health') {
+  // Health is for the container's own check (loopback) and token holders; the
+  // public run. hostname shouldn't reveal how many apps are awake.
+  const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(
+    req.socket.remoteAddress ?? '',
+  );
+  if (req.url === '/__gateway/health' && (loopback || authorized(req.headers))) {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', awake: runtimes.awake }));
     return;
