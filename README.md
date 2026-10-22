@@ -127,7 +127,8 @@ tests/     fixtures (failure corpus)
 - API, worker, SSR gateway, Postgres, Valkey and Kafka on one Oracle Cloud
   Always Free VM (Ampere A1), reached only through a Cloudflare Tunnel.
 - Sites served by a Cloudflare Worker from Backblaze B2; the dashboard on Vercel,
-  served on the app hostname by the same Worker.
+  served on the app hostname through the tunnel (Caddy joins it with the API
+  as one site), so it never shares the Worker's daily request quota.
 - GitHub App sign-in and private repositories.
 - The production smoke suite passes 16/16, including a real AI repair approved
   in the dashboard.

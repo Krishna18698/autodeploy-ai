@@ -11,7 +11,7 @@ Small things noticed while using the product; newest last.
 
 ## Audit 2026-10-22
 
-See [audit-2026-10-22.md](audit-2026-10-22.md): 2 × P1, 4 × P2, 11 × P3, 4 × P4, each with evidence and a fix.
+See [audit-2026-10-22.md](audit-2026-10-22.md): 2 × P1, 5 × P2, 11 × P3, 4 × P4, each with evidence and a fix, and a status table. All fixed in code except #14 (Cloudflare Access on SSH), #16 (rpcbind) and #17 (Grafana role), which need the owner, and #18 (accepted).
 
 ## Before public
 
@@ -41,7 +41,7 @@ the last steps.
 - [x] **Permanent domain:** autodeploy.fyi (Cloudflare Registrar, bought 2026-10-21). autodeploy.dpdns.org redirects to it; drop it from `legacy_domains` once nothing links there (its free registration lapses June 2027). The eu.org application is no longer needed.
 - [ ] **Renew autodeploy.fyi** each October (auto-renew on in Cloudflare).
 - [ ] Confirm a real error shows up in Sentry (only the key-check test event so far).
-- [ ] Optional: set the Grafana service account back to Viewer.
+- [ ] Set the Grafana service account back to Viewer (audit #17).
 
 **Done since 2026-10-19**
 - [x] Per-account limits (10 projects, 3 server-rendered, 20 deploys/day, 300 build
