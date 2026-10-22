@@ -100,6 +100,17 @@ jobs:
 
       - name: Live
         run: |
-          curl -fsS --retry 6 --retry-all-errors --max-time 10 https://api.autodeploy.fyi/healthz
-          curl -fsS -o /dev/null --retry 6 --retry-all-errors --max-time 10 https://app.autodeploy.fyi/login
+          # Up to ~3 minutes per address; an answer other than 200 is logged with
+          # the headers that say who gave it (Cloudflare, Caddy or Vercel).
+          check() {
+            for i in $(seq 1 8); do
+              code=$(curl -s -o /dev/null -D /tmp/h -w '%{http_code}' --max-time 10 "$1" || true)
+              [ "$code" = 200 ] && { echo "✓ $1"; return 0; }
+              echo "  $1 → $code ($(grep -iE '^(server|via|cf-mitigated|x-vercel-id|x-vercel-error):' /tmp/h 2>/dev/null | tr -d '\r' | tr '\n' ' '))"
+              sleep $((i * 5))
+            done
+            return 1
+          }
+          check https://api.autodeploy.fyi/healthz
+          check https://app.autodeploy.fyi/login
           echo "✓ deployed ${{ github.event.workflow_run.head_sha || github.sha }}"
