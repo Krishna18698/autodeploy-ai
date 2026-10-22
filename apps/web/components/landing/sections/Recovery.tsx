@@ -1,62 +1,125 @@
+import type { ReactNode } from 'react';
 import { FadeIn, SectionHead } from '../FadeIn';
 
-const CHECKS = ['scope', 'size', 'no secrets', 'rebuilt + validated'];
+// One repair, told the way the dashboard's Recovery tab shows it: what broke,
+// what the AI found, the fix it tested, and the approval it waits for.
+type Tone = 'fail' | 'ai' | 'ok' | 'warn';
+const DOT: Record<Tone, string> = {
+  fail: 'bg-fail',
+  ai: 'bg-ai',
+  ok: 'bg-ok',
+  warn: 'bg-warn animate-[pulse-dot_1.4s_ease-in-out_infinite]',
+};
+const RING: Record<Tone, string> = {
+  fail: 'border-fail/50',
+  ai: 'border-ai/50',
+  ok: 'border-ok/40',
+  warn: 'border-warn/50',
+};
+
+function Step({
+  tone,
+  title,
+  meta,
+  last = false,
+  children,
+}: {
+  tone: Tone;
+  title: string;
+  meta: string;
+  last?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <li className="relative grid grid-cols-[24px_minmax(0,1fr)] gap-x-3">
+      {!last && <span aria-hidden className="absolute -bottom-5 left-[11px] top-7 w-px bg-line" />}
+      <span
+        className={`relative grid size-6 place-items-center rounded-full border ${RING[tone]} bg-bg/60`}
+      >
+        <span className={`size-2 rounded-full ${DOT[tone]}`} />
+      </span>
+      <div>
+        <div className="flex min-h-6 items-center justify-between gap-3">
+          <span className="text-[13px] font-medium">{title}</span>
+          <span className="shrink-0 font-mono text-[10.5px] text-muted">{meta}</span>
+        </div>
+        <div className="mt-2">{children}</div>
+      </div>
+    </li>
+  );
+}
+
+const code = 'font-mono text-[12px] text-fg';
 
 export function Recovery() {
   return (
     <section id="recovery" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center [&>*]:min-w-0">
-        <div className="order-2 flex flex-col gap-3 lg:order-1">
-          <FadeIn>
-            <div className="glass rounded-2xl bg-panel/80 p-4 font-mono text-[12px]">
-              <div className="mb-2 flex items-center justify-between gap-3 text-muted">
-                <span className="truncate">docs ▸ #131 ▸ attempt 1</span>
-                <span className="shrink-0 rounded-full border border-fail/40 bg-fail/10 px-2 py-0.5 text-fail">
-                  ● Build failed
+        <FadeIn className="order-2 lg:order-1">
+          <div className="relative">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -inset-10 rounded-full bg-[radial-gradient(closest-side,rgb(192_132_252/0.12),transparent)] blur-2xl"
+            />
+            <div className="glass relative rounded-2xl bg-panel/80 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)]">
+              <div className="flex items-center justify-between gap-3 font-mono text-[11px] text-muted">
+                <span className="truncate">
+                  docs <span className="text-fg/60">▸</span> deploy #131
+                </span>
+                <span className="shrink-0 rounded-full border border-warn/40 bg-warn/10 px-2 py-0.5 text-warn">
+                  waiting for approval
                 </span>
               </div>
-              <div className="text-muted">src/Header.tsx(14,31):</div>
-              <div className="rounded bg-fail/10 px-1 text-fail">
-                error TS2339: Property &apos;user&apos; does not exist on type &apos;Props&apos;.
-              </div>
+
+              <ol className="mt-5 grid gap-5">
+                <Step tone="fail" title="Build failed" meta="attempt 1">
+                  <div className="rounded-lg border border-fail/25 bg-fail/[0.06] px-3 py-2 font-mono text-[11px] leading-5">
+                    <div className="text-muted">src/Header.tsx, line 14</div>
+                    <div className="text-fail">
+                      Property &apos;user&apos; does not exist on type &apos;Props&apos;
+                    </div>
+                  </div>
+                </Step>
+
+                <Step tone="ai" title="No known fix, so the AI looked" meta="6 s">
+                  <p className="text-[13px] leading-relaxed text-fg/80">
+                    The prop was renamed to <code className={code}>account</code>, but{' '}
+                    <code className={code}>Header</code> still reads{' '}
+                    <code className={code}>user</code>.
+                  </p>
+                </Step>
+
+                <Step tone="ok" title="Fix tested in a fresh build" meta="attempt 2 · 38 s">
+                  <div className="overflow-hidden rounded-lg border border-line font-mono text-[11px] leading-6">
+                    <div className="border-b border-line px-3 text-muted">src/Header.tsx</div>
+                    <div className="whitespace-pre-wrap break-words bg-fail/10 px-3 text-fail">
+                      − &lt;Avatar user=&#123;props.user&#125; /&gt;
+                    </div>
+                    <div className="whitespace-pre-wrap break-words bg-ok/10 px-3 text-ok">
+                      + &lt;Avatar user=&#123;props.account&#125; /&gt;
+                    </div>
+                  </div>
+                  <ul className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ok">
+                    <li>✓ Builds</li>
+                    <li>✓ Page loads with no errors</li>
+                    <li>✓ Only your source code changed</li>
+                  </ul>
+                </Step>
+
+                <Step tone="warn" title="Waiting for you" meta="now" last>
+                  <div aria-hidden className="flex flex-wrap gap-2">
+                    <span className="rounded-md bg-fg px-3 py-1.5 text-[12px] font-medium text-bg">
+                      Approve &amp; deploy
+                    </span>
+                    <span className="rounded-md border border-white/10 bg-white/4 px-3 py-1.5 text-[12px] text-fg/90">
+                      Open a pull request
+                    </span>
+                  </div>
+                </Step>
+              </ol>
             </div>
-          </FadeIn>
-          <FadeIn delay={80}>
-            <div className="glass rounded-2xl bg-panel/80 p-4 font-mono text-[12px]">
-              <span className="text-muted">signature </span>
-              <span className="text-fg">TS_COMPILE:3fa91c</span>
-              <span className="text-muted"> · no rule matches → </span>
-              <span className="text-ai">AI diagnosis</span>
-            </div>
-          </FadeIn>
-          <FadeIn delay={160}>
-            <div className="glass rounded-2xl bg-panel/80 p-4 text-[14px] leading-relaxed text-fg/90">
-              The prop was renamed to <code className="font-mono text-[12px]">account</code> in
-              Props, but Header still reads <code className="font-mono text-[12px]">user</code>.
-            </div>
-          </FadeIn>
-          <FadeIn delay={240}>
-            <div className="glass overflow-hidden rounded-2xl bg-panel/80 font-mono text-[12px] leading-6">
-              <div className="border-b border-white/6 px-4 py-2 text-muted">
-                src/Header.tsx · +1 −1
-              </div>
-              <div className="break-all bg-fail/10 px-4 text-fail">
-                - &lt;Avatar user=&#123;props.user&#125; /&gt;
-              </div>
-              <div className="break-all bg-ok/10 px-4 text-ok">
-                + &lt;Avatar user=&#123;props.account&#125; /&gt;
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 py-2.5 text-[11px]">
-                {CHECKS.map((c) => (
-                  <span key={c} className="text-ok">
-                    ✓ {c}
-                  </span>
-                ))}
-                <span className="text-warn">● awaiting your approval</span>
-              </div>
-            </div>
-          </FadeIn>
-        </div>
+          </div>
+        </FadeIn>
         <div className="order-1 lg:order-2">
           <SectionHead
             eyebrow="Recovery"
