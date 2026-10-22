@@ -196,22 +196,33 @@ describe('API security', () => {
     expect(r.json().code).toBe('quota_exceeded');
   });
 
-  it('rate-limits auth endpoints per IP with Retry-After', async () => {
-    let last = 0;
-    let retryAfter: string | undefined;
-    for (let i = 0; i < 25; i++) {
-      const r = await app.inject({
+  it('rate-limits auth endpoints per visitor with Retry-After, not per proxy', async () => {
+    // As in production: every request arrives from the tunnel's Docker gateway,
+    // and Cloudflare names the visitor in CF-Connecting-IP.
+    const signIn = (visitor: string, extra: Record<string, string> = {}) =>
+      app.inject({
         method: 'POST',
         url: '/auth/dev-login',
         payload: { login: 'rl' },
-        remoteAddress: '203.0.113.9',
+        remoteAddress: '172.18.0.1',
+        headers: { 'cf-connecting-ip': visitor, ...extra },
       });
+    let last = 0;
+    let retryAfter: string | undefined;
+    for (let i = 0; i < 25; i++) {
+      const r = await signIn('203.0.113.9');
       last = r.statusCode;
       retryAfter = r.headers['retry-after'] as string | undefined;
       if (last === 429) break;
     }
     expect(last).toBe(429);
     expect(Number(retryAfter)).toBeGreaterThan(0);
+    // A forged X-Forwarded-For doesn't get the same visitor a fresh budget...
+    expect((await signIn('203.0.113.9', { 'x-forwarded-for': '198.51.100.1' })).statusCode).toBe(
+      429,
+    );
+    // ...and one visitor running out leaves everyone else signing in.
+    expect((await signIn('203.0.113.10')).statusCode).toBe(200);
   });
 });
 

@@ -8,6 +8,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { githubAppConfigured } from '../env.js';
+import { clientIp } from '../lib/client-ip.js';
 import { badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
 import { authOf, requireRole, sessionCookie } from '../plugins/auth.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
@@ -109,7 +110,7 @@ export async function startSession(
   const csrf = randomToken(24);
   await deps.sql`
     insert into sessions (token_hash, user_id, org_id, csrf_token, ip, user_agent, expires_at)
-    values (${sha256Hex(token)}, ${userId}, ${orgId}, ${csrf}, ${req.ip}, ${req.headers['user-agent']?.slice(0, 300) ?? null},
+    values (${sha256Hex(token)}, ${userId}, ${orgId}, ${csrf}, ${clientIp(req)}, ${req.headers['user-agent']?.slice(0, 300) ?? null},
             now() + ${`${SESSION_DAYS} days`}::interval)`;
   reply.setCookie(sessionCookie(deps.env), token, {
     httpOnly: true,

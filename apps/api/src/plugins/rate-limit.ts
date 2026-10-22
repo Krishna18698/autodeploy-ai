@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import type { Valkey } from 'iovalkey';
+import { clientIp } from '../lib/client-ip.js';
 import { AppError } from '../lib/errors.js';
 
 // Sliding-window rate limiter in one Lua round trip. It approximates a true
@@ -66,7 +67,7 @@ export const rateLimitPlugin = fp(
       const byPrincipal = (cfg?.key ?? 'principal') === 'principal' && req.auth;
       const who = byPrincipal
         ? `${req.auth?.via}:${req.auth?.tokenId ?? req.auth?.userId}`
-        : `ip:${req.ip}`;
+        : `ip:${clientIp(req)}`;
       const route = req.routeOptions.url ?? 'unknown';
       let r: Awaited<ReturnType<typeof hit>>;
       try {

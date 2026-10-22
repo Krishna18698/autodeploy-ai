@@ -1,6 +1,7 @@
 import type { Sql } from '@autodeploy/db';
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
+import { clientIp } from '../lib/client-ip.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -17,7 +18,7 @@ export const auditPlugin = fp(async (app: FastifyInstance, o: { sql: Sql }) => {
     await o.sql`
       insert into audit_events (org_id, actor_user_id, actor_token_id, action, target_type, target_id, ip, metadata)
       values (${req.auth.orgId}, ${req.auth.userId}, ${req.auth.tokenId ?? null}, ${action},
-              ${t?.type ?? null}, ${t?.id ?? null}, ${req.ip}, ${o.sql.json((t?.metadata ?? {}) as never)})`.catch(
+              ${t?.type ?? null}, ${t?.id ?? null}, ${clientIp(req)}, ${o.sql.json((t?.metadata ?? {}) as never)})`.catch(
       (err) => req.log.error({ err, action }, 'failed to write audit event'),
     );
   });

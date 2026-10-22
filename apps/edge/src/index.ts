@@ -161,8 +161,15 @@ async function serveApp(request: Request, env: Env & { APP_ORIGIN: string }, hos
   headers.set('x-forwarded-host', host);
   // Tells the dashboard this came through us, so it doesn't redirect here.
   headers.set('x-autodeploy-edge', '1');
+  // Cloudflare sets CF-Connecting-IP on a same-zone subrequest (app. → api.)
+  // from X-Real-IP, which a visitor could send themselves: set it to the
+  // address Cloudflare saw, which the API's per-visitor rate limits key on.
   const client = request.headers.get('cf-connecting-ip');
-  if (client) headers.set('x-forwarded-for', client);
+  headers.delete('x-real-ip');
+  if (client) {
+    headers.set('x-forwarded-for', client);
+    headers.set('x-real-ip', client);
+  }
   const res = await fetch(new URL(url.pathname + url.search, origin), {
     method: request.method,
     headers,
