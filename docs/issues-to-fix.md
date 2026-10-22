@@ -33,9 +33,13 @@ the last steps.
 **Still to build**
 - [ ] **Google sign-in** (the owner provides a Google OAuth client).
 - [x] **Redesign** shipped 2026-10-22: Linear-like dark, Geist, subtle motion.
-- [ ] **Automatic deploys of AutoDeploy itself on push** (GitHub Actions: lint and
-  tests, then ship, edge and dashboard), or keep a manual yes per deploy. Needs
-  three deploy credentials stored as GitHub secrets; the VM keeps its own `.env.prod`.
+- [x] **Automatic deploys of AutoDeploy itself** (2026-10-22): once CI passes on a push
+  to `main`, `.github/workflows/deploy.yml` ships the VM, the edge and the dashboard and
+  checks they answer; first run green. Secrets in the GitHub `production` environment: a
+  CI-only SSH key (`restrict`ed, tagged `github-actions-deploy` in the VM's authorized_keys),
+  the VM's host key, a Cloudflare token with Workers Scripts Edit only, a Vercel token and
+  the Vercel ids. The VM's `.env.prod` never leaves it. Pause: unset the `AUTO_DEPLOY`
+  repository variable. Terraform stays manual.
 
 **Upkeep**
 - [x] **Permanent domain:** autodeploy.fyi (Cloudflare Registrar, bought 2026-10-21). autodeploy.dpdns.org redirects to it; drop it from `legacy_domains` once nothing links there (its free registration lapses June 2027). The eu.org application is no longer needed.
