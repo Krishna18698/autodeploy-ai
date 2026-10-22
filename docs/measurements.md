@@ -12,7 +12,7 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | Rollback | **3.7 ms** pointer flip (11.7 ms through the API) | `pnpm test:integration` (db) |
 | Failure corpus, rules only | **38/38 as labelled · 64% of failures recovered (14/22)** | `AI_PROVIDERS= ./scripts/dev.sh restart worker && pnpm corpus --mode rules` |
 | Failure corpus, rules + AI | **38/38 · 82% recovered (18/22) · 0 false fixes** | `AI_PROVIDERS=mock … && pnpm corpus --mode ai` |
-| Sandbox escape attempts | **5/5 contained** (egress, read-only root, docker socket, fork bomb, secret echo) | corpus `sec-*` |
+| Sandbox escape attempts | **5/5 contained** locally (egress, read-only root, docker socket, fork bomb, secret echo); **production, 2026-10-22: 10/10 contained** (internet, cloud metadata, API, Postgres, Valkey, gateway, host SSH, writes outside the build folder, host files, secret redacted) | corpus `sec-*`; smoke `hostile-build` |
 | Worker SIGKILL mid-build | rebuild started **36 s** later, deployment went live | `pnpm chaos` |
 | Kafka down mid-deploy | deploy still live; **11** outbox events drained **6.5 s** after recovery | `pnpm chaos` |
 | All worker DB connections killed | transparent reconnect, deploy live | `pnpm chaos` |
@@ -25,7 +25,7 @@ that produces it. Run against the local stack (`pnpm infra:up`,
 | Landing (Lighthouse, mobile) | performance **89–90**, accessibility **100**, best practices **100**, CLS **0**, TBT ≤100 ms | `npx lighthouse … --skip-audits=bf-cache` |
 | Edge storage reads | **30 site requests → 2 storage reads** (was 85): manifest-checked misses, immutable edge cache. Fits B2's free 2,500 reads/day | old vs new Worker behind a counting proxy |
 | Landing in production (Vercel, Lighthouse mobile) | performance **96** (2 of 3 runs; the first, cold run scored 58 with a 1.8 s blocking spike), accessibility/best practices/SEO **100**, CLS **0**, LCP 2.7 s | `npx lighthouse https://autodeploy-zeta.vercel.app --skip-audits=bf-cache` ×3 |
-| OWASP ZAP | API: **118 pass / 0 warn / 0 fail**; landing: **0 fail**, warnings 8 → 4 after adding CSP + Permissions-Policy | `tests/security/README.md` |
+| OWASP ZAP | API: **118 pass / 0 warn / 0 fail**; landing: **0 fail**, warnings 8 → 4 after adding CSP + Permissions-Policy. Production re-scan 2026-10-22 (passive): **0 high, 0 fail**; nothing new to fix | `tests/security/README.md` |
 | AI classifier (Workers AI, Qwen3-30B) | **18/18 valid answers** (was **0/18**: the model spent its 300-token budget thinking), 0 fixable failures wrongly stopped, gate 15/18, p50 **1.0 s** | `pnpm tsx tests/ai-eval/classifier.ts` |
 | Production edge path (Cloudflare → Worker → KV → B2) | **6/6 checks**: live 2.4 s after the KV write, SPA fallback, immutable assets, 404s, security headers; warm requests **27–29 ms**; cleaned up | `pnpm tsx tests/smoke/edge.ts` |
 | SSR runtime (the owner's real portfolio, Next.js 16) | built + validated in **36 s**; cold start **2.7 s** (first: fetch + unpack bundle), **0.94 s** after idle (bundle cached), warm **14–22 ms**; stopped after 2 min idle (test setting), woken by the next request; POST API routes and per-request rendering verified | local stack, `ok-next-ssr` corpus case |

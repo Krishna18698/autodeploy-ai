@@ -13,6 +13,14 @@ Remaining warnings, accepted:
   SharedArrayBuffer); enabling it would only add breakage risk.
 - Non-storable content, "modern web application": informational.
 
+**Production, 2026-10-22** (the `zap` workflow, passive: `zap-baseline.py` on
+the dashboard, `zap-api-scan.py -S` on the API description): API, informational
+only. Dashboard: no high-risk alerts. Medium: `unsafe-inline` (accepted, above);
+`Access-Control-Allow-Origin: *` on public pages (landing, legal, robots), which
+Vercel adds; browsers send no cookies with it, and account data only comes from
+`/api`, whose CORS stays restricted to the dashboard. The rest flag
+`/cdn-cgi/…`, Cloudflare's own email-obfuscation script and error styles.
+
 The API scan is unauthenticated, so it covers the public surface; every
 authenticated route correctly answered 401. Authorization across roles and
 orgs is covered by the integration matrix (0 cross-tenant leaks).
