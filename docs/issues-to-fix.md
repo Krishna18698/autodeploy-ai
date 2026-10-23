@@ -8,6 +8,8 @@ Small things noticed while using the product; newest last.
   phone it reads as a large empty block. Proposed: a thin band with the logo on
   small screens, full sweep on desktop. (`apps/web/components/landing/sections/Wipe.tsx`)
 - [x] **Import env keys from a .env file**, or add them by hand. Done 2026-10-18: Environment → Import .env (paste or choose a file; keys previewed, bad lines reported, saved in one transaction).
+- [ ] **Page switches sometimes stutter** (found 2026-10-23 by the smoke test "clicking through the sidebar"). Now and then, after a click in the sidebar, the page's fade-in restarts a moment later, or the next tap on the phone menu does nothing. Reproduced locally with production builds: 3 of 12 click-throughs failed with today's dashboard, 11 of 12 with the version before today's change (e7fde5a), so it predates the VM-outage work. It always ends visible (the old "blank page" bug stays fixed). Suspect: the main area is keyed by the pathname (`components/app/shell.tsx`), so a late or repeated pathname update remounts it. The smoke test now waits for the dashboard and polls for full visibility, but still fails on this.
+- [ ] **Re-importing an existing project takes ~16 s to say so** (found 2026-10-23 by the smoke test "re-importing an existing project is refused"). `POST /api/v1/projects` fetches and analyses the repository before the insert that detects the duplicate (`apps/api/src/routes/projects.ts`), so with the VM busy building, the "already a project" answer came after 16 s and the test's 20 s wait ran out. Fix: check for an existing project with the same repository and root directory (and a taken slug) first, before any download.
 
 ## Audit 2026-10-22
 

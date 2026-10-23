@@ -518,6 +518,9 @@ for (const width of [977, 390]) {
       await page.request.post('/auth/dev-login', { data: { login: `e2e-smoke-${RUN}` } });
     const problems = watch(page);
     await page.goto('/overview', { waitUntil: 'networkidle' });
+    // The dashboard draws once the account has loaded; before that there is no
+    // menu button to find (the network can go quiet before it does).
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
     const nav = page.getByRole('navigation', { name: 'Main' });
     const menu = page.getByRole('button', { name: /^(Open|Close) menu$/ });
     const route = ['Settings', 'Projects', 'Overview', 'Settings', 'Analytics', 'Deployments'];
@@ -530,9 +533,14 @@ for (const width of [977, 390]) {
         }).toPass({ timeout: 15_000 });
       await link.click();
       await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
-      await page.waitForTimeout(400);
-      const opacity = await page.locator('main').evaluate((m) => getComputedStyle(m).opacity);
-      expect(opacity, `${name} faded in`).toBe('1');
+      // Fully visible soon after: a page stuck faded out (the bug this guards
+      // against) never gets there; a fade-in that restarts late still does.
+      await expect
+        .poll(() => page.locator('main').evaluate((m) => getComputedStyle(m).opacity), {
+          message: `${name} faded in`,
+          timeout: 2_000,
+        })
+        .toBe('1');
     }
     expect(problems).toEqual([]);
     await ctx.close();
