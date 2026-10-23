@@ -10,7 +10,10 @@ const API_URL = process.env.API_URL ?? (API_ORIGIN || 'http://localhost:4000');
 
 // People belong on the platform's app hostname (Vercel serves it directly):
 // it is the only address the API takes the dashboard's calls from, so a visit
-// to *.vercel.app is sent over (nothing there could ever sign in).
+// to *.vercel.app is sent over (nothing there could ever sign in). Except
+// what the edge Worker fetches with x-autodeploy-edge: a visitor whose DNS
+// still sends app.<domain> to Cloudflare (a VPN's stale cache, say) is served
+// through the Worker, and sending them "over" would loop forever.
 const APP_PUBLIC_URL =
   process.env.APP_PUBLIC_URL ?? (process.env.VERCEL ? 'https://app.autodeploy.fyi' : '');
 
@@ -42,6 +45,7 @@ const config: NextConfig = {
       {
         source: '/:path*',
         has: [{ type: 'host', value: '.*\\.vercel\\.app' }],
+        missing: [{ type: 'header', key: 'x-autodeploy-edge' }],
         destination: `${APP_PUBLIC_URL}/:path*`,
         permanent: false,
       },
