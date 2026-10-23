@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { PageHeader } from '@/components/app/shell';
-import { Empty, Panel, SkeletonRows } from '@/components/ui/panel';
+import { Empty, Panel, Shim } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { ago, shortSha } from '@/lib/format';
+import { useLastCount } from '@/lib/last-count';
 import { useDeployments } from '@/lib/queries';
 
 const FILTERS = [
@@ -19,6 +20,8 @@ const FILTERS = [
 export default function DeploymentsPage() {
   const [status, setStatus] = useState('');
   const deps = useDeployments({ limit: 100, ...(status && { status }) }, 4_000);
+  // Placeholders as many rows as last time (up to a screenful), so nothing jumps.
+  const rows = useLastCount('deployments', deps.data?.items.length, 6, 12);
   return (
     <>
       <PageHeader title="Deployments" />
@@ -38,7 +41,30 @@ export default function DeploymentsPage() {
       </fieldset>
       <Panel pad={false}>
         {!deps.data ? (
-          <SkeletonRows rows={6} className="h-10" />
+          <div role="status">
+            <span className="sr-only">Loading</span>
+            <ul className="divide-y divide-line">
+              {Array.from({ length: rows }, (_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+                <li key={i}>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:grid-cols-[10rem_minmax(0,1fr)_auto_auto]">
+                    <span className="truncate text-[13px] font-medium">
+                      <Shim>project-name #12</Shim>
+                    </span>
+                    <span className="hidden truncate text-[13px] sm:block">
+                      <Shim>0000000 A commit message</Shim>
+                    </span>
+                    <span className="hidden font-mono text-[11px] sm:block">
+                      <Shim>push · 2m ago</Shim>
+                    </span>
+                    <Shim>
+                      <StatusPill status="ACTIVE" />
+                    </Shim>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : deps.data.items.length === 0 ? (
           <Empty title="Nothing here" />
         ) : (

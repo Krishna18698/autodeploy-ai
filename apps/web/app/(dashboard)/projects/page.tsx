@@ -3,13 +3,16 @@
 import Link from 'next/link';
 import { PageHeader } from '@/components/app/shell';
 import { LinkButton } from '@/components/ui/button';
-import { Empty, Panel, SkeletonRows } from '@/components/ui/panel';
+import { Empty, Panel, Shim } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { ago } from '@/lib/format';
+import { useLastCount } from '@/lib/last-count';
 import { useProjects } from '@/lib/queries';
 
 export default function ProjectsPage() {
   const projects = useProjects();
+  // Placeholders as many rows as last time, so the table doesn't change height.
+  const rows = useLastCount('projects', projects.data?.items.length, 1, 10);
   return (
     <>
       <PageHeader
@@ -21,9 +24,7 @@ export default function ProjectsPage() {
         }
       />
       <Panel pad={false}>
-        {projects.isLoading ? (
-          <SkeletonRows rows={4} className="h-11" />
-        ) : !projects.data?.items.length ? (
+        {!projects.isLoading && !projects.data?.items.length ? (
           <Empty
             title="No projects yet"
             hint="Import a public GitHub repository to get started."
@@ -45,7 +46,37 @@ export default function ProjectsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {projects.data.items.map((p) => (
+                {projects.isLoading &&
+                  Array.from({ length: rows }, (_, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+                    <tr key={i}>
+                      <td className="px-4 py-3">
+                        <div className="font-medium">
+                          <Shim>project-name</Shim>
+                        </div>
+                        <div className="font-mono text-[11px]">
+                          <Shim>owner/repository</Shim>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[12px]">
+                        <Shim>vite</Shim>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="flex items-center gap-2">
+                          <Shim>
+                            <StatusPill status="ACTIVE" />
+                          </Shim>
+                          <span className="font-mono text-[11px]">
+                            <Shim>2m ago</Shim>
+                          </span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[12px]">
+                        <Shim>project.autodeploy.dpdns.org</Shim>
+                      </td>
+                    </tr>
+                  ))}
+                {projects.data?.items.map((p) => (
                   <tr key={p.id} className="hover:bg-raised/40">
                     <td className="px-4 py-3">
                       <Link href={`/projects/${p.id}`} className="font-medium hover:underline">

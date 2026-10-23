@@ -26,6 +26,34 @@ export function Panel({
   );
 }
 
+/**
+ * Shimmer over real content made invisible: the placeholder takes exactly the
+ * space the loaded content will, so nothing moves when the data arrives. Give
+ * it stand-in text or a real component with stand-in data; `block` for
+ * block content (several lines, a stepper).
+ */
+export function Shim({ children, block = false }: { children: ReactNode; block?: boolean }) {
+  if (block)
+    return (
+      <div aria-hidden className="relative">
+        <div className="invisible">{children}</div>
+        <span className="shimmer absolute inset-0 rounded-md" />
+      </div>
+    );
+  // Text: an inline wrapper adds nothing to the line's height. A component
+  // (a status pill, a sparkline): an inline-flex box the size of it, which in
+  // a flex row behaves like the component itself.
+  const text = typeof children === 'string' || typeof children === 'number';
+  return (
+    <span aria-hidden className={text ? 'relative' : 'relative inline-flex align-top'}>
+      <span className={text ? 'invisible' : 'invisible inline-flex'}>{children}</span>
+      <span
+        className={`shimmer absolute inset-x-0 ${text ? 'top-[12%] bottom-[12%] rounded' : 'inset-y-0 rounded-full'}`}
+      />
+    </span>
+  );
+}
+
 /** A shimmering placeholder in the shape of what's loading (see loaders.tsx). */
 export function Skeleton({ className = '' }: { className?: string }) {
   return <div aria-hidden className={`shimmer rounded ${className}`} />;
@@ -133,9 +161,16 @@ export function Stat({
     <div className="glass rounded-xl px-4 py-3.5">
       <div className="text-[12px] text-muted">{label}</div>
       {loading ? (
+        // The same lines as the loaded tile, so it keeps its height.
         <>
-          <Skeleton className="mt-2.5 mb-1.5 h-6 w-16" />
-          <Skeleton className="h-3 w-24" />
+          <div className="mt-1 text-[26px] font-semibold tabular-nums tracking-tight">
+            <Shim>000</Shim>
+          </div>
+          {sub !== undefined && (
+            <div className="mt-0.5 text-[12px]">
+              <Shim>000 in 30 days</Shim>
+            </div>
+          )}
         </>
       ) : (
         <>

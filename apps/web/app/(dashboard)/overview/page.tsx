@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/app/shell';
 import { TiltCard } from '@/components/app/tilt-card';
 import { LinkButton } from '@/components/ui/button';
-import { Empty, Panel, Skeleton, SkeletonItems, SkeletonRows, Stat } from '@/components/ui/panel';
+import { Empty, Panel, Shim, Stat } from '@/components/ui/panel';
 import { Sparkline } from '@/components/ui/sparkline';
 import { StatusPill } from '@/components/ui/status';
 import { Stepper } from '@/components/ui/stepper';
 import { ago, duration, shortSha } from '@/lib/format';
+import { useLastCount } from '@/lib/last-count';
 import { useAllRepairs, useAnalytics, useDeployments, useProjects } from '@/lib/queries';
 import { STATUS } from '@/lib/status';
 
@@ -20,6 +21,14 @@ export default function OverviewPage() {
   const awaiting = useAllRepairs('awaiting_approval');
 
   const items = recent.data?.items ?? [];
+  // Placeholders as many rows as last time, so the panels don't change height.
+  const projectRows = useLastCount('overview-projects', projects.data?.items.length, 1, 6);
+  const activityRows = useLastCount(
+    'overview-activity',
+    recent.data ? Math.min(8, items.length) : undefined,
+    4,
+    8,
+  );
   const live = items.find((d) => STATUS[d.status].live);
   const t = month.data?.totals;
   const successRate = t?.deployments ? Math.round((t.succeeded / t.deployments) * 100) : null;
@@ -80,7 +89,34 @@ export default function OverviewPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr] [&>*]:min-w-0">
         <Panel title="Projects" pad={false}>
           {projects.isLoading ? (
-            <SkeletonRows rows={3} className="h-10" />
+            <div role="status">
+              <span className="sr-only">Loading</span>
+              <ul className="divide-y divide-line">
+                {Array.from({ length: projectRows }, (_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+                  <li key={i}>
+                    <div className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                      <div className="min-w-0">
+                        <div className="truncate text-[14px] font-medium">
+                          <Shim>project-name</Shim>
+                        </div>
+                        <div className="truncate font-mono text-[11px]">
+                          <Shim>vite · owner/repository</Shim>
+                        </div>
+                      </div>
+                      <span className="hidden sm:block">
+                        <Shim>
+                          <Sparkline values={[1, 2]} />
+                        </Shim>
+                      </span>
+                      <Shim>
+                        <StatusPill status="ACTIVE" />
+                      </Shim>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : !projects.data?.items.length ? (
             <Empty
               title="No projects yet"
@@ -138,11 +174,23 @@ export default function OverviewPage() {
           <TiltCard>
             <Panel title={live ? 'Live deploy' : 'Latest deploy'}>
               {!recent.data ? (
-                <div role="status" className="flex flex-col gap-3">
+                // The same layout as a loaded deploy, so the card keeps its height.
+                <div role="status">
                   <span className="sr-only">Loading</span>
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-7 w-full" />
-                  <Skeleton className="h-4 w-1/2" />
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <span className="truncate font-mono text-[12px]">
+                      <Shim>project ▸ #12 ▸ main @ 0000000</Shim>
+                    </span>
+                    <Shim>
+                      <StatusPill status="ACTIVE" />
+                    </Shim>
+                  </div>
+                  <Shim block>
+                    <Stepper status="ACTIVE" />
+                  </Shim>
+                  <p className="mt-3 truncate text-[13px]">
+                    <Shim>A commit message</Shim>
+                  </p>
                 </div>
               ) : items[0] ? (
                 (() => {
@@ -193,7 +241,23 @@ export default function OverviewPage() {
                   </Link>
                 </li>
               ))}
-              {!recent.data && <SkeletonItems rows={5} className="h-5" />}
+              {!recent.data &&
+                Array.from({ length: activityRows }, (_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+                  <li key={i}>
+                    <div className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+                      <span className="w-14 shrink-0 font-mono text-[11px]">
+                        <Shim>2m ago</Shim>
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        <Shim>project-name #12</Shim>
+                      </span>
+                      <Shim>
+                        <StatusPill status="ACTIVE" />
+                      </Shim>
+                    </div>
+                  </li>
+                ))}
               {recent.data && items.length === 0 && (
                 <li className="px-4 py-6 text-center text-[13px] text-muted">Quiet so far.</li>
               )}
