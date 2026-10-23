@@ -22,7 +22,7 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  `img-src 'self' data: blob:${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
   "font-src 'self'",
   `connect-src 'self'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
   "object-src 'none'",

@@ -16,7 +16,7 @@ import { StatusPill } from '@/components/ui/status';
 import { Stepper } from '@/components/ui/stepper';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
-import { API_ORIGIN, ApiError, api, apiUrl, newIdempotencyKey, post } from '@/lib/api';
+import { API_ORIGIN, ApiError, api, apiAsset, apiUrl, newIdempotencyKey, post } from '@/lib/api';
 import { useApiStatus } from '@/lib/api-status';
 import { ago, duration, shortSha } from '@/lib/format';
 import {
@@ -222,7 +222,7 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
                 <Panel title="Validated render" pad={false}>
                   {/* biome-ignore lint/performance/noImgElement: authenticated API image */}
                   <img
-                    src={d.screenshotUrl.replace(/^https?:\/\/[^/]+/, '')}
+                    src={apiAsset(d.screenshotUrl)}
                     alt="Headless Chromium screenshot of the deployed site"
                     className="w-full rounded-b-[8px]"
                   />

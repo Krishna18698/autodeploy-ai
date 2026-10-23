@@ -10,6 +10,8 @@ import { reportReachable, reportUnreachable, setCheckUrl } from './api-status';
 /** The API's address: api.<domain> in production, '' (same-origin, proxied) in local dev. */
 export const API_ORIGIN = process.env.AUTODEPLOY_API_ORIGIN ?? '';
 export const apiUrl = (path: string) => `${API_ORIGIN}${path}`;
+/** An address the API gave out (e.g. a screenshot), as this browser should load it. */
+export const apiAsset = (url: string) => apiUrl(url.replace(/^https?:\/\/[^/]+/, ''));
 const credentials: RequestCredentials = API_ORIGIN ? 'include' : 'same-origin';
 setCheckUrl(apiUrl('/readyz'));
 

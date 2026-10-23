@@ -11,7 +11,7 @@ import { Empty, Panel, Skeleton } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
-import { ApiError, del, newIdempotencyKey, patch, post, put } from '@/lib/api';
+import { ApiError, apiAsset, del, newIdempotencyKey, patch, post, put } from '@/lib/api';
 import { ago, shortSha } from '@/lib/format';
 import { type DeploymentSummaryT, useDeployments, useEnv, useProject } from '@/lib/queries';
 
@@ -132,7 +132,7 @@ function History({ projectId }: { projectId: string }) {
               {d.screenshotUrl ? (
                 // biome-ignore lint/performance/noImgElement: authenticated API image, not optimisable by next/image
                 <img
-                  src={d.screenshotUrl.replace(/^https?:\/\/[^/]+/, '')}
+                  src={apiAsset(d.screenshotUrl)}
                   alt={`Screenshot of deployment ${d.number}`}
                   className="h-full w-full object-cover object-top"
                   loading="lazy"
