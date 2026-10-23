@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { AuthCard, Field, Notice } from '@/components/app/auth-card';
 import { Providers } from '@/components/app/providers';
 import { Button } from '@/components/ui/button';
-import { ApiError, post } from '@/lib/api';
+import { ApiError, api, apiUrl, post } from '@/lib/api';
 import { safeNext } from '@/lib/safe-next';
 
 // Local development and the local e2e build only; never shown in production.
@@ -40,6 +40,13 @@ function LoginInner() {
   // An account with an authenticator signs in, then shows a code.
   const afterSignIn = (r: { twoFactor?: boolean }) =>
     r.twoFactor ? router.replace(`/login/2fa?next=${encodeURIComponent(next)}`) : goNext();
+  // Already signed in (on this browser, or through the dashboard's old
+  // address, which this moves over): straight in, no form.
+  useEffect(() => {
+    api('/api/v1/me')
+      .then(() => router.replace(next))
+      .catch(() => {});
+  }, [router, next]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,8 +107,8 @@ function LoginInner() {
     <AuthCard title={signup ? 'Create your account' : 'Sign in to AutoDeploy'}>
       <div className="mt-6 flex flex-col gap-2">
         <a
-          href="/auth/github/login"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-fg text-[13px] font-medium text-bg hover:bg-fg/90"
+          href={apiUrl('/auth/github/login')}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-fg text-[13px] font-medium text-bg hover:bg-fg/90 group-disabled/paused:pointer-events-none group-disabled/paused:opacity-50"
         >
           Continue with GitHub
         </a>

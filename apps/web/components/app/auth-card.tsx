@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Logo } from '@/components/ui/logo';
+import { OutageBanner, PausedWhenDown } from './outage-banner';
 
 // The card every sign-in screen sits in: sign in, confirm email, forgot and
 // reset password.
@@ -33,7 +34,10 @@ export function AuthCard({
           </svg>
         </Link>
         <h1 className="text-[20px] font-semibold tracking-tight">{title}</h1>
-        {children}
+        <div className="mt-4 empty:hidden">
+          <OutageBanner where="signin" />
+        </div>
+        <PausedWhenDown>{children}</PausedWhenDown>
       </div>
     </main>
   );

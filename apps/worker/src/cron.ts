@@ -3,6 +3,7 @@ import { reconcileRoutes, transition } from '@autodeploy/db';
 import { reapExpiredLeases, stats } from '@autodeploy/queue';
 import { reportError } from '@autodeploy/telemetry';
 import type { Deps } from './deps.js';
+import { catchUpWebhooks } from './github-catchup.js';
 import { metrics } from './metrics.js';
 import { sweepStorage } from './storage-sweep.js';
 
@@ -56,6 +57,12 @@ const TASKS: Task[] = [
       await deps.sql`delete from jobs where status in ('done', 'canceled') and updated_at < now() - interval '7 days'`;
       await deps.sql`delete from outbox where published_at < now() - interval '3 days'`;
     },
+  },
+  {
+    // Pushes made while AutoDeploy was down (runs first when the worker starts).
+    name: 'github-catchup',
+    everyMs: 5 * 60_000,
+    run: async (deps) => catchUpWebhooks(deps),
   },
   {
     name: 'artifact-retention',

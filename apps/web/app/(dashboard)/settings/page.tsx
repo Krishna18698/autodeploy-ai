@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
-import { ApiError, del, patch, post } from '@/lib/api';
+import { ApiError, apiUrl, del, patch, post } from '@/lib/api';
 import { ago } from '@/lib/format';
 import {
   useAudit,
@@ -111,7 +111,7 @@ function GitHubLink() {
             Public repositories work without it.
           </p>
           <a
-            href="/auth/github/connect"
+            href={apiUrl('/auth/github/connect')}
             className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-fg px-3.5 text-[13px] font-medium text-bg hover:bg-fg/90 pointer-coarse:h-10"
           >
             Connect GitHub

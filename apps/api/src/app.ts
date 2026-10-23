@@ -27,6 +27,7 @@ import { healthRoutes } from './routes/health.js';
 import { internalRoutes } from './routes/internal.js';
 import { orgRoutes } from './routes/org.js';
 import { projectRoutes } from './routes/projects.js';
+import { sessionMoveRoutes } from './routes/session-move.js';
 import { twoFactorRoutes } from './routes/two-factor.js';
 
 export async function buildApp(deps: Deps) {
@@ -68,9 +69,14 @@ export async function buildApp(deps: Deps) {
     },
     crossOriginResourcePolicy: { policy: 'same-site' },
   });
+  // The dashboard calls the API from its own host (app.<domain> → api.<domain>),
+  // so its pages don't depend on the VM. Only that origin, with its cookies.
   await app.register(cors, {
     origin: [env.APP_URL],
     credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    // Browsers ask before each write; let them remember the answer (Chrome caps it at 2 h).
+    maxAge: 7200,
     allowedHeaders: [
       'content-type',
       'x-csrf-token',
@@ -128,6 +134,7 @@ export async function buildApp(deps: Deps) {
 
   await app.register(async (scope) => healthRoutes(scope, deps));
   await app.register(authRoutes(deps));
+  await app.register(sessionMoveRoutes(deps));
   await app.register(emailAuthRoutes(deps));
   await app.register(projectRoutes(deps));
   await app.register(deploymentRoutes(deps));

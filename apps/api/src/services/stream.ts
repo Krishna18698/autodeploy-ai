@@ -1,3 +1,4 @@
+import type { OutgoingHttpHeaders } from 'node:http';
 import type { Deployment } from '@autodeploy/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../deps.js';
@@ -20,9 +21,15 @@ export async function streamDeployment(
   snapshot: Deployment,
   lastEventId?: string,
 ) {
+  // Headers already set on the reply (the dashboard's cross-origin permission
+  // among them) would be dropped by writing to the raw response: carry them over.
+  const set = Object.fromEntries(
+    Object.entries(reply.getHeaders()).filter(([, v]) => v !== undefined),
+  ) as OutgoingHttpHeaders;
   reply.hijack();
   const res = reply.raw;
   res.writeHead(200, {
+    ...set,
     'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-cache, no-transform',
     connection: 'keep-alive',

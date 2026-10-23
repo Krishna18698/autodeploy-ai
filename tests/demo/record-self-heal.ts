@@ -17,6 +17,8 @@ import { chromium } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const base = process.env.DEMO_URL ?? 'https://app.autodeploy.fyi';
+// The API at its own address (the dashboard's host serves pages only).
+const apiBase = process.env.DEMO_API_URL ?? base.replace('//app.', '//api.');
 const repo = process.env.DEMO_REPO ?? 'https://github.com/Krishna18698/autodeploy-ai';
 const slug = process.env.DEMO_SLUG ?? 'acme-shop';
 const token = readFileSync(join(here, '../../infra/deploy/.e2e-token'), 'utf8').trim();
@@ -42,7 +44,7 @@ const mark = (name: string) => {
 const page = await context.newPage();
 type Dep = { status: string; url: string | null; projectId: string };
 const status = async (id: string) =>
-  (await (await page.request.get(`/api/v1/deployments/${id}`)).json()) as Dep;
+  (await (await page.request.get(`${apiBase}/api/v1/deployments/${id}`)).json()) as Dep;
 async function until(id: string, want: (s: string) => boolean, minutes: number) {
   const end = Date.now() + minutes * 60_000;
   for (;;) {
@@ -108,7 +110,7 @@ try {
   await context.close();
   await browser.close();
   if (projectId) {
-    const del = await fetch(`${base}/api/v1/projects/${projectId}`, {
+    const del = await fetch(`${apiBase}/api/v1/projects/${projectId}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${token}` },
     });

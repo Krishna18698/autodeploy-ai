@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { z } from 'zod';
 import { Panel } from '@/components/ui/panel';
-import { api } from '@/lib/api';
+import { api, apiUrl } from '@/lib/api';
 import { ago } from '@/lib/format';
 
 type Repos = z.infer<typeof GitHubRepos>;
@@ -69,7 +69,7 @@ export function RepoPicker({
             Connect your GitHub account to pick from your repositories, including private ones.
           </p>
           <a
-            href="/auth/github/connect"
+            href={apiUrl('/auth/github/connect')}
             className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-fg px-3.5 text-[13px] font-medium text-bg hover:bg-fg/90 pointer-coarse:h-10"
           >
             Connect GitHub

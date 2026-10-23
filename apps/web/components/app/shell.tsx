@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/toast';
 import { ApiError, post } from '@/lib/api';
 import { useAllRepairs, useMe, useMyInvitations, useQuota } from '@/lib/queries';
 import { CommandPalette } from './command-palette';
+import { OutageBanner, OutageNotice, PausedWhenDown } from './outage-banner';
 
 const ADMIN_NAV = {
   href: '/admin',
@@ -55,11 +56,21 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [me.error, router, pathname]);
 
   if (!me.data) {
+    // Down before anything loaded: say so (it reloads itself when the API is back).
+    if (me.error instanceof ApiError && me.error.status === 0)
+      return (
+        <div className="grid min-h-dvh place-items-center px-4">
+          <div className="flex w-full max-w-md flex-col gap-5">
+            <Logo />
+            <OutageNotice kind="dashboard" />
+          </div>
+        </div>
+      );
     return (
       <div className="grid min-h-dvh place-items-center">
         <span className="font-mono text-[12px] text-muted">
           {me.error && !(me.error instanceof ApiError && me.error.status === 401)
-            ? 'API unreachable — is it running?'
+            ? 'Something went wrong loading your account. Try reloading the page.'
             : 'Loading…'}
         </span>
       </div>
@@ -240,8 +251,13 @@ export function Shell({ children }: { children: ReactNode }) {
           key={pathname}
           className="page-in mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8"
         >
-          <Invitations />
-          {children}
+          <div className="mb-6 empty:hidden">
+            <OutageBanner where="dashboard" />
+          </div>
+          <PausedWhenDown>
+            <Invitations />
+            {children}
+          </PausedWhenDown>
         </main>
       </div>
       <CommandPalette />

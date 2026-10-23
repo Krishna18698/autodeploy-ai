@@ -19,6 +19,14 @@ import { defineConfig, devices } from '@playwright/test';
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3100';
 export const REMOTE =
   process.env.E2E_REMOTE === '1' || !/\/\/(localhost|127\.0\.0\.1)[:/]/.test(`${BASE_URL}/`);
+/**
+ * Where the suite calls the API. Production: its own address (the dashboard's
+ * host serves pages only, and the browser calls the API directly). Locally:
+ * '' (the dashboard's dev server proxies /api and /auth).
+ */
+export const API_URL =
+  process.env.E2E_API_URL ??
+  (/^https:\/\/app\./.test(BASE_URL) ? BASE_URL.replace('https://app.', 'https://api.') : '');
 
 const tokenFile = resolve(import.meta.dirname, '../../infra/deploy/.e2e-token');
 const token = REMOTE && existsSync(tokenFile) ? readFileSync(tokenFile, 'utf8').trim() : '';

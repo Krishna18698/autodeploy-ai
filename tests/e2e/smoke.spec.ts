@@ -1,7 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import { resolve } from 'node:path';
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
-import { REMOTE } from './smoke.config';
+import { API_URL, REMOTE } from './smoke.config';
 
 // What a user does, against a real running stack (see smoke.config.ts): every
 // dashboard page renders with real data, three real apps are imported through
@@ -31,6 +31,9 @@ type Deployment = {
 // READY is the brief step before a production deploy is activated, not an end.
 const SETTLED = new Set(['ACTIVE', 'FAILED', 'NEEDS_INPUT', 'AWAITING_APPROVAL', 'CANCELED']);
 
+/** An API path at the API's address (see smoke.config.ts). */
+const A = (path: string) => `${API_URL}${path}`;
+
 // ---- page health: any uncaught error or failed page fails the test ----------
 
 const IGNORED = [/cloudflareinsights/, /status of 401/];
@@ -43,8 +46,8 @@ function watch(page: Page) {
   });
   page.on('response', (r) => {
     const u = new URL(r.url());
-    if (r.status() >= 500 && u.origin === new URL(page.url()).origin)
-      problems.push(`${r.status()} ${u.pathname}`);
+    const ours = [new URL(page.url()).origin, API_URL && new URL(API_URL).origin];
+    if (r.status() >= 500 && ours.includes(u.origin)) problems.push(`${r.status()} ${u.pathname}`);
   });
   return problems;
 }
@@ -70,7 +73,7 @@ async function waitSettled(req: APIRequestContext, id: string, minutes = 10): Pr
   const until = Date.now() + minutes * 60_000;
   let last = '';
   for (;;) {
-    const d = await api<Deployment>(req, `/api/v1/deployments/${id}`);
+    const d = await api<Deployment>(req, A(`/api/v1/deployments/${id}`));
     if (d.status !== last) console.log(`  #${d.number} ${d.status}`);
     last = d.status;
     if (SETTLED.has(d.status)) {
@@ -84,7 +87,7 @@ async function waitSettled(req: APIRequestContext, id: string, minutes = 10): Pr
 
 /** On a failed deployment, show why (the project is deleted at the end, logs with it). */
 async function printLogTail(req: APIRequestContext, d: Deployment) {
-  const r = await req.get(`/api/v1/deployments/${d.id}/logs`);
+  const r = await req.get(A(`/api/v1/deployments/${d.id}/logs`));
   const lines = r.ok() ? ((await r.json()) as { lines: { text: string }[] }).lines : [];
   console.log(
     `  #${d.number} ended ${d.status} (${d.errorCode ?? 'no error code'}); last log lines:`,
@@ -156,7 +159,7 @@ test.afterAll(async ({ request }) => {
     headers = { 'x-csrf-token': (await r.json()).csrfToken };
   }
   for (const id of created) {
-    const r = await request.delete(`/api/v1/projects/${id}`, { headers });
+    const r = await request.delete(A(`/api/v1/projects/${id}`), { headers });
     console.log(`  cleanup ${id}: ${r.status()}`);
   }
 });
@@ -174,7 +177,7 @@ async function importFixture(page: Page, fixture: string, slug: string): Promise
   await page.getByRole('button', { name: /Deploy/ }).click();
   await expect(page).toHaveURL(/\/deployments\/[0-9a-f-]{36}/, { timeout: 30_000 });
   const id = page.url().split('/deployments/')[1]?.split(/[?#]/)[0] ?? '';
-  const d = await api<Deployment>(page.request, `/api/v1/deployments/${id}`);
+  const d = await api<Deployment>(page.request, A(`/api/v1/deployments/${id}`));
   created.push(d.projectId);
   return id;
 }
@@ -182,7 +185,7 @@ async function importFixture(page: Page, fixture: string, slug: string): Promise
 test('signed in', async ({ page }) => {
   const me = await api<{ user: { login: string }; org: { slug: string } }>(
     page.request,
-    '/api/v1/me',
+    A('/api/v1/me'),
   );
   console.log(`  as ${me.user.login} (${me.org.slug}) on ${REMOTE ? 'production' : 'local'}`);
 });
@@ -203,13 +206,13 @@ test('every dashboard page renders, including each project and its latest deploy
     await expectRendered(page, path);
   const { items } = await api<{ items: { id: string; slug: string }[] }>(
     page.request,
-    '/api/v1/projects?limit=20',
+    A('/api/v1/projects?limit=20'),
   );
   for (const p of items) {
     await expectRendered(page, `/projects/${p.id}`);
     const deps = await api<{ items: { id: string }[] }>(
       page.request,
-      `/api/v1/deployments?projectId=${p.id}&limit=1`,
+      A(`/api/v1/deployments?projectId=${p.id}&limit=1`),
     );
     if (deps.items[0]) await expectRendered(page, `/deployments/${deps.items[0].id}`);
   }
@@ -224,10 +227,10 @@ test("every live site answers at its address as it does at its deployment's own 
   // once became a static one, and every page 404'd).
   const { items } = await api<{
     items: { slug: string; url: string; activeDeploymentId: string | null }[];
-  }>(page.request, '/api/v1/projects?limit=50');
+  }>(page.request, A('/api/v1/projects?limit=50'));
   const live = items.filter((p) => p.activeDeploymentId);
   for (const p of live) {
-    const d = await api<Deployment>(page.request, `/api/v1/deployments/${p.activeDeploymentId}`);
+    const d = await api<Deployment>(page.request, A(`/api/v1/deployments/${p.activeDeploymentId}`));
     const pinned = p.url.replace(`://${p.slug}.`, `://d${d.number}--${p.slug}.`);
     const [main, own] = [await site(p.url), await site(pinned)];
     console.log(`  ${p.slug}: ${main.status} (pinned #${d.number}: ${own.status})`);
@@ -331,9 +334,9 @@ for (const app of SERVER_APPS) {
         expect(JSON.parse(echo.body)).toEqual({ echo: RUN });
       }
     } finally {
-      const dep = await api<Deployment>(page.request, `/api/v1/deployments/${id}`);
-      const { csrfToken } = await api<{ csrfToken: string | null }>(page.request, '/api/v1/me');
-      await page.request.delete(`/api/v1/projects/${dep.projectId}`, {
+      const dep = await api<Deployment>(page.request, A(`/api/v1/deployments/${id}`));
+      const { csrfToken } = await api<{ csrfToken: string | null }>(page.request, A('/api/v1/me'));
+      await page.request.delete(A(`/api/v1/projects/${dep.projectId}`), {
         headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
       });
       created.splice(created.indexOf(dep.projectId), 1);
@@ -355,9 +358,12 @@ test('a type error is repaired by AI, approved by a person, and goes live', asyn
   await page.getByRole('button', { name: 'Approve & deploy' }).click();
   // AWAITING_APPROVAL counts as settled, so first wait for the approval to land.
   await expect
-    .poll(async () => (await api<Deployment>(page.request, `/api/v1/deployments/${id}`)).status, {
-      timeout: 60_000,
-    })
+    .poll(
+      async () => (await api<Deployment>(page.request, A(`/api/v1/deployments/${id}`))).status,
+      {
+        timeout: 60_000,
+      },
+    )
     .not.toBe('AWAITING_APPROVAL');
 
   const live = await waitSettled(page.request, id);
@@ -478,9 +484,9 @@ test('no dashboard page scrolls sideways or squashes a form on a phone', async (
 test('deleting a project takes its site off the edge', async ({ page }) => {
   test.skip(!staticSite.url, 'static site test did not run');
   // Cookie sessions send their CSRF token on writes (the token session needs none).
-  const { csrfToken } = await api<{ csrfToken: string | null }>(page.request, '/api/v1/me');
+  const { csrfToken } = await api<{ csrfToken: string | null }>(page.request, A('/api/v1/me'));
   const csrf: Record<string, string> = csrfToken ? { 'x-csrf-token': csrfToken } : {};
-  const r = await page.request.delete(`/api/v1/projects/${staticSite.projectId}`, {
+  const r = await page.request.delete(A(`/api/v1/projects/${staticSite.projectId}`), {
     headers: csrf,
   });
   expect(r.status(), await r.text()).toBe(204);
@@ -544,7 +550,7 @@ test('a hostile build stays in its sandbox, and its secret stays out of the log'
     headers = { 'x-csrf-token': (await r.json()).csrfToken };
   }
   const src = source('hostile-build');
-  const made = await req.post('/api/v1/projects', {
+  const made = await req.post(A('/api/v1/projects'), {
     headers,
     data: { repoUrl: src.url, rootDir: src.root, slug: `e2e-hostile-${RUN}`, deploy: false },
   });
@@ -552,19 +558,22 @@ test('a hostile build stays in its sandbox, and its secret stays out of the log'
   const { project } = (await made.json()) as { project: { id: string } };
   created.push(project.id);
   const secret = `e2e-s3cret-${RUN}-${Math.random().toString(36).slice(2, 10)}`;
-  const put = await req.put(`/api/v1/projects/${project.id}/env/E2E_SECRET`, {
+  const put = await req.put(A(`/api/v1/projects/${project.id}/env/E2E_SECRET`), {
     headers,
     data: { value: secret },
   });
   expect(put.ok(), await put.text()).toBe(true);
-  const dep = await req.post(`/api/v1/projects/${project.id}/deployments`, { headers, data: {} });
+  const dep = await req.post(A(`/api/v1/projects/${project.id}/deployments`), {
+    headers,
+    data: {},
+  });
   expect(dep.ok(), await dep.text()).toBe(true);
   const d = await waitSettled(req, ((await dep.json()) as { id: string }).id);
   expect(d.status).toBe('ACTIVE');
 
   const { lines } = await api<{ lines: { text: string }[] }>(
     req,
-    `/api/v1/deployments/${d.id}/logs`,
+    A(`/api/v1/deployments/${d.id}/logs`),
   );
   const text = lines.map((l) => l.text).join('\n');
   const got = Object.fromEntries(
@@ -586,9 +595,9 @@ test('a dashboard crash can be reported, and only from the dashboard', async ({ 
     message: '[smoke] synthetic dashboard error, ignore',
     path: '/smoke',
   };
-  const ok = await page.request.post('/api/v1/client-errors', { data: report });
+  const ok = await page.request.post(A('/api/v1/client-errors'), { data: report });
   expect(ok.status()).toBe(204);
-  const foreign = await page.request.post('/api/v1/client-errors', {
+  const foreign = await page.request.post(A('/api/v1/client-errors'), {
     data: report,
     headers: { origin: 'https://evil.example' },
   });
@@ -596,11 +605,11 @@ test('a dashboard crash can be reported, and only from the dashboard', async ({ 
 });
 
 test('the notification email can be read and saved', async ({ page }) => {
-  const me = await api<{ user: { email: string | null } }>(page.request, '/api/v1/me');
+  const me = await api<{ user: { email: string | null } }>(page.request, A('/api/v1/me'));
   expect(me.user).toHaveProperty('email');
   // Saving the same value proves the endpoint without changing anything.
-  const { csrfToken } = await api<{ csrfToken: string | null }>(page.request, '/api/v1/me');
-  const r = await page.request.patch('/api/v1/me', {
+  const { csrfToken } = await api<{ csrfToken: string | null }>(page.request, A('/api/v1/me'));
+  const r = await page.request.patch(A('/api/v1/me'), {
     data: { email: me.user.email },
     headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
   });

@@ -1,18 +1,22 @@
 import type { NextConfig } from 'next';
 
-// The dashboard talks to the API through same-origin rewrites, so session
-// cookies stay first-party and no CORS preflights are needed.
-const API_URL = process.env.API_URL ?? 'http://localhost:4000';
+// The browser calls the API at its own address (api.<domain>), so the
+// dashboard's pages, served by Vercel, keep loading when the VM is down and the
+// API sees each visitor's real address from Cloudflare. Local development
+// leaves it empty: same-origin paths, proxied by the rewrites below.
+const API_ORIGIN =
+  process.env.API_ORIGIN ?? (process.env.VERCEL ? 'https://api.autodeploy.fyi' : '');
+const API_URL = process.env.API_URL ?? (API_ORIGIN || 'http://localhost:4000');
 
-// People belong on the platform's app hostname: the session cookie and the
-// GitHub sign-in callback live there. The edge Worker forwards that hostname
-// here with x-autodeploy-edge set; a visit straight to *.vercel.app has no
-// such header and is sent over (sign-in there could never work).
+// People belong on the platform's app hostname: it is the only address the
+// API takes the dashboard's calls from. Caddy forwards that hostname here with
+// x-autodeploy-edge set; a visit straight to *.vercel.app has no such header
+// and is sent over (nothing there could ever sign in).
 const APP_PUBLIC_URL =
   process.env.APP_PUBLIC_URL ?? (process.env.VERCEL ? 'https://app.autodeploy.fyi' : '');
 
-// Everything is same-origin (the API is behind the rewrites below, fonts are
-// self-hosted by next/font). Inline scripts/styles are allowed because the App
+// Everything is same-origin but the API (fonts are self-hosted by
+// next/font). Inline scripts/styles are allowed because the App
 // Router inlines its bootstrap; nonces would force every page to render
 // dynamically. Dev mode also needs eval for fast refresh, so CSP is prod-only.
 const CSP = [
@@ -21,7 +25,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self'",
+  `connect-src 'self'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -32,6 +36,7 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   transpilePackages: ['@autodeploy/contracts', '@autodeploy/core'],
+  env: { AUTODEPLOY_API_ORIGIN: API_ORIGIN },
   async redirects() {
     if (!APP_PUBLIC_URL) return [];
     return [
@@ -45,6 +50,12 @@ const config: NextConfig = {
     ];
   },
   async rewrites() {
+    // With the API on its own address, the only call left on this host moves
+    // sessions signed in through it over to the API's (routes/session-move.ts).
+    // Nothing else is proxied: through here the API would see Vercel's address,
+    // not the visitor's, and per-visitor limits would stop working.
+    if (API_ORIGIN)
+      return [{ source: '/auth/session/handoff', destination: `${API_URL}/auth/session/handoff` }];
     return [
       { source: '/api/:path*', destination: `${API_URL}/api/:path*` },
       { source: '/auth/:path*', destination: `${API_URL}/auth/:path*` },

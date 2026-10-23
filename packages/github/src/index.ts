@@ -458,6 +458,30 @@ export class InstallationTokens {
     }));
   }
 
+  /** A call as the App itself (App JWT), e.g. its webhook deliveries. */
+  asApp(path: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(`https://api.github.com${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${createAppJwt(this.app.appId, this.app.privateKey)}`,
+        accept: 'application/vnd.github+json',
+        'user-agent': 'autodeploy',
+        ...init.headers,
+      },
+    });
+  }
+
+  /** A call as one installation (its token), e.g. a repository's current state. */
+  async asInstallation(installationId: number, path: string): Promise<Response> {
+    return fetch(`https://api.github.com${path}`, {
+      headers: {
+        authorization: `Bearer ${await this.get(installationId)}`,
+        accept: 'application/vnd.github+json',
+        'user-agent': 'autodeploy',
+      },
+    });
+  }
+
   async get(installationId: number): Promise<string> {
     const hit = this.cache.get(installationId);
     if (hit && hit.expiresAt - Date.now() > 5 * 60_000) return hit.token;

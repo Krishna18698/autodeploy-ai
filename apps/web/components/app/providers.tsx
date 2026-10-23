@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useState } from 'react';
 import { Toaster } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api';
+import { setOnBack } from '@/lib/api-status';
 import { reportClientError } from '@/lib/report-error';
 import { CodePrompt } from './code-prompt';
 
@@ -21,6 +22,11 @@ export function Providers({ children }: { children: ReactNode }) {
         },
       }),
   );
+  // Back after an outage: everything on screen reloads.
+  useEffect(() => {
+    setOnBack(() => void client.invalidateQueries());
+    return () => setOnBack(null);
+  }, [client]);
   // Errors outside React's reach (event handlers, timers, stray promises).
   useEffect(() => {
     const onError = (e: ErrorEvent) => reportClientError('error', e.error ?? e.message);

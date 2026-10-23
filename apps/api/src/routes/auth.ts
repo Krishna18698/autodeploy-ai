@@ -120,6 +120,26 @@ export async function startSession(
     insert into sessions (token_hash, user_id, org_id, csrf_token, ip, user_agent, expires_at, mfa_pending)
     values (${sha256Hex(token)}, ${userId}, ${orgId}, ${csrf}, ${clientIp(req)}, ${req.headers['user-agent']?.slice(0, 300) ?? null},
             now() + ${`${SESSION_DAYS} days`}::interval, ${twoFactor})`;
+  setSessionCookie(deps, reply, token);
+  return { csrfToken: csrf, twoFactor };
+}
+
+// A browser ignores a deletion that lacks the attributes the cookie was set
+// with (a __Host- cookie needs Secure), so clearing repeats them.
+const cleared = (deps: Deps) =>
+  ({
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: deps.env.NODE_ENV === 'production',
+  }) as const;
+
+export function clearSessionCookie(deps: Deps, reply: FastifyReply) {
+  reply.clearCookie(sessionCookie(deps.env), cleared(deps));
+}
+
+/** The session cookie: host-only on whichever host answered (the API's, for the dashboard). */
+export function setSessionCookie(deps: Deps, reply: FastifyReply, token: string) {
   reply.setCookie(sessionCookie(deps.env), token, {
     httpOnly: true,
     secure: deps.env.NODE_ENV === 'production',
@@ -127,7 +147,6 @@ export async function startSession(
     path: '/',
     maxAge: SESSION_DAYS * 86400,
   });
-  return { csrfToken: csrf, twoFactor };
 }
 
 export const authRoutes =
@@ -149,8 +168,8 @@ export const authRoutes =
           );
         }
         const state = randomToken(18);
-        // Sign-in starts and ends on the app's host (the edge passes /auth to
-        // the API), so this cookie and the session cookie stay host-only.
+        // Sign-in starts and ends on the API's host, where the dashboard sends
+        // its requests, so this cookie and the session cookie stay host-only there.
         reply.setCookie(stateCookie(deps.env), state, {
           httpOnly: true,
           sameSite: 'lax',
@@ -161,7 +180,7 @@ export const authRoutes =
         const url = new URL('https://github.com/login/oauth/authorize');
         url.searchParams.set('client_id', deps.env.GITHUB_APP_CLIENT_ID ?? '');
         url.searchParams.set('state', state);
-        url.searchParams.set('redirect_uri', `${deps.env.APP_URL}/auth/github/callback`);
+        url.searchParams.set('redirect_uri', `${deps.env.API_PUBLIC_URL}/auth/github/callback`);
         return reply.redirect(url.toString());
       },
     );
@@ -192,7 +211,7 @@ export const authRoutes =
         const url = new URL('https://github.com/login/oauth/authorize');
         url.searchParams.set('client_id', deps.env.GITHUB_APP_CLIENT_ID ?? '');
         url.searchParams.set('state', state);
-        url.searchParams.set('redirect_uri', `${deps.env.APP_URL}/auth/github/callback`);
+        url.searchParams.set('redirect_uri', `${deps.env.API_PUBLIC_URL}/auth/github/callback`);
         return reply.redirect(url.toString());
       },
     );
@@ -218,10 +237,10 @@ export const authRoutes =
           reply.redirect(`${deps.env.APP_URL}/login?error=${error}`);
         const [linkState, linkUser] = (req.cookies[linkCookie(deps.env)] ?? '').split('.');
         const linking = Boolean(linkState) && linkState === req.query.state;
-        if (linking) reply.clearCookie(linkCookie(deps.env), { path: '/' });
+        if (linking) reply.clearCookie(linkCookie(deps.env), cleared(deps));
         else {
           const expected = req.cookies[stateCookie(deps.env)];
-          reply.clearCookie(stateCookie(deps.env), { path: '/' });
+          reply.clearCookie(stateCookie(deps.env), cleared(deps));
           if (req.query.error) return toLogin('cancelled');
           if (!expected || expected !== req.query.state) return toLogin('expired');
         }
@@ -311,9 +330,7 @@ export const authRoutes =
     app.post('/auth/logout', { schema: { hide: true } }, async (req, reply) => {
       const hash = req.auth?.sessionHash ?? req.pendingMfa?.sessionHash;
       if (hash) await deps.sql`delete from sessions where token_hash = ${hash}`;
-      reply.clearCookie(sessionCookie(deps.env), {
-        path: '/',
-      });
+      clearSessionCookie(deps, reply);
       return reply.code(204).send();
     });
 
@@ -422,9 +439,7 @@ export const authRoutes =
           await tx`delete from users where id = ${a.userId}`;
         });
         req.log.info({ orgs: 'deleted' }, 'account deleted');
-        reply.clearCookie(sessionCookie(deps.env), {
-          path: '/',
-        });
+        clearSessionCookie(deps, reply);
         return reply.code(204).send();
       },
     );

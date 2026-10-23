@@ -2,6 +2,8 @@
 // blank page is no longer invisible to us. Best effort: never throws, sends
 // each distinct error once per page load, at most 5 per load.
 
+import { API_ORIGIN, apiUrl } from './api';
+
 type Kind = 'error' | 'unhandledrejection' | 'boundary';
 const sent = new Set<string>();
 
@@ -19,10 +21,12 @@ export function reportClientError(kind: Kind, err: unknown, digest?: string): vo
     path: `${location.pathname}${location.search}`.slice(0, 500),
     ...(digest && { digest: digest.slice(0, 100) }),
   });
-  fetch('/api/v1/client-errors', {
+  fetch(apiUrl('/api/v1/client-errors'), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body,
     keepalive: true,
+    // The session, when there is one, names who hit it.
+    credentials: API_ORIGIN ? 'include' : 'same-origin',
   }).catch(() => {});
 }

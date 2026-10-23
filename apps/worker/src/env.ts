@@ -14,6 +14,8 @@ const EnvSchema = z.object({
   WORKER_ID: z.string().default(`${hostname()}-${process.pid}`),
   PLATFORM_DOMAIN: z.string().min(1),
   APP_URL: z.url().default('http://localhost:3000'),
+  // Where GitHub sends webhooks: missed ones are resent only once it answers.
+  API_PUBLIC_URL: z.url().default('http://localhost:4000'),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   VALKEY_URL: z.url({ protocol: /^rediss?$/ }),
   KAFKA_BROKERS: z

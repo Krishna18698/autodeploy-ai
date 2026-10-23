@@ -16,7 +16,8 @@ import { StatusPill } from '@/components/ui/status';
 import { Stepper } from '@/components/ui/stepper';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
-import { ApiError, api, newIdempotencyKey, post } from '@/lib/api';
+import { API_ORIGIN, ApiError, api, apiUrl, newIdempotencyKey, post } from '@/lib/api';
+import { useApiStatus } from '@/lib/api-status';
 import { ago, duration, shortSha } from '@/lib/format';
 import {
   type DeploymentT,
@@ -263,6 +264,8 @@ function useLiveLogs(id: string, d: DeploymentT | undefined, live: boolean) {
   const qc = useQueryClient();
   const seen = useRef(new Set<string>());
   const known = Boolean(d);
+  // A stream cut by an outage is given up by the browser; start again once it's back.
+  const up = useApiStatus() === 'up';
 
   useEffect(() => {
     if (!known) return;
@@ -286,8 +289,10 @@ function useLiveLogs(id: string, d: DeploymentT | undefined, live: boolean) {
     api<{ lines: LogLine[] }>(`/api/v1/deployments/${id}/logs`)
       .then((r) => !cancelled && add(r.lines))
       .catch(() => {});
-    if (live) {
-      es = new EventSource(`/api/v1/deployments/${id}/stream`);
+    if (live && up) {
+      es = new EventSource(apiUrl(`/api/v1/deployments/${id}/stream`), {
+        withCredentials: Boolean(API_ORIGIN),
+      });
       es.onopen = () => setConnected(true);
       es.onerror = () => setConnected(false);
       es.addEventListener('log', (e) => {
@@ -307,7 +312,7 @@ function useLiveLogs(id: string, d: DeploymentT | undefined, live: boolean) {
       cancelled = true;
       es?.close();
     };
-  }, [id, known, live, qc]);
+  }, [id, known, live, up, qc]);
 
   return { lines, connected };
 }
