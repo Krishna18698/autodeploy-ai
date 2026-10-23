@@ -1,8 +1,8 @@
 # DNS + tunnel + edge routing for the platform domain.
 #   <domain>, www.<domain>  → the edge Worker (redirects to the dashboard)
-#   app.<domain>  → Cloudflare Tunnel → Caddy (pages from Vercel, /api and /auth
-#                   from the API), so the dashboard never spends the Worker's
-#                   daily request quota that users' sites share
+#   app.<domain>  → Vercel directly, DNS only (ADR 0009): the dashboard's pages
+#                   load while the VM is down, and the browser calls the API at
+#                   api.<domain> itself. No Worker, so no Worker quota spent.
 #   api.<domain>  → Cloudflare Tunnel → Caddy → API replicas
 #   *.<domain>    → the edge Worker (user sites)
 #
@@ -12,22 +12,15 @@
 
 locals {
   domains = concat([var.platform_domain], var.legacy_domains)
-  tunnel_hosts = concat(flatten([
+  tunnel_hosts = flatten([
     for d in local.domains : [
       { hostname = "api.${d}", service = "http://localhost:8080" },
       { hostname = "ssh.${d}", service = "ssh://localhost:22" },
       # SSR runtime gateway (ADR 0008); it rejects anything without the internal token.
       { hostname = "run.${d}", service = "http://localhost:8082" },
     ]
-    ]), [
-    # The dashboard: Caddy tells it from the API by hostname. (app. on a legacy
-    # domain stays with the Worker, which redirects it here.)
-    { hostname = "app.${var.platform_domain}", service = "http://localhost:8080" },
   ])
-  bypass = merge(
-    { for p in setproduct(local.domains, ["api", "ssh", "run"]) : "${p[1]}.${p[0]}" => p[0] },
-    { "app.${var.platform_domain}" = var.platform_domain },
-  )
+  bypass = { for p in setproduct(local.domains, ["api", "ssh", "run"]) : "${p[1]}.${p[0]}" => p[0] }
 }
 
 data "cloudflare_zone" "platform" {
@@ -76,6 +69,17 @@ resource "cloudflare_dns_record" "app" {
   content  = "100::"
   proxied  = true
   ttl      = 1
+}
+
+# The dashboard: straight to Vercel (ADR 0009). DNS only, as Vercel asks: it
+# serves the certificate. A short TTL keeps a switch back quick.
+resource "cloudflare_dns_record" "dashboard" {
+  zone_id = data.cloudflare_zone.platform[var.platform_domain].zone_id
+  name    = "app.${var.platform_domain}"
+  type    = "CNAME"
+  content = "cname.vercel-dns.com"
+  proxied = false
+  ttl     = 60
 }
 
 # Proxied wildcard so every <slug>.<domain> reaches the Worker route below.
@@ -176,6 +180,12 @@ moved {
 moved {
   from = cloudflare_dns_record.app["autodeploy.fyi"]
   to   = cloudflare_dns_record.tunnel["app.autodeploy.fyi"]
+}
+# ...and then straight to Vercel (2026-10-23): again the same record, changed
+# in place, so the name never has two answers or none.
+moved {
+  from = cloudflare_dns_record.tunnel["app.autodeploy.fyi"]
+  to   = cloudflare_dns_record.dashboard
 }
 moved {
   from = cloudflare_dns_record.sites

@@ -620,9 +620,14 @@ test('the notification email can be read and saved', async ({ page }) => {
 });
 
 test('email sign-in never reveals who has an account', async ({ browser }) => {
-  // A fresh browser: no session, no API token. Only made-up addresses that
+  // A fresh browser: no session, no API token (contexts made here inherit the
+  // suite's token header unless told otherwise, and the sign-in page sends
+  // anyone signed in straight to the dashboard). Only made-up addresses that
   // have no account are used, so no email is ever sent to them.
-  const ctx = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  const ctx = await browser.newContext({
+    baseURL: test.info().project.use.baseURL,
+    extraHTTPHeaders: {},
+  });
   const page = await ctx.newPage();
   const nobody = `nobody-${RUN}@example.com`;
   await page.goto('/login');

@@ -8,10 +8,9 @@ const API_ORIGIN =
   process.env.API_ORIGIN ?? (process.env.VERCEL ? 'https://api.autodeploy.fyi' : '');
 const API_URL = process.env.API_URL ?? (API_ORIGIN || 'http://localhost:4000');
 
-// People belong on the platform's app hostname: it is the only address the
-// API takes the dashboard's calls from. Caddy forwards that hostname here with
-// x-autodeploy-edge set; a visit straight to *.vercel.app has no such header
-// and is sent over (nothing there could ever sign in).
+// People belong on the platform's app hostname (Vercel serves it directly):
+// it is the only address the API takes the dashboard's calls from, so a visit
+// to *.vercel.app is sent over (nothing there could ever sign in).
 const APP_PUBLIC_URL =
   process.env.APP_PUBLIC_URL ?? (process.env.VERCEL ? 'https://app.autodeploy.fyi' : '');
 
@@ -43,7 +42,6 @@ const config: NextConfig = {
       {
         source: '/:path*',
         has: [{ type: 'host', value: '.*\\.vercel\\.app' }],
-        missing: [{ type: 'header', key: 'x-autodeploy-edge' }],
         destination: `${APP_PUBLIC_URL}/:path*`,
         permanent: false,
       },
