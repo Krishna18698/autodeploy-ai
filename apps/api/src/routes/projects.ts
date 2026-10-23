@@ -157,6 +157,26 @@ export const projectRoutes =
         const a = authOf(req);
         await assertNotSuspended(deps.sql, a.orgId, deps.env.PLATFORM_DOMAIN);
         const src = await resolveSource(deps, req.body.repoUrl, undefined, a);
+        // Refuse what can't work before downloading and analysing anything (that
+        // took ~16 s on a busy VM): this repository and folder is already a project
+        // here, or the address is someone's. The insert below still catches a race.
+        const [exists] = await withOrg(
+          deps.sql,
+          a.orgId,
+          (tx) => tx`
+            select 1 from projects where repo_full_name = ${src.fullName} and root_dir = ${req.body.rootDir}`,
+        );
+        if (exists)
+          throw conflict(
+            'project_exists',
+            'This repository (and root directory) is already a project.',
+          );
+        if (req.body.slug) {
+          const [taken] =
+            await deps.sql`select 1 from projects where slug = ${req.body.slug.toLowerCase()}`;
+          if (taken)
+            throw conflict('slug_taken', `"${req.body.slug.toLowerCase()}" is already taken.`);
+        }
         const analysis = await analyzeSource(deps, src, req.body.rootDir, a.orgId);
         const slug = (
           req.body.slug ?? (await firstFreeSlug(deps, suggestSlug(src.fullName)))

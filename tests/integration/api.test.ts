@@ -448,6 +448,39 @@ describe("Joining an org takes the invitee's consent", () => {
   });
 });
 
+describe('Importing a repository that is already a project', () => {
+  it('is refused before anything is downloaded or analysed', async () => {
+    const s = await login('dupe-user');
+    const headers = { cookie: s.cookie, 'x-csrf-token': s.csrf };
+    const repoUrl = `file://${resolve('tests/fixtures/vite-ok')}`;
+    const org = (await app.inject({ url: '/api/v1/me', headers })).json().org.id;
+    // A folder that isn't in the repository: analysing it would fail with
+    // root_dir_not_found, so a 409 here means the duplicate was caught first.
+    await deps.sql`insert into projects (org_id, slug, name, repo_full_name, repo_url, root_dir)
+      values (${org}, ${`dupe-${Date.now().toString(36)}`}, 'dupe', 'local/vite-ok', ${repoUrl}, 'not-here')`;
+    const again = await app.inject({
+      method: 'POST',
+      url: '/api/v1/projects',
+      headers: { ...headers, 'idempotency-key': `dupe-${Date.now()}` },
+      payload: { repoUrl, rootDir: 'not-here', slug: `dupe2-${Date.now().toString(36)}` },
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json().code).toBe('project_exists');
+
+    // A taken address is refused up front too.
+    const [mine] = await deps.sql<{ slug: string }[]>`
+      select slug from projects where org_id = ${org} and root_dir = 'not-here'`;
+    const slugTaken = await app.inject({
+      method: 'POST',
+      url: '/api/v1/projects',
+      headers: { ...headers, 'idempotency-key': `dupe-slug-${Date.now()}` },
+      payload: { repoUrl, rootDir: 'also-not-here', slug: mine?.slug },
+    });
+    expect(slugTaken.statusCode).toBe(409);
+    expect(slugTaken.json().code).toBe('slug_taken');
+  });
+});
+
 describe('Analysing a repository', () => {
   it('says when the root directory is not in the repository, instead of analysing the top', async () => {
     const s = await login('root-dir-user');
