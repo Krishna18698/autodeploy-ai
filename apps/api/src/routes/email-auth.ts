@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import {
   DUMMY_PASSWORD_HASH,
   hashPassword,
+  passwordNeedsRehash,
   randomToken,
   sha256Hex,
   verifyPassword,
@@ -224,6 +225,13 @@ export const emailAuthRoutes =
           throw new AppError(401, 'bad_credentials', 'Wrong email or password.');
         }
         await deps.valkey.del(failKey);
+        // Made with older, cheaper settings: store it again with today's, now
+        // that we have the password. Only if it wasn't reset meanwhile.
+        if (passwordNeedsRehash(row.hash)) {
+          await deps.sql`
+            update user_passwords set hash = ${await hashPassword(password)}
+            where user_id = ${row.user_id} and hash = ${row.hash}`;
+        }
         if (!row.verified_at) {
           if (await mayEmail(email)) {
             const token = await deps.sql.begin((tx) =>

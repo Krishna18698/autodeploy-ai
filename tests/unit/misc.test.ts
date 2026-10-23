@@ -1,3 +1,4 @@
+import { scryptSync } from 'node:crypto';
 import {
   createRedactor,
   isValidSlug,
@@ -6,7 +7,17 @@ import {
   siteHost,
   slugify,
 } from '@autodeploy/core';
-import { decrypt, encrypt, parseKeyring, rewrap, safeEqual } from '@autodeploy/crypto';
+import {
+  DUMMY_PASSWORD_HASH,
+  decrypt,
+  encrypt,
+  hashPassword,
+  parseKeyring,
+  passwordNeedsRehash,
+  rewrap,
+  safeEqual,
+  verifyPassword,
+} from '@autodeploy/crypto';
 import { backoffMs } from '@autodeploy/queue';
 import {
   Bulkhead,
@@ -84,6 +95,38 @@ describe('envelope encryption', () => {
     expect(safeEqual('abc', 'abc')).toBe(true);
     expect(safeEqual('abc', 'abd')).toBe(false);
     expect(safeEqual('abc', 'abcd')).toBe(false);
+  });
+});
+
+describe('password hashing', () => {
+  it("meets OWASP's scrypt minimum, salted per password", async () => {
+    const a = await hashPassword('correct horse battery');
+    const b = await hashPassword('correct horse battery');
+    expect(a).toMatch(/^scrypt\$32768\$8\$3\$[\w-]{22}\$[\w-]{43}$/);
+    expect(a).not.toBe(b);
+    expect(await verifyPassword('correct horse battery', a)).toBe(true);
+    expect(await verifyPassword('correct horse batterY', a)).toBe(false);
+    expect(passwordNeedsRehash(a)).toBe(false);
+    // The no-such-account check costs what a real one does.
+    expect(DUMMY_PASSWORD_HASH.split('$').slice(0, 4)).toEqual(a.split('$').slice(0, 4));
+  });
+  it('still accepts hashes made before 2026-10-24 (p=1), and flags them for upgrade', async () => {
+    const salt = Buffer.alloc(16, 7);
+    const old = [
+      'scrypt',
+      32768,
+      8,
+      1,
+      salt.toString('base64url'),
+      scryptSync('old password', salt, 32, {
+        N: 32768,
+        r: 8,
+        p: 1,
+        maxmem: 64 * 1024 * 1024,
+      }).toString('base64url'),
+    ].join('$');
+    expect(await verifyPassword('old password', old)).toBe(true);
+    expect(passwordNeedsRehash(old)).toBe(true);
   });
 });
 

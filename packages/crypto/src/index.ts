@@ -124,8 +124,10 @@ export function previewSecret(_value: string): string {
 
 // Passwords: scrypt from Node itself (no native modules to build for arm64).
 // Stored as scrypt$N$r$p$salt$hash so the cost can be raised later and old
-// hashes still verify. N=2^15, r=8 needs 32 MiB and ~50-100 ms per check.
-const SCRYPT = { N: 2 ** 15, r: 8, p: 1 };
+// hashes still verify. N=2^15, r=8, p=3 is OWASP's minimum (equal to 2^17 with
+// p=1, at a quarter of the memory): 32 MiB and ~150-300 ms per check. Until
+// 2026-10-24 p was 1; those hashes are upgraded at sign-in (passwordNeedsRehash).
+const SCRYPT = { N: 2 ** 15, r: 8, p: 3 };
 const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 
 function scryptAsync(password: string, salt: Buffer, len: number, opts: ScryptOptions) {
@@ -161,8 +163,15 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return timingSafeEqual(got, expected);
 }
 
+/** True when a stored hash was made with other (older) settings than hashPassword uses now. */
+export function passwordNeedsRehash(stored: string): boolean {
+  const [alg, n, r, p] = stored.split('$');
+  return (
+    alg !== 'scrypt' || Number(n) !== SCRYPT.N || Number(r) !== SCRYPT.r || Number(p) !== SCRYPT.p
+  );
+}
+
 /** Checked when no account matches, so a wrong email takes as long as a wrong password. */
-export const DUMMY_PASSWORD_HASH =
-  'scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+export const DUMMY_PASSWORD_HASH = `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`;
 
 export * from './totp.js';

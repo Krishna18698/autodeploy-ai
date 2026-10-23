@@ -1,6 +1,6 @@
 # Issues to fix
 
-What's left and what's done, kept current. Last updated 2026-10-23 (late).
+What's left and what's done, kept current. Last updated 2026-10-24.
 
 ## Not done, needed before launch
 
@@ -33,6 +33,9 @@ last, each only on the owner's yes.
 - [ ] **Renew the deploy's Access service token** before October 2027: `terraform apply -replace=cloudflare_zero_trust_access_service_token.deploy`, then update the two `CF_ACCESS_*` GitHub secrets.
 
 ## Done
+
+**2026-10-24**
+- [x] **Password hashing raised to OWASP's minimum:** scrypt N=2^15, r=8, p=3 (was p=1, a third of the work per guess for anyone holding a leaked database). Same 32 MiB per check, ~3× the CPU (~160 ms on a Mac). Older hashes still sign in and are re-stored with the new settings at that sign-in; until then, those accounts answer a wrong password a little faster than an unknown email does.
 
 **2026-10-23**
 - [x] **Deploys ride through a dropped connection to the VM:** the link from GitHub's runner through Cloudflare to the VM broke mid-deploy three times that afternoon (VM healthy, nothing half-installed). Now every command reconnects and repeats when the connection itself drops (ssh's exit code 255; a command that fails on the VM is never retried), input is sent from a file so a retry can resend it, and the long steps (image builds, the rolling restart) run on the VM by themselves while the deploy streams their log over short connections, so a drop pauses the watching, not the work (`infra/deploy/lib/remote.sh`, tested by dropping the line on purpose in `tests/deploy/remote.test.sh`).

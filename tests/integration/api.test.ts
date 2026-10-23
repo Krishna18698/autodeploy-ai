@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { resolve } from 'node:path';
 import { buildApp } from '@autodeploy/api/app';
 import { createDeps, type Deps } from '@autodeploy/api/deps';
@@ -724,6 +724,33 @@ describe('Email sign-in', () => {
     expect(
       (await post('/auth/email/login', { email, password: 'second password 2' })).statusCode,
     ).toBe(200);
+  });
+
+  it('upgrades a password stored with the old, cheaper settings when its owner signs in', async () => {
+    const email = `rehash-${randomBytes(3).toString('hex')}@example.com`;
+    const password = 'an older password';
+    // Its own address, so these requests don't count toward the other tests' sign-in limit.
+    const post = (url: string, payload: object) =>
+      app.inject({ method: 'POST', url, payload, remoteAddress: '198.18.2.1' });
+    await post('/auth/email/signup', { email, password });
+    await post('/auth/email/verify', { token: linkToken(lastMailTo(email)!.text) });
+    // As stored before 2026-10-24: scrypt with p=1.
+    const salt = randomBytes(16);
+    const key = scryptSync(password, salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+    const old = `scrypt$32768$8$1$${salt.toString('base64url')}$${key.toString('base64url')}`;
+    await deps.sql`update user_passwords set hash = ${old} where email = ${email}`;
+    const stored = async () =>
+      (
+        await deps.sql<{ hash: string }[]>`select hash from user_passwords where email = ${email}`
+      )[0]!.hash;
+
+    expect((await post('/auth/email/login', { email, password: 'not it at all' })).statusCode).toBe(
+      401,
+    );
+    expect(await stored()).toBe(old);
+    expect((await post('/auth/email/login', { email, password })).statusCode).toBe(200);
+    expect(await stored()).toMatch(/^scrypt\$32768\$8\$3\$/);
+    expect((await post('/auth/email/login', { email, password })).statusCode).toBe(200);
   });
 
   it('pauses password sign-in for an address after 10 wrong passwords from any IP; a reset ends it', async () => {
