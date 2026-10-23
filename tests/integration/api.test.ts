@@ -486,6 +486,8 @@ describe('Environment variables set while importing', () => {
       'VITE_API_URL',
     ]);
     expect(JSON.stringify(list.json())).not.toContain('very-secret-value-123');
+    // Listed as dots only: no characters of the value, not even its length.
+    for (const v of list.json()) expect(v.preview).toBe('••••••••');
     const rows = await deps.sql<{ ciphertext: Buffer }[]>`
       select ciphertext from env_vars where project_id = ${id}`;
     for (const r of rows) expect(r.ciphertext.toString('utf8')).not.toContain('very-secret');

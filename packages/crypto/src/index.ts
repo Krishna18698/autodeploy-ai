@@ -112,10 +112,14 @@ export function safeEqual(a: string, b: string): boolean {
   return ba.length === bb.length && timingSafeEqual(ba, bb);
 }
 
-/** "sk-…a1b2" — enough to recognise a value without revealing it. */
-export function previewSecret(value: string): string {
-  if (value.length <= 8) return '•'.repeat(Math.max(4, value.length));
-  return `${value.slice(0, 3)}…${value.slice(-4)}`;
+/**
+ * How a saved value is shown: never any of it, not even its length (as
+ * Vercel's "Sensitive" variables). Values are write-only; the server never
+ * sends one back. (Until 2026-10-23 this showed the first 3 and last 4
+ * characters; migration 0014 replaced those.)
+ */
+export function previewSecret(_value: string): string {
+  return '••••••••';
 }
 
 // Passwords: scrypt from Node itself (no native modules to build for arm64).
