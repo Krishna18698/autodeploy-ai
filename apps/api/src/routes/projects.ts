@@ -160,6 +160,8 @@ export const projectRoutes =
         // The same rule as the Environment tab: only admins set variables.
         if (env.length > 0 && a.role !== 'owner' && a.role !== 'admin')
           throw forbidden('Only owners and admins can set environment variables.');
+        // And, as in the Environment tab, a recent authenticator code if they use one.
+        if (env.length > 0) await requireRecentMfa(req);
         const src = await resolveSource(deps, req.body.repoUrl, undefined, a);
         // Refuse what can't work before downloading and analysing anything (that
         // took ~16 s on a busy VM): this repository and folder is already a project
@@ -318,7 +320,7 @@ export const projectRoutes =
     app.patch(
       '/api/v1/projects/:id',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'project.update' },
         schema: {
           tags: ['projects'],
@@ -423,7 +425,7 @@ export const projectRoutes =
     app.post(
       '/api/v1/projects/:id/env/import',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'env.import' },
         schema: {
           tags: ['env'],
@@ -450,7 +452,7 @@ export const projectRoutes =
     app.put(
       '/api/v1/projects/:id/env/:key',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'env.put' },
         schema: {
           tags: ['env'],
@@ -486,7 +488,7 @@ export const projectRoutes =
     app.delete(
       '/api/v1/projects/:id/env/:key',
       {
-        preHandler: requireRole('admin'),
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'env.delete' },
         schema: { tags: ['env'], params: z.object({ id: z.uuid(), key: EnvVarKey }) },
       },

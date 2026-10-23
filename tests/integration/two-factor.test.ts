@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { buildApp } from '@autodeploy/api/app';
 import { createDeps, type Deps } from '@autodeploy/api/deps';
 import { loadEnv } from '@autodeploy/api/env';
-import { base32Decode, totpAt, totpStep } from '@autodeploy/crypto';
+import { base32Decode, hashPassword, sha256Hex, totpAt, totpStep } from '@autodeploy/crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
@@ -87,6 +87,7 @@ describe('Two-step sign-in with an authenticator app', () => {
     expect((await call(s, 'GET', '/api/v1/me/2fa')).json()).toEqual({
       enabled: true,
       recoveryCodesLeft: 10,
+      trustedBrowsers: 1, // the browser it was switched on from
     });
 
     // A new sign-in can do nothing until the code arrives.
@@ -161,5 +162,144 @@ describe('Two-step sign-in with an authenticator app', () => {
       204,
     );
     expect((await signIn(login)).twoFactor).toBe(false);
+  });
+});
+
+describe('Trusted browsers: the code at sign-in only when it matters', () => {
+  /** Signs in (dev sign-in) from a browser holding `cookie`, as seen from `country`. */
+  async function signInFrom(login: string, cookie: string | null, country: string | null) {
+    signIns = (signIns % 250) + 1;
+    const r = await app.inject({
+      method: 'POST',
+      url: '/auth/dev-login',
+      payload: { login },
+      remoteAddress: `198.51.100.${signIns}`,
+      headers: { ...(cookie && { cookie }), ...(country && { 'cf-ipcountry': country }) },
+    });
+    expect(r.statusCode).toBe(200);
+    return {
+      cookie: String(r.headers['set-cookie']).split(';')[0] ?? '',
+      csrf: r.json().csrfToken,
+      twoFactor: r.json().twoFactor as boolean,
+    };
+  }
+  const trustFrom = (setCookie: unknown) =>
+    (Array.isArray(setCookie) ? setCookie : [String(setCookie)])
+      .map((c) => String(c).split(';')[0] ?? '')
+      .find((c) => c.startsWith('ad_trust=')) ?? '';
+
+  it('skips the code on a browser that showed one, but not from elsewhere, over Tor, or after a while', async () => {
+    const login = `trust-${randomUUID().slice(0, 8)}`;
+    const s = await signIn(login);
+    const { secret } = (await call(s, 'POST', '/api/v1/me/2fa/setup')).json();
+    // Switching it on with a code, from India: this browser is now trusted.
+    const on = await app.inject({
+      method: 'POST',
+      url: '/api/v1/me/2fa/enable',
+      headers: { ...as(s), 'cf-ipcountry': 'IN' },
+      payload: { code: codeFor(secret) },
+    });
+    expect(on.statusCode).toBe(200);
+    const trust = trustFrom(on.headers['set-cookie']);
+    expect(trust).not.toBe('');
+
+    // Same browser, same country: no code.
+    const easy = await signInFrom(login, trust, 'IN');
+    expect(easy.twoFactor).toBe(false);
+    expect((await call(easy, 'GET', '/api/v1/me')).statusCode).toBe(200);
+    // ...but this session has shown no code, so important changes still ask.
+    const token = await call(easy, 'POST', '/api/v1/tokens', { name: 't', scopes: ['read'] });
+    expect(token.json().code).toBe('mfa_required');
+    expect((await call(s, 'GET', '/api/v1/me/2fa')).json().trustedBrowsers).toBe(1);
+
+    // Another country, Tor, another browser: the code.
+    expect((await signInFrom(login, trust, 'US')).twoFactor).toBe(true);
+    expect((await signInFrom(login, trust, 'T1')).twoFactor).toBe(true);
+    expect((await signInFrom(login, null, 'IN')).twoFactor).toBe(true);
+
+    // Unused for 15 days: the code again.
+    await deps.sql`update trusted_browsers set last_used_at = now() - interval '15 days'
+      where user_id = (select id from users where login = ${login})`;
+    expect((await signInFrom(login, trust, 'IN')).twoFactor).toBe(true);
+  });
+
+  it('a code at sign-in can trust the browser, or not; forgetting them all asks everywhere', async () => {
+    const login = `trust-${randomUUID().slice(0, 8)}`;
+    const s = await signIn(login);
+    const { secret } = (await call(s, 'POST', '/api/v1/me/2fa/setup')).json();
+    const codes: string[] = (
+      await call(s, 'POST', '/api/v1/me/2fa/enable', { code: codeFor(secret) })
+    ).json().recoveryCodes;
+
+    const asked = await signInFrom(login, null, 'IN');
+    expect(asked.twoFactor).toBe(true);
+    const kept = await app.inject({
+      method: 'POST',
+      url: '/auth/2fa/verify',
+      headers: { cookie: asked.cookie, 'cf-ipcountry': 'IN' },
+      payload: { code: codeFor(secret, 1) },
+    });
+    expect(kept.statusCode).toBe(200);
+    const trust = trustFrom(kept.headers['set-cookie']);
+    expect((await signInFrom(login, trust, 'IN')).twoFactor).toBe(false);
+
+    // "Not on this computer": nothing remembered.
+    const shared = await signInFrom(login, null, 'IN');
+    const notKept = await app.inject({
+      method: 'POST',
+      url: '/auth/2fa/verify',
+      headers: { cookie: shared.cookie },
+      payload: { code: codes[0] ?? '', remember: false },
+    });
+    expect(notKept.statusCode).toBe(200);
+    expect(trustFrom(notKept.headers['set-cookie'])).toBe('');
+
+    // Forget every trusted browser: the trusted one asks again.
+    expect((await call(s, 'DELETE', '/api/v1/me/2fa/trusted-browsers')).statusCode).toBe(204);
+    expect((await signInFrom(login, trust, 'IN')).twoFactor).toBe(true);
+  });
+
+  it('several wrong passwords just before a right one: the code, even on a trusted browser', async () => {
+    const login = `trust-${randomUUID().slice(0, 8)}`;
+    const email = `${login}@example.com`;
+    const s = await signIn(login);
+    const { secret } = (await call(s, 'POST', '/api/v1/me/2fa/setup')).json();
+    const on = await call(s, 'POST', '/api/v1/me/2fa/enable', { code: codeFor(secret) });
+    const trust = trustFrom(on.headers['set-cookie']);
+    await deps.sql`insert into user_passwords (user_id, email, hash, verified_at)
+      values ((select id from users where login = ${login}), ${email}, ${await hashPassword('right password 1')}, now())`;
+    const passwordSignIn = () =>
+      app.inject({
+        method: 'POST',
+        url: '/auth/email/login',
+        remoteAddress: `203.0.113.${(signIns % 200) + 20}`,
+        headers: { cookie: trust, origin: 'http://localhost:3000' },
+        payload: { email, password: 'right password 1' },
+      });
+    const calm = await passwordSignIn();
+    expect(calm.statusCode).toBe(200);
+    expect(calm.json().twoFactor).toBe(false);
+    await deps.valkey.set(`login-fails:${sha256Hex(email)}`, '3', 'EX', 900);
+    const afterGuesses = await passwordSignIn();
+    expect(afterGuesses.statusCode).toBe(200);
+    expect(afterGuesses.json().twoFactor).toBe(true);
+  });
+
+  it("changing a project's variables asks for a fresh code too", async () => {
+    const login = `trust-${randomUUID().slice(0, 8)}`;
+    const s = await signIn(login);
+    const { secret } = (await call(s, 'POST', '/api/v1/me/2fa/setup')).json();
+    await call(s, 'POST', '/api/v1/me/2fa/enable', { code: codeFor(secret) });
+    const [m] = await deps.sql<{ org_id: string }[]>`
+      select org_id from memberships where user_id = (select id from users where login = ${login})`;
+    const [p] = await deps.sql<{ id: string }[]>`
+      insert into projects (org_id, slug, name, repo_full_name, repo_url)
+      values (${m?.org_id}, ${login}, ${login}, ${`acme/${login}`}, ${`https://github.com/acme/${login}`})
+      returning id`;
+    await deps.sql`update sessions set mfa_verified_at = now() - interval '11 minutes'
+      where user_id = (select id from users where login = ${login})`;
+    const put = await call(s, 'PUT', `/api/v1/projects/${p?.id}/env/API_URL`, { value: 'x' });
+    expect(put.statusCode).toBe(403);
+    expect(put.json().code).toBe('mfa_required');
   });
 });

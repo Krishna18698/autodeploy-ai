@@ -113,7 +113,10 @@ export const useMembers = () =>
 export const useTwoFactor = () =>
   useQuery({
     queryKey: ['two-factor'],
-    queryFn: () => api<{ enabled: boolean; recoveryCodesLeft: number }>('/api/v1/me/2fa'),
+    queryFn: () =>
+      api<{ enabled: boolean; recoveryCodesLeft: number; trustedBrowsers: number }>(
+        '/api/v1/me/2fa',
+      ),
   });
 /** Platform admins: sites matching a search, or every one taken down. */
 export const useAdminSites = (q: string, down: boolean) =>

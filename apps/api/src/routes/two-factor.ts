@@ -15,6 +15,7 @@ import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { AppError, conflict, forbidden, unauthorized } from '../lib/errors.js';
 import { authOf, requireRecentMfa, requireRole } from '../plugins/auth.js';
+import { trustBrowser } from './auth.js';
 
 // Two-step sign-in with an authenticator app. Set up (a QR code drawn here, so
 // the secret never goes to another service), confirm with a first code (that
@@ -25,6 +26,12 @@ const Code = z.object({
   code: z.string().trim().min(6).max(20).describe('Six digits from the app, or a recovery code'),
 });
 const RecoveryCodes = z.object({ recoveryCodes: z.array(z.string()) });
+const SignInCode = Code.extend({
+  remember: z
+    .boolean()
+    .default(true)
+    .describe('Trust this browser: later sign-ins here skip the code for a while'),
+});
 const context = (userId: string) => `totp:${userId}`;
 
 export const twoFactorRoutes =
@@ -118,9 +125,13 @@ export const twoFactorRoutes =
       '/auth/2fa/verify',
       {
         config: { csrf: false, rateLimit: { limit: 10, windowMs: 60_000, key: 'ip' } },
-        schema: { hide: true, body: Code, response: { 200: z.object({ ok: z.literal(true) }) } },
+        schema: {
+          hide: true,
+          body: SignInCode,
+          response: { 200: z.object({ ok: z.literal(true) }) },
+        },
       },
-      async (req) => {
+      async (req, reply) => {
         const origin = req.headers.origin;
         if (origin && origin !== deps.env.APP_URL && origin !== deps.env.API_PUBLIC_URL)
           throw forbidden('Cross-origin request rejected');
@@ -128,6 +139,7 @@ export const twoFactorRoutes =
         if (!p) throw unauthorized('Sign in first');
         await useCode(p.userId, req.body.code, { recovery: true });
         await markVerified(p.sessionHash);
+        if (req.body.remember) await trustBrowser(deps, req, reply, p.userId);
         return { ok: true as const };
       },
     );
@@ -138,15 +150,40 @@ export const twoFactorRoutes =
         preHandler: requireRole(),
         schema: {
           tags: ['auth'],
-          response: { 200: z.object({ enabled: z.boolean(), recoveryCodesLeft: z.number() }) },
+          response: {
+            200: z.object({
+              enabled: z.boolean(),
+              recoveryCodesLeft: z.number(),
+              trustedBrowsers: z.number().describe('Browsers where sign-in skips the code'),
+            }),
+          },
         },
       },
       async (req) => {
         const a = authOf(req);
-        const [r] = await deps.sql<{ enabled: boolean; left: number }[]>`
+        const [r] = await deps.sql<{ enabled: boolean; left: number; trusted: number }[]>`
           select exists (select 1 from user_totp where user_id = ${a.userId} and confirmed_at is not null) as enabled,
-                 (select count(*)::int from user_recovery_codes where user_id = ${a.userId} and used_at is null) as left`;
-        return { enabled: r?.enabled ?? false, recoveryCodesLeft: r?.left ?? 0 };
+                 (select count(*)::int from user_recovery_codes where user_id = ${a.userId} and used_at is null) as left,
+                 (select count(*)::int from trusted_browsers where user_id = ${a.userId} and expires_at > now()) as trusted`;
+        return {
+          enabled: r?.enabled ?? false,
+          recoveryCodesLeft: r?.left ?? 0,
+          trustedBrowsers: r?.trusted ?? 0,
+        };
+      },
+    );
+
+    // A lost laptop or a shared computer: every browser asks for the code again.
+    app.delete(
+      '/api/v1/me/2fa/trusted-browsers',
+      {
+        preHandler: requireRole(),
+        schema: { tags: ['auth'], response: { 204: z.null() } },
+      },
+      async (req, reply) => {
+        sessionOnly(req);
+        await deps.sql`delete from trusted_browsers where user_id = ${authOf(req).userId}`;
+        return reply.code(204).send(null);
       },
     );
 
@@ -198,7 +235,7 @@ export const twoFactorRoutes =
         config: { rateLimit: { limit: 10, windowMs: 60_000 } },
         schema: { tags: ['auth'], body: Code, response: { 200: RecoveryCodes } },
       },
-      async (req) => {
+      async (req, reply) => {
         sessionOnly(req);
         const a = authOf(req);
         await guardGuesses(a.userId);
@@ -211,6 +248,8 @@ export const twoFactorRoutes =
         if (a.sessionHash) await markVerified(a.sessionHash);
         // Other sessions signed in without a code: they sign in again, with one.
         await deps.sql`delete from sessions where user_id = ${a.userId} and token_hash <> ${a.sessionHash ?? ''}`;
+        // The browser that just showed the code is the one they set it up on.
+        await trustBrowser(deps, req, reply, a.userId);
         return { recoveryCodes: await freshRecoveryCodes(a.userId) };
       },
     );
@@ -262,6 +301,7 @@ export const twoFactorRoutes =
         await deps.sql.begin(async (tx) => {
           await tx`delete from user_recovery_codes where user_id = ${a.userId}`;
           await tx`delete from user_totp where user_id = ${a.userId}`;
+          await tx`delete from trusted_browsers where user_id = ${a.userId}`;
         });
         return reply.code(204).send(null);
       },

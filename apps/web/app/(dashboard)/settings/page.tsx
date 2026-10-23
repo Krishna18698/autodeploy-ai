@@ -330,6 +330,20 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
 function TwoFactor() {
   const status = useTwoFactor();
   const toast = useToast();
+  // A lost laptop or a shared computer: every browser asks for the code again.
+  const [forgetting, setForgetting] = useState(false);
+  const forgetBrowsers = async () => {
+    setForgetting(true);
+    try {
+      await del('/api/v1/me/2fa/trusted-browsers');
+      await status.refetch();
+      toast('Every browser asks for a code at its next sign-in', 'ok');
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not forget them', 'fail');
+    } finally {
+      setForgetting(false);
+    }
+  };
   const [setup, setSetup] = useState<{ secret: string; qrSvg: string } | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [code, setCode] = useState('');
@@ -440,9 +454,14 @@ function TwoFactor() {
           <p>
             <span className="text-ok">● On.</span>{' '}
             <span className="text-muted">
-              Signing in and risky changes ask for a code. {status.data.recoveryCodesLeft} recovery
-              codes left.
+              New browsers, sign-ins after a while or from another country, and important changes
+              ask for a code. {status.data.recoveryCodesLeft} recovery codes left.
             </span>
+          </p>
+          <p className="mt-2 text-muted">
+            {status.data.trustedBrowsers === 0
+              ? 'No trusted browsers: every sign-in asks for a code.'
+              : `Trusted on ${status.data.trustedBrowsers} browser${status.data.trustedBrowsers === 1 ? '' : 's'} (sign-in there skips the code).`}
           </p>
           {turningOff ? (
             <form onSubmit={turnOff} className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -464,6 +483,11 @@ function TwoFactor() {
               <Button size="sm" onClick={newCodes} loading={busy}>
                 New recovery codes
               </Button>
+              {status.data.trustedBrowsers > 0 && (
+                <Button size="sm" onClick={forgetBrowsers} loading={forgetting}>
+                  Forget trusted browsers
+                </Button>
+              )}
               <Button size="sm" variant="ghost" onClick={() => setTurningOff(true)}>
                 Turn off
               </Button>

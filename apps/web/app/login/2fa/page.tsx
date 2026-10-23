@@ -16,13 +16,16 @@ function TwoFactorInner() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Remembered: later sign-ins on this browser skip the code (30 days, or 14
+  // unused), unless one comes from another country or after wrong passwords.
+  const [remember, setRemember] = useState(true);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await post('/auth/2fa/verify', { code });
+      await post('/auth/2fa/verify', { code, remember });
       router.replace(next);
     } catch (err) {
       setError(
@@ -59,6 +62,20 @@ function TwoFactorInner() {
           maxLength={recovery ? 20 : 7}
           required
         />
+        <label className="flex items-start gap-2.5 text-[13px] leading-5 text-fg/85">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="mt-0.5 size-4 accent-[var(--color-run)]"
+          />
+          <span>
+            Trust this browser for 30 days
+            <span className="block text-[12px] text-muted">
+              Untick on a shared computer. Important changes still ask for a code.
+            </span>
+          </span>
+        </label>
         {error && <Notice tone="fail">{error}</Notice>}
         <Button type="submit" variant="primary" loading={loading} className="h-10">
           Continue

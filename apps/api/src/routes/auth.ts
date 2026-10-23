@@ -100,9 +100,64 @@ export async function ensurePersonalOrg(
   return org.id;
 }
 
+// ---- trusted browsers (migration 0015) ----
+// After a code at sign-in, a browser can be remembered: signing in there skips
+// the code until the trust runs out, unless the sign-in looks risky. Dangerous
+// actions still ask (the session itself has shown no code).
+const TRUST_DAYS = 30;
+const TRUST_IDLE_DAYS = 14;
+const trustCookie = (env: { NODE_ENV: string }) =>
+  env.NODE_ENV === 'production' ? '__Host-ad_trust' : 'ad_trust';
+/** Cloudflare's country for the visitor ("T1" is Tor; "XX" unknown). */
+const countryOf = (req: FastifyRequest) => {
+  const c = req.headers['cf-ipcountry'];
+  return typeof c === 'string' && /^[A-Z][A-Z0-9]$/.test(c) ? c : null;
+};
+
+/** This browser was trusted by this user, recently, and from the same country. */
+async function trustedBrowser(deps: Deps, req: FastifyRequest, userId: string) {
+  const raw = req.cookies[trustCookie(deps.env)];
+  if (!raw) return false;
+  const country = countryOf(req);
+  if (country === 'T1') return false; // Tor: always ask
+  const [row] = await deps.sql<{ country: string | null }[]>`
+    select country from trusted_browsers
+    where token_hash = ${sha256Hex(raw)} and user_id = ${userId} and expires_at > now()
+      and last_used_at > now() - ${`${TRUST_IDLE_DAYS} days`}::interval`;
+  if (!row) return false;
+  // Another country than where the code was last shown: ask again.
+  if (row.country && country && country !== 'XX' && row.country !== country) return false;
+  await deps.sql`update trusted_browsers set last_used_at = now() where token_hash = ${sha256Hex(raw)}`;
+  return true;
+}
+
+/** Remember this browser for this user after they showed a code (replacing an older trust). */
+export async function trustBrowser(
+  deps: Deps,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  userId: string,
+) {
+  const old = req.cookies[trustCookie(deps.env)];
+  if (old) await deps.sql`delete from trusted_browsers where token_hash = ${sha256Hex(old)}`;
+  const token = randomToken(32);
+  await deps.sql`
+    insert into trusted_browsers (token_hash, user_id, country, user_agent, expires_at)
+    values (${sha256Hex(token)}, ${userId}, ${countryOf(req)}, ${req.headers['user-agent']?.slice(0, 300) ?? null},
+            now() + ${`${TRUST_DAYS} days`}::interval)`;
+  reply.setCookie(trustCookie(deps.env), token, {
+    httpOnly: true,
+    secure: deps.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: TRUST_DAYS * 86400,
+  });
+}
+
 /**
  * Every sign-in ends here. An account with an authenticator gets a session
- * that can only take the code (twoFactor: true); the dashboard asks for it.
+ * that can only take the code (twoFactor: true), unless this browser is
+ * trusted and nothing looks risky; the dashboard asks for it.
  */
 export async function startSession(
   deps: Deps,
@@ -110,12 +165,14 @@ export async function startSession(
   reply: FastifyReply,
   userId: string,
   orgId: string,
+  opts: { risky?: boolean } = {},
 ): Promise<{ csrfToken: string; twoFactor: boolean }> {
   const token = randomToken(32);
   const csrf = randomToken(24);
   const [mfa] = await deps.sql<{ on: boolean }[]>`
     select true as on from user_totp where user_id = ${userId} and confirmed_at is not null`;
-  const twoFactor = Boolean(mfa);
+  const twoFactor =
+    Boolean(mfa) && (opts.risky === true || !(await trustedBrowser(deps, req, userId)));
   await deps.sql`
     insert into sessions (token_hash, user_id, org_id, csrf_token, ip, user_agent, expires_at, mfa_pending)
     values (${sha256Hex(token)}, ${userId}, ${orgId}, ${csrf}, ${clientIp(req)}, ${req.headers['user-agent']?.slice(0, 300) ?? null},

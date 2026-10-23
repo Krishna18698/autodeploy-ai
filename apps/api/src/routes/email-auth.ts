@@ -239,7 +239,13 @@ export const emailAuthRoutes =
         }
         const orgId = await deps.sql.begin((tx) => orgOf(tx, row.user_id));
         if (!orgId) throw forbidden('This account has no organisation.');
-        return { ok: true as const, ...(await startSession(deps, req, reply, row.user_id, orgId)) };
+        // Several wrong passwords just before this one: ask for the code even
+        // on a trusted browser (someone may have been guessing).
+        const risky = fails >= 3;
+        return {
+          ok: true as const,
+          ...(await startSession(deps, req, reply, row.user_id, orgId, { risky })),
+        };
       },
     );
 

@@ -17,7 +17,7 @@ import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { sitesDomain } from '../env.js';
 import { AppError, conflict, notFound, unavailable } from '../lib/errors.js';
-import { authOf, requireRole } from '../plugins/auth.js';
+import { authOf, requireRecentMfa, requireRole } from '../plugins/auth.js';
 import { createDeployment } from '../services/deployments.js';
 import {
   type AttemptRow,
@@ -434,7 +434,8 @@ export const deploymentRoutes =
     app.post(
       '/api/v1/repairs/:id/approve',
       {
-        preHandler: requireRole('admin'),
+        // Approving puts the AI's code change live: a fresh code, as for other changes.
+        preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'repair.approve' },
         schema: { tags: ['repairs'], params: Params, response: { 200: Repair } },
       },

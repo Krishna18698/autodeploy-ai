@@ -81,6 +81,8 @@ const POLICY: Record<string, Rule> = {
   'POST /api/v1/me/2fa/verify': { need: 'viewer', body: () => ({ code: '000000' }) },
   'POST /api/v1/me/2fa/recovery-codes': { need: 'viewer' },
   'DELETE /api/v1/me/2fa': { need: 'viewer', body: () => ({ code: '000000' }) },
+  // Your own browsers only: anyone signed in may forget theirs.
+  'DELETE /api/v1/me/2fa/trusted-browsers': { need: 'viewer' },
 
   'GET /api/v1/projects': { need: 'viewer' },
   'POST /api/v1/projects': {
