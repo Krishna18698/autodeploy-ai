@@ -182,12 +182,20 @@ export const Project = z.object({
 });
 export type Project = z.infer<typeof Project>;
 
+export const EnvVarKey = z.string().regex(/^[A-Z_][A-Z0-9_]{0,127}$/, 'UPPER_SNAKE_CASE');
+export const EnvEntries = z
+  .array(z.object({ key: EnvVarKey, value: z.string().max(8192) }))
+  .max(200);
+
 export const CreateProjectBody = z.object({
   repoUrl: z.url(),
   name: z.string().min(1).max(80).optional(),
   slug: z.string().min(1).max(40).optional(),
   rootDir: RepoDir.default('.'),
   deploy: z.boolean().default(true),
+  env: EnvEntries.optional().describe(
+    'Environment variables, saved with the project so its first build has them',
+  ),
 });
 
 export const UpdateProjectBody = z
@@ -207,15 +215,10 @@ export const SlugAvailability = z.object({
 });
 
 // --- env vars ---------------------------------------------------------------
-export const EnvVarKey = z.string().regex(/^[A-Z_][A-Z0-9_]{0,127}$/, 'UPPER_SNAKE_CASE');
 export const EnvVar = z.object({ key: z.string(), updatedAt: Timestamp, preview: z.string() });
 export const PutEnvVarBody = z.object({ value: z.string().max(8192) });
 export const ImportEnvBody = z.object({
-  vars: z
-    .array(z.object({ key: EnvVarKey, value: z.string().max(8192) }))
-    .min(1)
-    .max(200)
-    .describe('From a .env file; existing keys are overwritten'),
+  vars: EnvEntries.min(1).describe('From a .env file; existing keys are overwritten'),
 });
 
 // --- deployments -----------------------------------------------------------

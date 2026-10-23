@@ -24,6 +24,21 @@ describe('analyzer', () => {
     expect(a.framework.evidence[0]?.detail).toContain('vite');
   });
 
+  it('finds variables read on the server too, not ones the runtime sets', () => {
+    const a = analyze(
+      tree({
+        'package.json': { scripts: { build: 'next build' }, dependencies: { next: '^15.0.0' } },
+        'app/api/route.ts': [
+          'const db = process.env.DATABASE_URL;',
+          "const key = process.env['STRIPE_SECRET_KEY'];",
+          'if (process.env.NODE_ENV === "production" && process.env.PORT) {}',
+          'console.log(process.env.NEXT_PUBLIC_SITE_URL);',
+        ].join('\n'),
+      }),
+    );
+    expect(a.envVars.value).toEqual(['DATABASE_URL', 'NEXT_PUBLIC_SITE_URL', 'STRIPE_SECRET_KEY']);
+  });
+
   it('honours .nvmrc over engines and the framework floor', () => {
     const a = analyze(
       tree({

@@ -6,12 +6,14 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { z } from 'zod';
+import { badRows, EnvEditor, type EnvRow, envToSend, rowsFor } from '@/components/app/env-editor';
 import { RepoPicker } from '@/components/app/repo-picker';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Panel, SkeletonRows } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey, post } from '@/lib/api';
+import { useMe } from '@/lib/queries';
 
 type Result = z.infer<typeof AnalyzeResult>;
 
@@ -28,6 +30,14 @@ export default function NewProjectPage() {
   const [domain, setDomain] = useState<string | null>(null);
   const [busy, setBusy] = useState<'analyze' | 'deploy' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Variables to save with the project (owners and admins, as in the Environment tab).
+  const me = useMe();
+  const canSetEnv = me.data?.org.role === 'owner' || me.data?.org.role === 'admin';
+  const [envRows, setEnvRows] = useState<EnvRow[]>([]);
+  const detected = result?.analysis.envVars.value.join(',') ?? '';
+  useEffect(() => {
+    setEnvRows((cur) => rowsFor(detected ? detected.split(',') : [], cur));
+  }, [detected]);
 
   useEffect(() => {
     // Until this slug is checked, show nothing (and keep Deploy disabled).
@@ -83,7 +93,13 @@ export default function NewProjectPage() {
     try {
       const r = await post<{ project: { id: string }; deploymentId: string | null }>(
         '/api/v1/projects',
-        { repoUrl: repoUrl.trim(), rootDir: rootDir.trim() || '.', slug, deploy: true },
+        {
+          repoUrl: repoUrl.trim(),
+          rootDir: rootDir.trim() || '.',
+          slug,
+          deploy: true,
+          ...(canSetEnv && envToSend(envRows).length > 0 && { env: envToSend(envRows) }),
+        },
         { idempotencyKey: newIdempotencyKey('create') },
       );
       await qc.invalidateQueries({ queryKey: ['projects'] });
@@ -204,10 +220,11 @@ export default function NewProjectPage() {
                 visitors and wakes on the next one (≈1–3 s).
               </p>
             )}
-            {a.envVars.value.length > 0 && (
+            {a.supported && canSetEnv && <EnvEditor rows={envRows} onChange={setEnvRows} />}
+            {a.supported && !canSetEnv && a.envVars.value.length > 0 && (
               <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
-                References {a.envVars.value.join(', ')} — set them in project settings if the site
-                needs them.
+                The code uses {a.envVars.value.join(', ')}. Only owners and admins can set
+                environment variables: ask one to add them after the import.
               </p>
             )}
             {a.warnings.map((w) => (
@@ -242,7 +259,7 @@ export default function NewProjectPage() {
                   className="sm:ml-auto"
                   loading={busy === 'deploy'}
                   loader="dots"
-                  disabled={!slugState?.available}
+                  disabled={!slugState?.available || (canSetEnv && badRows(envRows) > 0)}
                   onClick={deploy}
                 >
                   Deploy →

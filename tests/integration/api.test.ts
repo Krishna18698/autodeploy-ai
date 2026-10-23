@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { buildApp } from '@autodeploy/api/app';
 import { createDeps, type Deps } from '@autodeploy/api/deps';
@@ -455,6 +455,50 @@ describe("Joining an org takes the invitee's consent", () => {
     expect((await app.inject({ url: '/api/v1/invitations', headers: as(other) })).json()).toEqual(
       [],
     );
+  });
+});
+
+describe('Environment variables set while importing', () => {
+  it('are saved encrypted with the project, before its first build; only owners and admins', async () => {
+    const s = await login(`env-import-${randomUUID().slice(0, 6)}`);
+    const headers = { cookie: s.cookie, 'x-csrf-token': s.csrf };
+    const repoUrl = `file://${resolve('tests/fixtures/vite-ok')}`;
+    const create = (payload: object) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/v1/projects',
+        headers: { ...headers, 'idempotency-key': `env-${randomUUID()}` },
+        payload: { repoUrl, deploy: false, ...payload },
+      });
+
+    const made = await create({
+      slug: `envimp-${randomUUID().slice(0, 6)}`,
+      env: [
+        { key: 'VITE_API_URL', value: 'https://api.example.com' },
+        { key: 'SECRET_TOKEN', value: 'very-secret-value-123' },
+      ],
+    });
+    expect(made.statusCode).toBe(201);
+    const id = made.json().project.id;
+    const list = await app.inject({ url: `/api/v1/projects/${id}/env`, headers });
+    expect(list.json().map((v: { key: string }) => v.key)).toEqual([
+      'SECRET_TOKEN',
+      'VITE_API_URL',
+    ]);
+    expect(JSON.stringify(list.json())).not.toContain('very-secret-value-123');
+    const rows = await deps.sql<{ ciphertext: Buffer }[]>`
+      select ciphertext from env_vars where project_id = ${id}`;
+    for (const r of rows) expect(r.ciphertext.toString('utf8')).not.toContain('very-secret');
+
+    // A name that isn't UPPER_SNAKE_CASE is refused, and nothing is created.
+    const bad = await create({ rootDir: 'src', env: [{ key: 'not-valid', value: 'x' }] });
+    expect(bad.statusCode).toBe(400);
+
+    // A member may import a project, but not set its variables.
+    await deps.sql`update memberships set role = 'member'
+      where user_id = (select user_id from sessions where token_hash = ${sha256Hex(s.cookie.slice(s.cookie.indexOf('=') + 1))})`;
+    const asMember = await create({ rootDir: 'public', env: [{ key: 'A', value: 'b' }] });
+    expect(asMember.statusCode).toBe(403);
   });
 });
 

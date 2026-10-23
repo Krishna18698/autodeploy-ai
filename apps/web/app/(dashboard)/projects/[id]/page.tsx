@@ -3,6 +3,7 @@
 import { parseDotenv } from '@autodeploy/core/dotenv';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { use, useMemo, useState } from 'react';
 import { Screenshot } from '@/components/app/screenshot';
 import { PageHeader } from '@/components/app/shell';
@@ -309,17 +310,26 @@ function EnvVars({ projectId }: { projectId: string }) {
       setValue('');
       await env.refetch();
       toast(`${key} saved (encrypted)`, 'ok');
+      setChanged(true);
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Save failed', 'fail');
     }
   };
   const remove = async (k: string) => {
-    await del(`/api/v1/projects/${projectId}/env/${k}`);
-    await env.refetch();
+    try {
+      await del(`/api/v1/projects/${projectId}/env/${k}`);
+      await env.refetch();
+      setChanged(true);
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Delete failed', 'fail');
+    }
   };
   const [importing, setImporting] = useState(false);
+  // A change reaches the live site only with the next deploy: offer one.
+  const [changed, setChanged] = useState(false);
   return (
     <Panel title="Environment variables · write-only, envelope-encrypted">
+      {changed && <RedeployNotice projectId={projectId} onClose={() => setChanged(false)} />}
       <div className="mb-3 flex justify-end">
         <Button size="sm" onClick={() => setImporting((v) => !v)} aria-expanded={importing}>
           {importing ? 'Close import' : 'Import .env'}
@@ -332,6 +342,7 @@ function EnvVars({ projectId }: { projectId: string }) {
           onDone={async () => {
             setImporting(false);
             await env.refetch();
+            setChanged(true);
           }}
         />
       )}
@@ -364,8 +375,10 @@ function EnvVars({ projectId }: { projectId: string }) {
           {env.data.map((v) => (
             <li key={v.key} className="flex items-center gap-3 px-3 py-2 font-mono text-[13px]">
               <span className="text-fg">{v.key}</span>
-              <span className="text-muted">{v.preview}</span>
-              <span className="ml-auto text-[11px] text-muted">{ago(v.updatedAt)}</span>
+              <span className="whitespace-nowrap text-muted">{v.preview}</span>
+              <span className="ml-auto whitespace-nowrap text-[11px] text-muted">
+                {ago(v.updatedAt)}
+              </span>
               <Button
                 size="sm"
                 variant="ghost"
@@ -383,6 +396,69 @@ function EnvVars({ projectId }: { projectId: string }) {
         </p>
       )}
     </Panel>
+  );
+}
+
+/**
+ * After a variable changes: the live site keeps the old values until the next
+ * deploy. Deploy now starts one and takes you to it (live pipeline and logs);
+ * the ✕ leaves it for later.
+ */
+function RedeployNotice({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const deploy = async () => {
+    setBusy(true);
+    try {
+      const d = await post<{ id: string; number: number }>(
+        `/api/v1/projects/${projectId}/deployments`,
+        {},
+        { idempotencyKey: newIdempotencyKey('deploy') },
+      );
+      onClose();
+      toast(`Deploy #${d.number} started with your new variables`, 'ok');
+      await qc.invalidateQueries({ queryKey: ['deployments'] });
+      router.push(`/deployments/${d.id}`);
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not start a deploy', 'fail');
+      setBusy(false);
+    }
+  };
+  return (
+    <div
+      role="status"
+      className="mb-4 flex flex-col gap-3 rounded-lg border border-run/30 bg-run/8 px-4 py-3 text-[13px] sm:flex-row sm:items-center"
+    >
+      <p className="min-w-0 flex-1 leading-5">
+        <strong className="font-medium text-fg">Saved.</strong>{' '}
+        <span className="text-fg/80">
+          Your live site still uses the old values. Deploy again to use the new ones.
+        </span>
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="primary" size="sm" loading={busy} loader="dots" onClick={deploy}>
+          Deploy now
+        </Button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close, deploy later"
+          title="Deploy later"
+          className="grid size-9 place-items-center rounded-md text-muted hover:bg-raised hover:text-fg"
+        >
+          <svg viewBox="0 0 20 20" className="size-4" aria-hidden>
+            <path
+              d="M5 5l10 10M15 5L5 15"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -20,7 +20,7 @@ export type Inference<T> = { value: T; evidence: Evidence[] };
  * Bump whenever analyze() reaches different conclusions for the same repo, so
  * cached analyses (API and worker, keyed by commit) are recomputed. v2: SSR.
  */
-export const ANALYSIS_VERSION = 5; // v5: a missing root directory is an error, not the top level
+export const ANALYSIS_VERSION = 6; // v6: variables read on the server (process.env.ANY) are found too
 
 export type Framework =
   | 'next'
@@ -148,7 +148,33 @@ const ENV_PATTERNS: Array<{ re: RegExp; framework: Framework }> = [
   { re: /process\.env\.(NEXT_PUBLIC_[A-Z0-9_]+)/g, framework: 'next' },
   { re: /import\.meta\.env\.(PUBLIC_[A-Z0-9_]+)/g, framework: 'astro' },
   { re: /process\.env\.(REACT_APP_[A-Z0-9_]+)/g, framework: 'cra' },
+  // Read on the server or by a build script: any name (server-rendered apps
+  // need DATABASE_URL and the like), minus what the runtime sets itself.
+  { re: /process\.env\.([A-Z_][A-Z0-9_]*)\b/g, framework: 'unknown' },
+  { re: /process\.env\[\s*['"]([A-Z_][A-Z0-9_]*)['"]\s*\]/g, framework: 'unknown' },
 ];
+/** Set by Node, the platform or the framework, never by the person importing. */
+const RUNTIME_ENV = new Set([
+  'NODE_ENV',
+  'PORT',
+  'HOST',
+  'HOSTNAME',
+  'CI',
+  'TZ',
+  'HOME',
+  'PATH',
+  'PWD',
+  'USER',
+  'SHELL',
+  'TMPDIR',
+  'NEXT_RUNTIME',
+  'NEXT_PHASE',
+  'NEXT_DEPLOYMENT_ID',
+  'VERCEL',
+  'VERCEL_ENV',
+  'VERCEL_URL',
+  'VERCEL_REGION',
+]);
 
 const SOURCE_FILE = /\.(m?[jt]sx?|vue|svelte|astro)$/;
 const MAX_ENV_SCAN_FILES = 400;
@@ -637,7 +663,7 @@ export function analyze(tree: FileTree, rootDir = '.'): Analysis {
     for (const { re } of ENV_PATTERNS) {
       for (const m of text.matchAll(re)) {
         const name = m[1];
-        if (name && !envNames.has(name)) {
+        if (name && !envNames.has(name) && !RUNTIME_ENV.has(name)) {
           envNames.add(name);
           envEvidence.push({ source: file, detail: `references ${name}` });
         }

@@ -15,12 +15,12 @@ import {
 } from '@autodeploy/contracts';
 import { isValidSlug, RESERVED_LABELS } from '@autodeploy/core';
 import { encrypt, previewSecret } from '@autodeploy/crypto';
-import { withOrg } from '@autodeploy/db';
+import { type Tx, withOrg } from '@autodeploy/db';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { sitesDomain } from '../env.js';
-import { AppError, badRequest, conflict, notFound } from '../lib/errors.js';
+import { AppError, badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { authOf, requireRecentMfa, requireRole } from '../plugins/auth.js';
 import { createDeployment } from '../services/deployments.js';
 import { enforceProjectLimit } from '../services/limits.js';
@@ -156,6 +156,10 @@ export const projectRoutes =
       async (req, reply) => {
         const a = authOf(req);
         await assertNotSuspended(deps.sql, a.orgId, deps.env.PLATFORM_DOMAIN);
+        const env = req.body.env ?? [];
+        // The same rule as the Environment tab: only admins set variables.
+        if (env.length > 0 && a.role !== 'owner' && a.role !== 'admin')
+          throw forbidden('Only owners and admins can set environment variables.');
         const src = await resolveSource(deps, req.body.repoUrl, undefined, a);
         // Refuse what can't work before downloading and analysing anything (that
         // took ~16 s on a busy VM): this repository and folder is already a project
@@ -214,6 +218,10 @@ export const projectRoutes =
             values (${a.orgId}, ${slug}, ${req.body.name ?? src.fullName.split('/')[1] ?? slug}, ${src.fullName}, ${src.repoUrl},
                     ${src.defaultBranch}, ${analysis.framework.value}, ${req.body.rootDir}, ${tx.json(analysis as never)}, ${src.installationId})
             returning *`;
+          // Before the first build is queued, so it has them.
+          if (row)
+            for (const { key, value } of env)
+              await saveEnvVar(deps, tx, { projectId: row.id, orgId: a.orgId, key, value });
           return row;
         }).catch((err: { code?: string; constraint_name?: string }) => {
           if (err.code === '23505' && err.constraint_name === 'projects_slug_key')
@@ -226,7 +234,14 @@ export const projectRoutes =
           throw err;
         });
         if (!project) throw new Error('insert failed');
-        req.auditTarget = { type: 'project', id: project.id, metadata: { repo: src.fullName } };
+        req.auditTarget = {
+          type: 'project',
+          id: project.id,
+          metadata: {
+            repo: src.fullName,
+            ...(env.length > 0 && { envKeys: env.map((v) => v.key) }),
+          },
+        };
 
         let deploymentId: string | null = null;
         if (req.body.deploy && analysis.supported) {
@@ -423,14 +438,8 @@ export const projectRoutes =
         await withOrg(deps.sql, orgId, async (tx) => {
           const [p] = await tx`select 1 from projects where id = ${id}`;
           if (!p) throw notFound('Project');
-          for (const { key, value } of req.body.vars) {
-            const env = encrypt(deps.keyring, value, `env:${id}:${key}`);
-            await tx`
-              insert into env_vars (project_id, org_id, key, ciphertext, dek_ciphertext, key_version, preview)
-              values (${id}, ${orgId}, ${key}, ${env.ciphertext}, ${env.dekCiphertext}, ${env.keyVersion}, ${previewSecret(value)})
-              on conflict (project_id, key) do update set ciphertext = excluded.ciphertext, dek_ciphertext = excluded.dek_ciphertext,
-                key_version = excluded.key_version, preview = excluded.preview, updated_at = now()`;
-          }
+          for (const { key, value } of req.body.vars)
+            await saveEnvVar(deps, tx, { projectId: id, orgId, key, value });
         });
         const imported = req.body.vars.map((v) => v.key);
         req.auditTarget = { type: 'project', id, metadata: { envKeys: imported } };
@@ -494,6 +503,22 @@ export const projectRoutes =
       },
     );
   };
+
+/** Saves one variable, encrypted for this project and name; an existing one is replaced. */
+async function saveEnvVar(
+  deps: Deps,
+  tx: Tx,
+  v: { projectId: string; orgId: string; key: string; value: string },
+) {
+  const env = encrypt(deps.keyring, v.value, `env:${v.projectId}:${v.key}`);
+  const [r] = await tx<{ updated_at: Date }[]>`
+    insert into env_vars (project_id, org_id, key, ciphertext, dek_ciphertext, key_version, preview)
+    values (${v.projectId}, ${v.orgId}, ${v.key}, ${env.ciphertext}, ${env.dekCiphertext}, ${env.keyVersion}, ${previewSecret(v.value)})
+    on conflict (project_id, key) do update set ciphertext = excluded.ciphertext, dek_ciphertext = excluded.dek_ciphertext,
+      key_version = excluded.key_version, preview = excluded.preview, updated_at = now()
+    returning updated_at`;
+  return r;
+}
 
 async function firstFreeSlug(deps: Deps, base: string): Promise<string> {
   const root = isValidSlug(base) ? base : 'site';
