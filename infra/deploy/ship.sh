@@ -114,8 +114,11 @@ cat >"$tmp/images.sh" <<EOF
 cd $dir/src
 for spec in api:apps/api/Dockerfile:. worker:apps/worker/Dockerfile:. egress:infra/sandbox/egress/Dockerfile:infra/sandbox/egress; do
   IFS=: read -r name file ctx <<<"\$spec"
-  docker build --progress=plain -f "\$file" -t ghcr.io/$owner/autodeploy-\$name:$tag "\$ctx" >/tmp/build-\$name.log 2>&1 ||
-    { echo "✗ \$name image failed:"; tail -40 /tmp/build-\$name.log; exit 1; }
+  # Its own log, a new file each ship (not /tmp: an older /tmp/build-*.log left
+  # by the login user can't be written by root there, fs.protected_regular).
+  log=$ON_VM_LOGS/build-\$name-$tag-$RUN_ID.log
+  docker build --progress=plain -f "\$file" -t ghcr.io/$owner/autodeploy-\$name:$tag "\$ctx" >"\$log" 2>&1 ||
+    { echo "✗ \$name image failed:"; tail -40 "\$log"; exit 1; }
   echo "  built \$name"
 done
 EOF

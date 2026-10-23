@@ -39,7 +39,9 @@ remote_in() {
   run_remote 4 "$file" "$@"
 }
 
-# A transient systemd unit runs the script, writing its output to a log and,
+# A transient systemd unit runs the script (as root, with HOME=/root as under
+# sudo: a unit gets no HOME of its own, and Docker reads its config there),
+# writing its output to a log and,
 # when it ends, its exit status to a file. Watching is a series of short
 # connections, each patient with drops (about 4 minutes of retrying), so a
 # dropped line pauses the watching while the work carries on. Starting is
@@ -50,7 +52,7 @@ on_vm() {
   local log="$ON_VM_LOGS/$unit.log" st="$ON_VM_LOGS/$unit.status"
   remote_in "$script" "sudo install -D -m 700 /dev/stdin $ON_VM_LOGS/$unit.sh"
   remote "systemctl is-active --quiet $unit || sudo test -f $st ||
-    sudo systemd-run --quiet --collect --unit=$unit bash -c 'bash $ON_VM_LOGS/$unit.sh > $log 2>&1; echo \$? > $st'"
+    sudo systemd-run --quiet --collect --setenv=HOME=/root --unit=$unit bash -c 'bash $ON_VM_LOGS/$unit.sh > $log 2>&1; echo \$? > $st'"
   local seen=0 started=$SECONDS out first status size
   while :; do
     # One line "<status or running> <log size>", then the log from where we were.
