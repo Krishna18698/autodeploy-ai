@@ -42,8 +42,18 @@ afterAll(async () => {
 
 type Session = { cookie: string; csrf: string };
 
+// Sign-in is rate-limited per address, and the suites share one limiter:
+// each sign-in here comes from its own test address (198.18.0.0/24; the
+// rate-limit test below spends 203.0.113.9's allowance on purpose).
+let signIns = 0;
 async function login(login: string): Promise<Session> {
-  const r = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { login } });
+  signIns = (signIns % 250) + 1;
+  const r = await app.inject({
+    method: 'POST',
+    url: '/auth/dev-login',
+    payload: { login },
+    remoteAddress: `198.18.0.${signIns}`,
+  });
   expect(r.statusCode).toBe(200);
   const cookie = String(r.headers['set-cookie']).split(';')[0] ?? '';
   return { cookie, csrf: r.json().csrfToken };

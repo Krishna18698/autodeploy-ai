@@ -259,9 +259,18 @@ function fill(path: string, f: Fixtures) {
 type Session = { cookie: string; csrf: string; login: string };
 
 /** Signs a fresh user in, gives them `role` in `orgId`, and makes it their session's org. */
+// Sign-in is rate-limited per address, and the suites share one limiter:
+// each sign-in here comes from its own test address (198.18.1.0/24).
+let signIns = 0;
 async function signIn(orgId: string, role: Role): Promise<Session> {
   const login = `${role}-${randomUUID().slice(0, 8)}`;
-  const r = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { login } });
+  signIns = (signIns % 250) + 1;
+  const r = await app.inject({
+    method: 'POST',
+    url: '/auth/dev-login',
+    payload: { login },
+    remoteAddress: `198.18.1.${signIns}`,
+  });
   expect(r.statusCode).toBe(200);
   const s = {
     cookie: String(r.headers['set-cookie']).split(';')[0] ?? '',

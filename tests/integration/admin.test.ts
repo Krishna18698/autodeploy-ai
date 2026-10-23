@@ -51,8 +51,17 @@ afterAll(async () => {
 });
 
 type Session = { cookie: string; csrf: string };
+// Sign-in is rate-limited per address, and the suites share one limiter:
+// each sign-in here comes from its own test address (192.0.2.0/24).
+let signIns = 0;
 async function login(name: string, githubId: number | null = null): Promise<Session> {
-  const r = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { login: name } });
+  signIns = (signIns % 250) + 1;
+  const r = await app.inject({
+    method: 'POST',
+    url: '/auth/dev-login',
+    payload: { login: name },
+    remoteAddress: `192.0.2.${signIns}`,
+  });
   expect(r.statusCode).toBe(200);
   if (githubId !== null)
     await deps.sql`update users set github_id = ${githubId} where login = ${name}`;
