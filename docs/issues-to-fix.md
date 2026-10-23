@@ -1,6 +1,6 @@
 # Issues to fix
 
-What's left and what's done, kept current. Last updated 2026-10-23.
+What's left and what's done, kept current. Last updated 2026-10-23 (late).
 
 ## Not done, needed before launch
 
@@ -21,6 +21,8 @@ last, each only on the owner's yes.
 - [ ] **Audit #21:** the AI repair still fails the JSON trailing-comma case (the model repeats an ambiguous snippet). A `line` field in the edit schema broke NVIDIA's structured output (7/8 → 1/8 in an A/B), so never re-add it untested.
 - [ ] **Status lights:** the pulsing current pipeline step, the "live" dot on build logs and an app "waking up" still pulse the old way; the owner may want a design for them.
 - [ ] **Projects table on load:** column headers can shift a few pixels sideways as real names replace the placeholders (nothing moves up or down).
+- [ ] **Deploys can fail on a dropped tunnel connection:** on 2026-10-23 the connection from GitHub's runner to the VM (Cloudflare Access SSH) broke mid-deploy three times ("Broken pipe", exit 255), at random steps, with the VM healthy. Nothing was half-installed (it breaks before the containers change) and re-running the failed job worked each time (`gh run rerun <id> --failed`). Option: have `infra/deploy/ship.sh` retry a step whose connection drops.
+- [ ] **Smoke: fetching a just-deployed site sometimes times out from the test machine:** "a failed build is never a dead end" timed out twice (60 s) on its very last step, loading the new site from the Mac, then passed on the third run. Site serving didn't change that day; watch whether it comes back.
 
 **Clean-up with a date**
 - [ ] **Remove the session move after 2026-11-10:** `apps/api/src/routes/session-move.ts`, the handoff rewrite in `apps/web/next.config.ts` and `moveSession` in `apps/web/lib/api.ts`. By then every old cookie on the dashboard's host has expired.
@@ -34,6 +36,9 @@ last, each only on the owner's yes.
 ## Done
 
 **2026-10-23**
+- [x] **Two-step sign-in asks when it matters, not at every sign-in:** the code is needed on a new browser, after 30 days (14 unused), from another country than that browser's last code, over Tor, or after 3+ wrong passwords; otherwise a trusted browser signs straight in ("Trust this browser for 30 days", ticked by default). Settings shows the trusted browsers with "Forget trusted browsers"; turning two-step off forgets them. Important changes now also include project changes (build settings, environment variables, approving an AI fix); one code covers 10 minutes; deploys and rollbacks don't ask.
+- [x] **Saved variable values are shown as dots only** (like Vercel's Sensitive variables): nothing of a value, not even its length; values stay write-only. Migration 0014 replaced the partial previews already stored.
+- [x] **Redirect loop for visitors whose DNS still sent the dashboard to Cloudflare** (a VPN's stale cache): the dashboard redirected the edge Worker's fallback requests back to itself, forever. The post-switch cleanup had removed the exception the Worker relies on; restored and checked on production.
 - [x] **Environment variables when importing:** the import page lists the variables the analysis finds in the code as fields to fill in, plus "+ Add variable" and "Import .env"; they're saved encrypted with the project, so the first build has them (owners and admins only, as in the Environment tab). The analysis now also finds variables read on the server (`process.env.DATABASE_URL` and the like), not only the public browser prefixes.
 - [x] **"Deploy again" after changing a variable:** saving, importing or removing one shows a message that the live site still uses the old values, with Deploy now (wave dots, then the new deployment's page) and ✕ for later.
 - [x] **Loading animations:** the logo builds up while the account loads; every page, list and panel shows shimmer placeholders; buttons show an orbit ring, approve and deploy buttons wave dots; screenshots show dots until they arrive. Placeholders take exactly the space of what replaces them, so nothing jumps on load (measured at phone and desktop width). Sign-out goes to the home page.
