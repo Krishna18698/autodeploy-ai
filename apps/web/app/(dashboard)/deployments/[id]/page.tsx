@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { use, useEffect, useMemo, useRef, useState } from 'react';
 import { RuntimePanel } from '@/components/app/runtime-panel';
+import { Screenshot } from '@/components/app/screenshot';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
@@ -16,7 +17,7 @@ import { StatusPill } from '@/components/ui/status';
 import { Stepper } from '@/components/ui/stepper';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
-import { API_ORIGIN, ApiError, api, apiAsset, apiUrl, newIdempotencyKey, post } from '@/lib/api';
+import { API_ORIGIN, ApiError, api, apiUrl, newIdempotencyKey, post } from '@/lib/api';
 import { useApiStatus } from '@/lib/api-status';
 import { ago, duration, shortSha } from '@/lib/format';
 import {
@@ -226,11 +227,12 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
               )}
               {d.screenshotUrl && (
                 <Panel title="Validated render" pad={false}>
-                  {/* biome-ignore lint/performance/noImgElement: authenticated API image */}
-                  <img
-                    src={apiAsset(d.screenshotUrl)}
+                  <Screenshot
+                    url={d.screenshotUrl}
                     alt="Headless Chromium screenshot of the deployed site"
-                    className="w-full rounded-b-[8px]"
+                    className="aspect-[16/10] w-full overflow-hidden rounded-b-[8px]"
+                    imgClassName="h-full w-full object-cover object-top"
+                    dot={7}
                   />
                 </Panel>
               )}

@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { LogoLoader } from '@/components/ui/loaders';
 import { Logo } from '@/components/ui/logo';
@@ -51,6 +51,19 @@ export function Shell({ children }: { children: ReactNode }) {
   const quota = useQuota();
   const [menu, setMenu] = useState(false);
 
+  // While the account loads: the logo, as one element before and after, so
+  // its animation runs on without restarting. The page then shows at once,
+  // its panels shimmering until their data arrives.
+  const opening = !me.data && (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-bg">
+      <LogoLoader label="Loading your dashboard" />
+    </div>
+  );
+  // The first page appears straight after the logo; later page switches fade in.
+  const firstPath = useRef(pathname);
+  const navigated = useRef(false);
+  if (pathname !== firstPath.current) navigated.current = true;
+
   useEffect(() => {
     if (me.error instanceof ApiError && me.error.status === 401)
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
@@ -67,16 +80,19 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
       );
-    return (
-      <div className="grid min-h-dvh place-items-center">
-        {me.error && !(me.error instanceof ApiError && me.error.status === 401) ? (
+    if (me.error && !(me.error instanceof ApiError && me.error.status === 401))
+      return (
+        <div className="grid min-h-dvh place-items-center">
           <span className="font-mono text-[12px] text-muted">
             Something went wrong loading your account. Try reloading the page.
           </span>
-        ) : (
-          <LogoLoader label="Loading your dashboard" />
-        )}
-      </div>
+        </div>
+      );
+    return (
+      <>
+        {null}
+        {opening}
+      </>
     );
   }
 
@@ -84,96 +100,149 @@ export function Shell({ children }: { children: ReactNode }) {
     await post('/api/v1/session/org', { orgId });
     await qc.invalidateQueries();
   };
+  // Signed out on purpose: back to the home page, not a sign-in form.
   const logout = async () => {
     await post('/auth/logout');
     qc.clear();
-    router.replace('/login');
+    router.replace('/');
   };
   const pending = awaiting.data?.length ?? 0;
 
   return (
-    <div className="min-h-dvh bg-bg lg:grid lg:grid-cols-[220px_1fr]">
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-panel focus:px-3 focus:py-2"
-      >
-        Skip to content
-      </a>
-      <aside className="sticky top-0 z-30 flex flex-col border-b border-white/6 bg-[#0b0c0e]/90 backdrop-blur lg:h-dvh lg:border-b-0 lg:border-r">
-        <div className="flex h-14 items-center justify-between px-4">
-          <Link
-            href="/overview"
-            className="flex items-center gap-2 text-[13px] font-semibold tracking-tight"
-          >
-            <Logo />
-          </Link>
-          <button
-            type="button"
-            className="-mr-2 grid size-10 place-items-center rounded-md text-muted hover:text-fg lg:hidden"
-            aria-label={menu ? 'Close menu' : 'Open menu'}
-            aria-expanded={menu}
-            onClick={() => setMenu((m) => !m)}
-          >
-            <svg viewBox="0 0 20 20" className="size-5" aria-hidden>
-              {menu ? (
-                <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" />
-              ) : (
-                <path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" strokeWidth="1.6" />
-              )}
-            </svg>
-          </button>
-        </div>
-        <nav aria-label="Main" className={`${menu ? 'block' : 'hidden'} px-2 pb-3 lg:block`}>
-          <ul className="flex flex-col gap-0.5">
-            {[...NAV, ...(me.data.user.platformAdmin ? [ADMIN_NAV] : [])].map((n) => {
-              const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
-              return (
-                <li key={n.href}>
-                  <Link
-                    href={n.href}
-                    onClick={() => setMenu(false)}
-                    aria-current={active ? 'page' : undefined}
-                    className={`relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors pointer-coarse:py-2.5 ${active ? 'text-fg' : 'text-muted hover:bg-white/4 hover:text-fg'}`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="nav-active"
-                        className="absolute inset-0 rounded-lg bg-white/6"
-                        transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-                      />
-                    )}
-                    <svg viewBox="0 0 20 20" aria-hidden className="relative size-4 shrink-0">
-                      <path
-                        d={n.icon}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    <span className="relative">{n.label}</span>
-                    {n.href === '/recovery' && pending > 0 && (
-                      <span className="relative ml-auto rounded-full bg-ai/20 px-1.5 font-mono text-[10px] text-ai">
-                        {pending}
-                        <span className="sr-only"> awaiting approval</span>
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-          {/* Phones: the top bar is hidden, so its org switcher and sign-out live here. */}
-          <div className="mt-3 flex flex-col gap-2 border-t border-white/6 px-3 pt-3 lg:hidden">
-            <label className="text-[12px] text-muted" htmlFor="org-mobile">
+    <>
+      <div className="min-h-dvh bg-bg lg:grid lg:grid-cols-[220px_1fr]">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-panel focus:px-3 focus:py-2"
+        >
+          Skip to content
+        </a>
+        <aside className="sticky top-0 z-30 flex flex-col border-b border-white/6 bg-[#0b0c0e]/90 backdrop-blur lg:h-dvh lg:border-b-0 lg:border-r">
+          <div className="flex h-14 items-center justify-between px-4">
+            <Link
+              href="/overview"
+              className="flex items-center gap-2 text-[13px] font-semibold tracking-tight"
+            >
+              <Logo />
+            </Link>
+            <button
+              type="button"
+              className="-mr-2 grid size-10 place-items-center rounded-md text-muted hover:text-fg lg:hidden"
+              aria-label={menu ? 'Close menu' : 'Open menu'}
+              aria-expanded={menu}
+              onClick={() => setMenu((m) => !m)}
+            >
+              <svg viewBox="0 0 20 20" className="size-5" aria-hidden>
+                {menu ? (
+                  <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" />
+                ) : (
+                  <path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" strokeWidth="1.6" />
+                )}
+              </svg>
+            </button>
+          </div>
+          <nav aria-label="Main" className={`${menu ? 'block' : 'hidden'} px-2 pb-3 lg:block`}>
+            <ul className="flex flex-col gap-0.5">
+              {[...NAV, ...(me.data.user.platformAdmin ? [ADMIN_NAV] : [])].map((n) => {
+                const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
+                return (
+                  <li key={n.href}>
+                    <Link
+                      href={n.href}
+                      onClick={() => setMenu(false)}
+                      aria-current={active ? 'page' : undefined}
+                      className={`relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors pointer-coarse:py-2.5 ${active ? 'text-fg' : 'text-muted hover:bg-white/4 hover:text-fg'}`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="nav-active"
+                          className="absolute inset-0 rounded-lg bg-white/6"
+                          transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                        />
+                      )}
+                      <svg viewBox="0 0 20 20" aria-hidden className="relative size-4 shrink-0">
+                        <path
+                          d={n.icon}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <span className="relative">{n.label}</span>
+                      {n.href === '/recovery' && pending > 0 && (
+                        <span className="relative ml-auto rounded-full bg-ai/20 px-1.5 font-mono text-[10px] text-ai">
+                          {pending}
+                          <span className="sr-only"> awaiting approval</span>
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            {/* Phones: the top bar is hidden, so its org switcher and sign-out live here. */}
+            <div className="mt-3 flex flex-col gap-2 border-t border-white/6 px-3 pt-3 lg:hidden">
+              <label className="text-[12px] text-muted" htmlFor="org-mobile">
+                Organisation
+              </label>
+              <select
+                id="org-mobile"
+                value={me.data.org.id}
+                onChange={(e) => switchOrg(e.target.value)}
+                className="h-10 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
+              >
+                {me.data.orgs.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name} · {o.role}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center justify-between py-1 text-[13px] text-muted">
+                <span>{me.data.user.login}</span>
+                <button type="button" onClick={logout} className="py-2 hover:text-fg">
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </nav>
+          <div className="mt-auto hidden border-t border-white/6 px-4 py-3 text-[12px] text-muted lg:block">
+            {quota.data && (
+              <div className="mb-3">
+                <div className="flex justify-between">
+                  <span>Deploys today</span>
+                  <span className="tabular-nums">
+                    {quota.data.deploysToday}/{quota.data.dailyLimit}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/6">
+                  <div
+                    className="h-full rounded-full bg-run/80"
+                    style={{
+                      width: `${Math.min(100, (quota.data.deploysToday / Math.max(1, quota.data.dailyLimit)) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            <span className="flex items-center gap-1.5">
+              <Kbd>⌘</Kbd>
+              <Kbd>K</Kbd> to jump
+            </span>
+          </div>
+        </aside>
+
+        <div className="min-w-0">
+          <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-3 border-b border-white/6 bg-bg/80 px-6 backdrop-blur lg:flex">
+            <label className="sr-only" htmlFor="org">
               Organisation
             </label>
             <select
-              id="org-mobile"
+              id="org"
               value={me.data.org.id}
               onChange={(e) => switchOrg(e.target.value)}
-              className="h-10 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
+              className="h-8 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
             >
               {me.data.orgs.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -181,90 +250,41 @@ export function Shell({ children }: { children: ReactNode }) {
                 </option>
               ))}
             </select>
-            <div className="flex items-center justify-between py-1 text-[13px] text-muted">
-              <span>{me.data.user.login}</span>
-              <button type="button" onClick={logout} className="py-2 hover:text-fg">
-                Sign out
-              </button>
-            </div>
-          </div>
-        </nav>
-        <div className="mt-auto hidden border-t border-white/6 px-4 py-3 text-[12px] text-muted lg:block">
-          {quota.data && (
-            <div className="mb-3">
-              <div className="flex justify-between">
-                <span>Deploys today</span>
-                <span className="tabular-nums">
-                  {quota.data.deploysToday}/{quota.data.dailyLimit}
-                </span>
-              </div>
-              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/6">
-                <div
-                  className="h-full rounded-full bg-run/80"
-                  style={{
-                    width: `${Math.min(100, (quota.data.deploysToday / Math.max(1, quota.data.dailyLimit)) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
-          <span className="flex items-center gap-1.5">
-            <Kbd>⌘</Kbd>
-            <Kbd>K</Kbd> to jump
-          </span>
-        </div>
-      </aside>
-
-      <div className="min-w-0">
-        <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-3 border-b border-white/6 bg-bg/80 px-6 backdrop-blur lg:flex">
-          <label className="sr-only" htmlFor="org">
-            Organisation
-          </label>
-          <select
-            id="org"
-            value={me.data.org.id}
-            onChange={(e) => switchOrg(e.target.value)}
-            className="h-8 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
-          >
-            {me.data.orgs.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name} · {o.role}
-              </option>
-            ))}
-          </select>
-          <span className="flex items-center gap-2 text-[13px] text-muted">
-            <span
-              aria-hidden
-              className="grid size-7 place-items-center rounded-full bg-gradient-to-b from-white/20 to-white/5 text-[11px] font-medium text-fg"
-            >
-              {me.data.user.login.slice(0, 2).toUpperCase()}
+            <span className="flex items-center gap-2 text-[13px] text-muted">
+              <span
+                aria-hidden
+                className="grid size-7 place-items-center rounded-full bg-gradient-to-b from-white/20 to-white/5 text-[11px] font-medium text-fg"
+              >
+                {me.data.user.login.slice(0, 2).toUpperCase()}
+              </span>
+              {me.data.user.login}
             </span>
-            {me.data.user.login}
-          </span>
-          <button type="button" onClick={logout} className="text-[13px] text-muted hover:text-fg">
-            Sign out
-          </button>
-        </header>
-        {/* A CSS fade, restarted per page by the key. It used to be a motion
+            <button type="button" onClick={logout} className="text-[13px] text-muted hover:text-fg">
+              Sign out
+            </button>
+          </header>
+          {/* A CSS fade, restarted per page by the key. It used to be a motion
             exit/enter pair (AnimatePresence mode="wait"), whose exit could stall
             on client-side navigation and leave the new page at opacity 0: a
             blank screen. A CSS animation always ends visible. */}
-        <main
-          id="main"
-          key={pathname}
-          className="page-in mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8"
-        >
-          <div className="mb-6 empty:hidden">
-            <OutageBanner where="dashboard" />
-          </div>
-          <PausedWhenDown>
-            <Invitations />
-            {children}
-          </PausedWhenDown>
-        </main>
+          <main
+            id="main"
+            key={pathname}
+            className={`${navigated.current ? 'page-in ' : ''}mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8`}
+          >
+            <div className="mb-6 empty:hidden">
+              <OutageBanner where="dashboard" />
+            </div>
+            <PausedWhenDown>
+              <Invitations />
+              {children}
+            </PausedWhenDown>
+          </main>
+        </div>
+        <CommandPalette />
       </div>
-      <CommandPalette />
-    </div>
+      {opening}
+    </>
   );
 }
 

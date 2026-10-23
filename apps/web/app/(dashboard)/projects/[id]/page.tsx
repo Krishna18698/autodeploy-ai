@@ -4,6 +4,7 @@ import { parseDotenv } from '@autodeploy/core/dotenv';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { use, useMemo, useState } from 'react';
+import { Screenshot } from '@/components/app/screenshot';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
@@ -11,7 +12,7 @@ import { Empty, Panel, SkeletonPage, SkeletonRows } from '@/components/ui/panel'
 import { StatusPill } from '@/components/ui/status';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
-import { ApiError, apiAsset, del, newIdempotencyKey, patch, post, put } from '@/lib/api';
+import { ApiError, del, newIdempotencyKey, patch, post, put } from '@/lib/api';
 import { ago, shortSha } from '@/lib/format';
 import { type DeploymentSummaryT, useDeployments, useEnv, useProject } from '@/lib/queries';
 
@@ -135,12 +136,11 @@ function History({ projectId }: { projectId: string }) {
               className="row-span-2 block h-12 w-20 self-start overflow-hidden rounded border border-line bg-raised sm:row-span-1 sm:self-center"
             >
               {d.screenshotUrl ? (
-                // biome-ignore lint/performance/noImgElement: authenticated API image, not optimisable by next/image
-                <img
-                  src={apiAsset(d.screenshotUrl)}
+                <Screenshot
+                  url={d.screenshotUrl}
                   alt={`Screenshot of deployment ${d.number}`}
-                  className="h-full w-full object-cover object-top"
-                  loading="lazy"
+                  className="h-full w-full"
+                  imgClassName="h-full w-full object-cover object-top"
                 />
               ) : (
                 <span className="grid h-full place-items-center font-mono text-[10px] text-muted">

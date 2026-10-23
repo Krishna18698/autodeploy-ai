@@ -42,9 +42,7 @@ export default function DeploymentsPage() {
         ) : deps.data.items.length === 0 ? (
           <Empty title="Nothing here" />
         ) : (
-          <ul
-            className={`divide-y divide-line transition-opacity ${deps.isFetching ? 'opacity-90' : ''}`}
-          >
+          <ul className="divide-y divide-line">
             {deps.data.items.map((d) => (
               <li key={d.id}>
                 <Link

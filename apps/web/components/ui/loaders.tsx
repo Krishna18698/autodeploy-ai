@@ -60,12 +60,20 @@ export function OrbitRing({ size = 13 }: { size?: number }) {
 }
 
 /** Three dots in the logo's colours rising in turn; darker shades on a light button. */
-export function WaveDots({ onLight = false }: { onLight?: boolean }) {
+export function WaveDots({ onLight = false, size = 4 }: { onLight?: boolean; size?: number }) {
   const colors = onLight ? ['#2f8a5e', '#4a68b3', '#3b4e78'] : ['#4cc38a', '#698bda', '#7aa2ff'];
   return (
-    <span aria-hidden className="ld-dots inline-flex shrink-0 items-center gap-[3px]">
+    <span
+      aria-hidden
+      className="ld-dots inline-flex shrink-0 items-center"
+      style={{ gap: Math.max(3, size * 0.75) }}
+    >
       {colors.map((c) => (
-        <span key={c} className="block size-1 rounded-full" style={{ background: c }} />
+        <span
+          key={c}
+          className="block rounded-full"
+          style={{ background: c, width: size, height: size }}
+        />
       ))}
     </span>
   );

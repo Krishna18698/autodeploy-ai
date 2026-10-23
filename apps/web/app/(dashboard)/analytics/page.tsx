@@ -51,9 +51,7 @@ export default function AnalyticsPage() {
           </div>
         </div>
       ) : (
-        <div
-          className={`flex flex-col gap-6 transition-opacity ${a.isFetching ? 'opacity-80' : ''}`}
-        >
+        <div className="flex flex-col gap-6">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat
               label="Deployments"
