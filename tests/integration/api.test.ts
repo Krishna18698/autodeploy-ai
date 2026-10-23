@@ -504,6 +504,54 @@ describe('Environment variables set while importing', () => {
   });
 });
 
+describe('Server-rendered projects per account', () => {
+  it('are capped at SSR_PROJECTS_PER_ORG (3); static sites are not counted against it', async () => {
+    const s = await login(`ssr-cap-${randomUUID().slice(0, 6)}`);
+    const headers = { cookie: s.cookie, 'x-csrf-token': s.csrf };
+    const [{ org_id: org } = { org_id: '' }] = await deps.sql<{ org_id: string }[]>`
+      select org_id from sessions where token_hash = ${sha256Hex(s.cookie.slice(s.cookie.indexOf('=') + 1))}`;
+    const create = (fixture: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/v1/projects',
+        headers: { ...headers, 'idempotency-key': `ssr-${randomUUID()}` },
+        payload: {
+          repoUrl: `file://${resolve(fixture)}`,
+          deploy: false,
+          slug: `ssrcap-${randomUUID().slice(0, 6)}`,
+        },
+      });
+    const serverProject = async () => {
+      const p = await makeProject(deps.sql, org);
+      await deps.sql`update projects set analysis = '{"mode":{"value":"ssr"}}' where id = ${p.id}`;
+    };
+    const projects = async () =>
+      deps.sql<{ mode: string }[]>`
+        select analysis->'mode'->>'value' as mode from projects where org_id = ${org}`;
+
+    // Two already: a third imports.
+    await serverProject();
+    await serverProject();
+    const third = await create('tests/e2e/fixtures/ssr-next');
+    expect(third.statusCode).toBe(201);
+    expect((await projects()).filter((p) => p.mode === 'ssr')).toHaveLength(3);
+
+    // Three (the same repository can't be imported twice, so swap the imported
+    // one for another): a fourth is refused, and nothing is created.
+    await deps.sql`delete from projects where id = ${third.json().project.id}`;
+    await serverProject();
+    const fourth = await create('tests/e2e/fixtures/ssr-next');
+    expect(fourth.statusCode).toBe(409);
+    expect(fourth.json().code).toBe('ssr_quota');
+    expect(fourth.json().detail).toMatch(/the limit is 3/);
+    expect(await projects()).toHaveLength(3);
+
+    // A static site still imports.
+    expect((await create('tests/fixtures/vite-ok')).statusCode).toBe(201);
+    expect(await projects()).toHaveLength(4);
+  });
+});
+
 describe('Importing a repository that is already a project', () => {
   it('is refused before anything is downloaded or analysed', async () => {
     const s = await login('dupe-user');

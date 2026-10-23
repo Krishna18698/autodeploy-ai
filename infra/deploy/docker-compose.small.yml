@@ -28,3 +28,5 @@ services:
     environment:
       RUNTIME_MAX_AWAKE: "6"
       RUNTIME_MEMORY: 192m
+      # The worker's 2g build here, plus 512 MiB.
+      RUNTIME_MIN_FREE_MB: "2560"

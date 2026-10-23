@@ -80,3 +80,20 @@ because free storage is 10 GB in all. Apps without a usable server (SvelteKit
 with adapter-auto, Astro without an adapter, Vite SSR without a start script)
 get a message naming the one change that makes them deployable.
 
+
+## Amendment, 2026-10-24: wake only into memory the VM has
+
+"20 awake" was arithmetic, never measured, and at full caps it doesn't fit:
+the platform's services (~6.5 GB of limits) plus a build and its check (4 GB)
+plus 20 × 256 MB come to ~15.5 GB on a 12 GB VM. Out of memory, Linux kills a
+process, possibly Postgres, and every site and the API go down with it.
+
+So the VM's own available memory (`MemAvailable`) now decides too. A server
+wakes only if, less what wakes still starting may take, `RUNTIME_MIN_FREE_MB`
+(4 GB: a build's 3 GB plus 1 GB) stays free; otherwise the longest-idle servers
+sleep first, and with none idle the visitor gets a 503 "try again shortly". Wake
+decisions are made one at a time, so a burst can't all count the same memory.
+Every 30 s, if free memory has fallen below half the reserve anyway (a build
+started, servers grew into their caps), idle servers sleep until it hasn't.
+`RUNTIME_MAX_AWAKE` (20) stays as an upper bound. The real number is for the
+capacity test on the VM to find.

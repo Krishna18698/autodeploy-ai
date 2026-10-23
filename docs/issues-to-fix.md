@@ -8,6 +8,7 @@ The owner's order: finish the product first; the last three steps below come
 last, each only on the owner's yes.
 
 - [ ] **A sites domain of our own on the Public Suffix List** (audit 2026-10-22, finding #1). User sites live on `autodeploy.dpdns.org`, apart from the dashboard (dpdns.org is on the list, so browsers and Safe Browsing treat it separately from autodeploy.fyi). But every user site shares that one entry, so one site can set cookies for another and one phishing site can get every user site flagged. Vercel's fix: `vercel.app` is itself on the list. Ours: buy a sites domain for 2+ years (the list requires it; free dpdns renews yearly) and submit it; approval takes weeks, browsers pick it up over months.
+- [ ] **Capacity test on the VM:** how many server-rendered sites can really be awake at once. Wake 5, 10, 15, then 20 test sites while a build runs, and measure memory, CPU and response times; then set `RUNTIME_MAX_AWAKE` from what's measured. Loads production for ~30-60 minutes and needs test accounts or a raised limit (3 server sites per account). Only on the owner's yes. Until then the memory guard (Done, 2026-10-24) keeps the VM safe whatever the number.
 - [ ] **Open sign-ups:** remove `ALLOWED_GITHUB_LOGINS` from `.env.prod` and ship. Ready: per-account limits, email sign-in with verification and reset, two-step sign-in, legal pages.
 - [ ] **Make the GitHub App public** (app settings → Advanced) so other people can install it on their own accounts.
 - [ ] **Make the repository public.**
@@ -35,6 +36,8 @@ last, each only on the owner's yes.
 ## Done
 
 **2026-10-24**
+- [x] **Server-rendered sites only wake into memory the VM has:** "20 awake at once" was never measured, and at full caps it needs ~15.5 GB of a 12 GB VM. A site now wakes only if 4 GB (a build's worth plus 1 GB) stays free; otherwise the longest-idle sites sleep first, and with all of them mid-request the visitor is asked to retry. If memory falls below 2 GB later (a build started), idle sites sleep until it recovers. Out of memory, Linux could have killed Postgres and taken everything down; now a site sleeps instead (ADR 0008 amendment).
+- [x] **Tests for the limits nothing checked:** 3 server-rendered projects per account, 60 AI calls a day per account (and the platform's 300), sites sleeping after 15 idle minutes, and the longest-idle site making way at the awake limit. Each test was checked to fail with its limit loosened.
 - [x] **Password hashing raised to OWASP's minimum:** scrypt N=2^15, r=8, p=3 (was p=1, a third of the work per guess for anyone holding a leaked database). Same 32 MiB per check, ~3× the CPU (~160 ms on a Mac). Older hashes still sign in and are re-stored with the new settings at that sign-in; until then, those accounts answer a wrong password a little faster than an unknown email does.
 
 **2026-10-23**

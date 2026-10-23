@@ -54,6 +54,12 @@ const EnvSchema = z.object({
   RUNTIME_CPUS: z.string().default('0.5'),
   RUNTIME_IDLE_MIN: z.coerce.number().min(1).default(15),
   RUNTIME_MAX_AWAKE: z.coerce.number().int().min(1).default(20),
+  /**
+   * The VM's memory (MiB) a server may never wake into: a build's worth
+   * (SANDBOX_MEMORY) plus 1 GiB, so the next build fits and Postgres and the
+   * rest are never squeezed. Below half of it, idle servers are put to sleep.
+   */
+  RUNTIME_MIN_FREE_MB: z.coerce.number().int().min(0).default(4096),
   RUNTIME_START_TIMEOUT_S: z.coerce.number().int().min(5).default(30),
   // Free B2 storage is 10 GB in all, and bundles are kept per deployment.
   RUNTIME_BUNDLE_MAX_MB: z.coerce.number().int().min(10).default(300),

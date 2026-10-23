@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import type { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -24,7 +24,30 @@ export type RuntimeDeps = {
   storage: Storage;
   keyring: Keyring;
   log: Logger;
+  /** The VM's available memory in MiB; null where it can't be read. Tests replace it. */
+  freeMemoryMb?: () => Promise<number | null>;
 };
+
+/**
+ * MemAvailable from /proc/meminfo. A container sees the VM's own figure (the
+ * gateway runs under runc, not gVisor); off Linux there is none, and null
+ * leaves only the awake limit.
+ */
+export async function availableMemoryMb(path = '/proc/meminfo'): Promise<number | null> {
+  const text = await readFile(path, 'utf8').catch(() => null);
+  const kb = text && /^MemAvailable:\s+(\d+) kB$/m.exec(text)?.[1];
+  return kb ? Math.floor(Number(kb) / 1024) : null;
+}
+
+/** A Docker memory size ('256m', '1g', '512k') in MiB. */
+export function mib(size: string): number {
+  const m = /^(\d+(?:\.\d+)?)\s*([bkmg])?b?$/i.exec(size.trim());
+  if (!m) throw new Error(`not a memory size: ${size}`);
+  const unit = (m[2] ?? 'b').toLowerCase();
+  return (
+    Number(m[1]) * { b: 1 / 1048576, k: 1 / 1024, m: 1, g: 1024 }[unit as 'b' | 'k' | 'm' | 'g']
+  );
+}
 
 export type Instance = {
   deploymentId: string;
@@ -49,11 +72,28 @@ export class RuntimeUnavailable extends Error {
 
 const SERVE_STATUSES = ['READY', 'ACTIVE', 'SUPERSEDED', 'ROLLED_BACK', 'AWAITING_APPROVAL'];
 
+type DeploymentRow = {
+  org_id: string;
+  project_id: string;
+  status: string;
+  mode: string;
+  runtime_sha: string | null;
+  runtime_node: number | null;
+  runtime_command: string | null;
+  runtime_workdir: string | null;
+};
+
 export class RuntimeManager {
   private readonly running = new Map<string, Instance>();
   private readonly starting = new Map<string, Promise<Instance>>();
+  /** Starts let in (a slot and memory counted for them) that aren't running yet. */
+  private admitted = 0;
+  private admitting: Promise<unknown> = Promise.resolve();
+  private readonly capMb: number;
 
-  constructor(private readonly d: RuntimeDeps) {}
+  constructor(private readonly d: RuntimeDeps) {
+    this.capMb = mib(d.env.RUNTIME_MEMORY);
+  }
 
   get awake(): number {
     return this.running.size;
@@ -73,22 +113,25 @@ export class RuntimeManager {
   private async start(deploymentId: string): Promise<Instance> {
     const t0 = performance.now();
     const [dep] = await this.d.sql<
-      {
-        org_id: string;
-        project_id: string;
-        status: string;
-        mode: string;
-        runtime_sha: string | null;
-        runtime_node: number | null;
-        runtime_command: string | null;
-        runtime_workdir: string | null;
-      }[]
+      DeploymentRow[]
     >`select org_id, project_id, status, mode, runtime_sha, runtime_node, runtime_command, runtime_workdir
       from deployments where id = ${deploymentId}`;
     if (dep?.mode !== 'ssr' || !dep.runtime_sha || !SERVE_STATUSES.includes(dep.status))
       throw new RuntimeUnavailable(404, 'No server-rendered deployment is live here.');
 
-    await this.makeRoom();
+    await this.admit();
+    try {
+      return await this.launch(deploymentId, { ...dep, runtime_sha: dep.runtime_sha }, t0);
+    } finally {
+      this.admitted--;
+    }
+  }
+
+  private async launch(
+    deploymentId: string,
+    dep: DeploymentRow & { runtime_sha: string },
+    t0: number,
+  ): Promise<Instance> {
     await this.record(deploymentId, dep.org_id, { status: 'starting', error: null });
     const bundle = await this.bundle(dep.runtime_sha);
     const secrets = await loadSecrets(this.d, dep.project_id);
@@ -233,14 +276,49 @@ export class RuntimeManager {
     inst.requests++;
   }
 
-  /** At the awake limit: stop the least recently used idle instance first. */
+  /**
+   * Lets a start in when there's a slot (RUNTIME_MAX_AWAKE) and memory for it:
+   * the VM's available memory, less what starts already let in may still take,
+   * must leave RUNTIME_MIN_FREE_MB spare. Otherwise the longest-idle instances
+   * are stopped first; with none idle, the visitor is asked to retry. One
+   * decision at a time, so a burst of wakes can't all count the same memory.
+   */
+  private admit(): Promise<void> {
+    const next = this.admitting.then(() => this.makeRoom());
+    this.admitting = next.catch(() => {});
+    return next;
+  }
+
   private async makeRoom() {
-    if (this.running.size < this.d.env.RUNTIME_MAX_AWAKE) return;
-    const idle = [...this.running.values()]
+    const e = this.d.env;
+    const need = this.capMb + e.RUNTIME_MIN_FREE_MB;
+    for (;;) {
+      const full = this.running.size + this.admitted >= e.RUNTIME_MAX_AWAKE;
+      const free = await this.freeMb();
+      const low = free !== null && free - this.admitted * this.capMb < need;
+      if (!full && !low) break;
+      const idle = this.longestIdle();
+      if (!idle) {
+        this.d.log.warn({ awake: this.running.size, freeMb: free }, 'no room to start a server');
+        throw new RuntimeUnavailable(503, 'All site slots are busy; try again shortly.');
+      }
+      await this.stop(
+        idle.deploymentId,
+        full ? 'evicted (awake limit)' : `evicted (low memory: ${free} MiB free)`,
+      );
+    }
+    this.admitted++;
+  }
+
+  private freeMb(): Promise<number | null> {
+    return (this.d.freeMemoryMb ?? availableMemoryMb)();
+  }
+
+  /** The awake instance unused the longest with no request in flight. */
+  private longestIdle(): Instance | undefined {
+    return [...this.running.values()]
       .filter((i) => i.active === 0)
       .sort((a, b) => a.lastRequest - b.lastRequest)[0];
-    if (!idle) throw new RuntimeUnavailable(503, 'All site slots are busy; try again shortly.');
-    await this.stop(idle.deploymentId, 'evicted (awake limit)');
   }
 
   async stop(deploymentId: string, reason: string) {
@@ -252,11 +330,24 @@ export class RuntimeManager {
     this.d.log.info({ deploymentId, reason, requests: inst.requests }, 'runtime stopped');
   }
 
-  /** Stops instances with no requests for RUNTIME_IDLE_MIN and none in flight. */
+  /**
+   * Stops instances with no requests for RUNTIME_IDLE_MIN and none in flight.
+   * Then, if memory runs low anyway (a build started, or awake servers grew
+   * into their caps), the longest-idle ones until half of RUNTIME_MIN_FREE_MB
+   * is free again: a site that sleeps wakes on its next visit, a VM out of
+   * memory takes everything down.
+   */
   async reapIdle(now = Date.now()) {
     const limit = this.d.env.RUNTIME_IDLE_MIN * 60_000;
     for (const i of [...this.running.values()]) {
       if (i.active === 0 && now - i.lastRequest > limit) await this.stop(i.deploymentId, 'idle');
+    }
+    for (;;) {
+      const free = await this.freeMb();
+      if (free === null || free >= this.d.env.RUNTIME_MIN_FREE_MB / 2) return;
+      const idle = this.longestIdle();
+      if (!idle) return;
+      await this.stop(idle.deploymentId, `low memory (${free} MiB free)`);
     }
   }
 

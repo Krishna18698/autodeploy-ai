@@ -19,6 +19,7 @@ import { GitHubClient, InstallationTokens } from '@autodeploy/github';
 import { Storage } from '@autodeploy/storage';
 import { createLogger, type Logger } from '@autodeploy/telemetry';
 import { Valkey } from 'iovalkey';
+import { aiBudgetLeft } from './ai-budget.js';
 import type { Env } from './env.js';
 import { aiContext, recordAiUsage } from './jobs/recover.js';
 import { metrics } from './metrics.js';
@@ -82,18 +83,7 @@ export function createDeps(env: Env): Deps {
       metrics.aiCalls.inc({ provider: u.provider, outcome: u.outcome });
       if (self) await recordAiUsage(self, u);
     },
-    // Two budgets a day: the platform's (free provider tiers) and each org's
-    // share of it, so one account can't spend everyone's AI repairs.
-    budget: async () => {
-      const org = aiContext.getStore()?.orgId ?? null;
-      const [r] = await sql<{ total: number; mine: number }[]>`
-        select count(*)::int as total, count(*) filter (where org_id = ${org})::int as mine
-        from ai_usage where created_at >= date_trunc('day', now())`;
-      return (
-        (r?.total ?? 0) < env.AI_DAILY_CALL_BUDGET &&
-        (org === null || (r?.mine ?? 0) < env.AI_CALLS_PER_ORG_PER_DAY)
-      );
-    },
+    budget: () => aiBudgetLeft(sql, env, aiContext.getStore()?.orgId ?? null),
     onBreakerChange: (provider, state) => {
       metrics.breakerState.set({ provider }, state === 'open' ? 1 : 0);
       log.warn({ provider, state }, 'AI provider circuit changed state');
