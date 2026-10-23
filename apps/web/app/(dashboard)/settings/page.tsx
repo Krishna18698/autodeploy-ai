@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
-import { Panel } from '@/components/ui/panel';
+import { Panel, SkeletonItems, SkeletonRows } from '@/components/ui/panel';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, apiUrl, del, patch, post } from '@/lib/api';
@@ -184,6 +184,7 @@ function Team({ canEdit }: { canEdit: boolean }) {
         </form>
       )}
       <ul className="divide-y divide-line">
+        {!members.data && <SkeletonItems rows={3} />}
         {members.data?.map((m) => (
           <li key={m.userId} className="flex items-center gap-3 py-2.5 text-[13px]">
             <span
@@ -533,7 +534,12 @@ function DeleteAccount() {
 /** What this account has used of its limits (free for everyone, so shared fairly). */
 function Usage() {
   const q = useQuota();
-  if (!q.data) return <Panel title="Usage">Loading…</Panel>;
+  if (!q.data)
+    return (
+      <Panel title="Usage" pad={false}>
+        <SkeletonRows rows={5} className="h-7" />
+      </Panel>
+    );
   const u = q.data;
   const mb = (b: number) => `${(b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0)} MB`;
   const rows: [string, number, number, string, string][] = [
@@ -670,6 +676,7 @@ function Tokens() {
         </div>
       )}
       <ul className="divide-y divide-line">
+        {!tokens.data && <SkeletonItems rows={2} />}
         {tokens.data?.map((t) => (
           <li key={t.id} className="flex flex-wrap items-center gap-3 py-2.5 text-[13px]">
             <span className="flex-1">{t.name}</span>
@@ -756,6 +763,7 @@ function Webhooks() {
           </p>
         )}
         <ul className="divide-y divide-line">
+          {!hooks.data && <SkeletonItems rows={2} />}
           {hooks.data?.map((h) => (
             <li key={h.id} className="flex flex-wrap items-center gap-2 py-2.5">
               <button
@@ -794,6 +802,7 @@ function Webhooks() {
           <p className="p-4 text-[13px] text-muted">Select an endpoint.</p>
         ) : (
           <ul className="divide-y divide-line">
+            {!deliveries.data && <SkeletonItems rows={3} className="h-5" />}
             {deliveries.data?.map((d) => (
               <li key={d.id} className="flex items-center gap-3 px-4 py-2.5 font-mono text-[12px]">
                 <span
@@ -840,6 +849,7 @@ function Audit() {
   return (
     <Panel title="Audit log" pad={false}>
       <ul className="divide-y divide-line font-mono text-[12px]">
+        {!audit.data && <SkeletonItems rows={6} className="h-4" />}
         {audit.data?.items.map((e) => (
           <li key={e.id} className="grid grid-cols-[7rem_8rem_minmax(0,1fr)] gap-3 px-4 py-2">
             <span className="text-muted">{ago(e.createdAt)}</span>

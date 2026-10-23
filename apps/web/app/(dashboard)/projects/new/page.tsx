@@ -9,7 +9,7 @@ import type { z } from 'zod';
 import { RepoPicker } from '@/components/app/repo-picker';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
-import { Panel } from '@/components/ui/panel';
+import { Panel, SkeletonRows } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey, post } from '@/lib/api';
 
@@ -156,6 +156,11 @@ export default function NewProjectPage() {
         </p>
       )}
 
+      {busy === 'analyze' && !result && (
+        <Panel title="Analysis" pad={false}>
+          <SkeletonRows rows={7} className="h-6" />
+        </Panel>
+      )}
       <AnimatePresence>
         {result && a && (
           <motion.div
@@ -236,6 +241,7 @@ export default function NewProjectPage() {
                   variant="primary"
                   className="sm:ml-auto"
                   loading={busy === 'deploy'}
+                  loader="dots"
                   disabled={!slugState?.available}
                   onClick={deploy}
                 >

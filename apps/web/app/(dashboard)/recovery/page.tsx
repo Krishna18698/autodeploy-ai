@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { PageHeader } from '@/components/app/shell';
-import { Empty, Panel, Skeleton, Stat } from '@/components/ui/panel';
+import { Empty, Panel, SkeletonRows, Stat } from '@/components/ui/panel';
 import { ago } from '@/lib/format';
 import { useAllRepairs, useAnalytics } from '@/lib/queries';
 
@@ -29,17 +29,20 @@ export default function RecoveryPage() {
         sub="Rules fix what they understand. AI proposes the rest. You approve source changes."
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Fixed by rules · 30d" value={t?.recoveredByRule ?? '—'} />
-        <Stat label="Fixed by AI · 30d" value={t?.recoveredByAi ?? '—'} />
-        <Stat label="Handed to a human · 30d" value={t?.escalated ?? '—'} />
+        <Stat label="Fixed by rules · 30d" loading={!t} value={t?.recoveredByRule ?? '—'} />
+        <Stat label="Fixed by AI · 30d" loading={!t} value={t?.recoveredByAi ?? '—'} />
+        <Stat label="Handed to a human · 30d" loading={!t} value={t?.escalated ?? '—'} />
         <Stat
           label="Waiting on you"
+          loading={!all.data}
           value={awaiting.length}
           tone={awaiting.length ? 'warn' : undefined}
         />
       </div>
       {!all.data ? (
-        <Skeleton className="h-40" />
+        <Panel pad={false}>
+          <SkeletonRows rows={4} className="h-12" />
+        </Panel>
       ) : all.data.length === 0 ? (
         <Empty
           title="No repairs yet"

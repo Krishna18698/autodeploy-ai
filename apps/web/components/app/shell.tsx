@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { LogoLoader } from '@/components/ui/loaders';
 import { Logo } from '@/components/ui/logo';
 import { Kbd } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
@@ -68,11 +69,13 @@ export function Shell({ children }: { children: ReactNode }) {
       );
     return (
       <div className="grid min-h-dvh place-items-center">
-        <span className="font-mono text-[12px] text-muted">
-          {me.error && !(me.error instanceof ApiError && me.error.status === 401)
-            ? 'Something went wrong loading your account. Try reloading the page.'
-            : 'Loading…'}
-        </span>
+        {me.error && !(me.error instanceof ApiError && me.error.status === 401) ? (
+          <span className="font-mono text-[12px] text-muted">
+            Something went wrong loading your account. Try reloading the page.
+          </span>
+        ) : (
+          <LogoLoader label="Loading your dashboard" />
+        )}
       </div>
     );
   }

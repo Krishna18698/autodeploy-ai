@@ -7,7 +7,7 @@ import { use, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
-import { Empty, Panel, Skeleton } from '@/components/ui/panel';
+import { Empty, Panel, SkeletonPage, SkeletonRows } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
@@ -23,7 +23,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const toast = useToast();
   const [deploying, setDeploying] = useState(false);
 
-  if (project.isLoading) return <Skeleton className="h-40" />;
+  if (project.isLoading) return <SkeletonPage panels={['h-10', 'h-72']} />;
   if (!project.data) return <Empty title="Project not found" />;
   const p = project.data;
 
@@ -66,7 +66,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           </span>
         }
         actions={
-          <Button variant="primary" loading={deploying} onClick={redeploy}>
+          <Button variant="primary" loading={deploying} loader="dots" onClick={redeploy}>
             Deploy latest
           </Button>
         }
@@ -114,7 +114,12 @@ function History({ projectId }: { projectId: string }) {
     }
   };
 
-  if (!deps.data) return <Skeleton className="h-40" />;
+  if (!deps.data)
+    return (
+      <Panel pad={false}>
+        <SkeletonRows rows={5} className="h-12" />
+      </Panel>
+    );
   if (deps.data.items.length === 0) return <Empty title="No deployments yet" />;
   return (
     <Panel pad={false}>
@@ -352,7 +357,9 @@ function EnvVars({ projectId }: { projectId: string }) {
           Add
         </Button>
       </form>
-      {env.data?.length ? (
+      {!env.data ? (
+        <SkeletonRows rows={3} className="h-8" pad={false} />
+      ) : env.data.length ? (
         <ul className="divide-y divide-line rounded-md border border-line">
           {env.data.map((v) => (
             <li key={v.key} className="flex items-center gap-3 px-3 py-2 font-mono text-[13px]">

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { PageHeader } from '@/components/app/shell';
 import { LinkButton } from '@/components/ui/button';
-import { Empty, Panel, Skeleton } from '@/components/ui/panel';
+import { Empty, Panel, SkeletonRows } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { ago } from '@/lib/format';
 import { useProjects } from '@/lib/queries';
@@ -22,10 +22,7 @@ export default function ProjectsPage() {
       />
       <Panel pad={false}>
         {projects.isLoading ? (
-          <div className="space-y-2 p-4">
-            <Skeleton className="h-10" />
-            <Skeleton className="h-10" />
-          </div>
+          <SkeletonRows rows={4} className="h-11" />
         ) : !projects.data?.items.length ? (
           <Empty
             title="No projects yet"

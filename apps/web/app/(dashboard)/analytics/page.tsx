@@ -38,7 +38,18 @@ export default function AnalyticsPage() {
         ))}
       </fieldset>
       {!d ? (
-        <Skeleton className="h-80" />
+        <div role="status" className="flex flex-col gap-6">
+          <span className="sr-only">Loading</span>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-[86px] rounded-xl" />
+            ))}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Skeleton className="h-64 rounded-xl" />
+            <Skeleton className="h-64 rounded-xl" />
+          </div>
+        </div>
       ) : (
         <div
           className={`flex flex-col gap-6 transition-opacity ${a.isFetching ? 'opacity-80' : ''}`}

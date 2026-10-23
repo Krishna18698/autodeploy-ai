@@ -7,7 +7,7 @@ import type { z } from 'zod';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
-import { Empty, Panel } from '@/components/ui/panel';
+import { Empty, Panel, SkeletonRows } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, post } from '@/lib/api';
 import { ago } from '@/lib/format';
@@ -123,7 +123,7 @@ export default function AdminPage() {
             hint="Paste the address from the report (any of its addresses works), or an owner's login or email."
           />
         ) : sites.isLoading ? (
-          <p className="p-4 text-[13px] text-muted">Searching…</p>
+          <SkeletonRows rows={3} className="h-12" />
         ) : !sites.data?.length ? (
           <Empty title={down ? 'Nothing is taken down' : 'No site matches'} />
         ) : (

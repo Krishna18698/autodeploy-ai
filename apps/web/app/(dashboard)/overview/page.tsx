@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/app/shell';
 import { TiltCard } from '@/components/app/tilt-card';
 import { LinkButton } from '@/components/ui/button';
-import { Empty, Panel, Skeleton, Stat } from '@/components/ui/panel';
+import { Empty, Panel, Skeleton, SkeletonItems, SkeletonRows, Stat } from '@/components/ui/panel';
 import { Sparkline } from '@/components/ui/sparkline';
 import { StatusPill } from '@/components/ui/status';
 import { Stepper } from '@/components/ui/stepper';
@@ -39,21 +39,25 @@ export default function OverviewPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
           label="Deploys today"
+          loading={!today.data}
           value={today.data ? today.data.totals.deployments : '—'}
           sub={month.data ? `${month.data.totals.deployments} in 30 days` : ' '}
         />
         <Stat
           label="Success rate · 30d"
+          loading={!month.data}
           value={successRate === null ? '—' : `${successRate}%`}
           sub={t ? `${t.failed} failed` : ' '}
         />
         <Stat
           label="Auto-recovered · 30d"
+          loading={!month.data}
           value={t ? t.recoveredByRule + t.recoveredByAi : '—'}
           sub={t ? `${t.recoveredByRule} by rules · ${t.recoveredByAi} by AI` : ' '}
         />
         <Stat
           label="Build p95 · 30d"
+          loading={!month.data}
           value={duration(month.data?.buildMs.p95)}
           sub={month.data ? `p50 ${duration(month.data.buildMs.p50)}` : ' '}
         />
@@ -76,10 +80,7 @@ export default function OverviewPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr] [&>*]:min-w-0">
         <Panel title="Projects" pad={false}>
           {projects.isLoading ? (
-            <div className="space-y-2 p-4">
-              <Skeleton className="h-8" />
-              <Skeleton className="h-8" />
-            </div>
+            <SkeletonRows rows={3} className="h-10" />
           ) : !projects.data?.items.length ? (
             <Empty
               title="No projects yet"
@@ -136,7 +137,14 @@ export default function OverviewPage() {
         <div className="flex min-w-0 flex-col gap-6">
           <TiltCard>
             <Panel title={live ? 'Live deploy' : 'Latest deploy'}>
-              {items[0] ? (
+              {!recent.data ? (
+                <div role="status" className="flex flex-col gap-3">
+                  <span className="sr-only">Loading</span>
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-7 w-full" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ) : items[0] ? (
                 (() => {
                   const d = live ?? items[0];
                   return (
@@ -185,7 +193,8 @@ export default function OverviewPage() {
                   </Link>
                 </li>
               ))}
-              {items.length === 0 && (
+              {!recent.data && <SkeletonItems rows={5} className="h-5" />}
+              {recent.data && items.length === 0 && (
                 <li className="px-4 py-6 text-center text-[13px] text-muted">Quiet so far.</li>
               )}
             </ul>

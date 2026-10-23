@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { z } from 'zod';
-import { Panel } from '@/components/ui/panel';
+import { Panel, SkeletonRows } from '@/components/ui/panel';
 import { api, apiUrl } from '@/lib/api';
 import { ago } from '@/lib/format';
 
@@ -58,11 +58,7 @@ export function RepoPicker({
       className="mb-5"
     >
       {isLoading ? (
-        <div className="space-y-2 p-4" aria-busy="true">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-8 animate-pulse rounded bg-raised/60" />
-          ))}
-        </div>
+        <SkeletonRows rows={4} className="h-8" />
       ) : data && !data.githubConnected ? (
         <div className="flex flex-col gap-3 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[13px] text-muted">

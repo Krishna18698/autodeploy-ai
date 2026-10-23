@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { PageHeader } from '@/components/app/shell';
-import { Empty, Panel, Skeleton } from '@/components/ui/panel';
+import { Empty, Panel, SkeletonRows } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { ago, shortSha } from '@/lib/format';
 import { useDeployments } from '@/lib/queries';
@@ -38,9 +38,7 @@ export default function DeploymentsPage() {
       </fieldset>
       <Panel pad={false}>
         {!deps.data ? (
-          <div className="p-4">
-            <Skeleton className="h-24" />
-          </div>
+          <SkeletonRows rows={6} className="h-10" />
         ) : deps.data.items.length === 0 ? (
           <Empty title="Nothing here" />
         ) : (

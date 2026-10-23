@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
 import { DiffView } from '@/components/ui/diff';
 import { type LogLine, LogViewer } from '@/components/ui/log-viewer';
-import { Empty, Panel, Skeleton } from '@/components/ui/panel';
+import { Empty, Panel, SkeletonPage, SkeletonRows } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { Stepper } from '@/components/ui/stepper';
 import { Tabs } from '@/components/ui/tabs';
@@ -52,7 +52,7 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
     }
   }, [pendingRepair]);
 
-  if (dep.isLoading) return <Skeleton className="h-60" />;
+  if (dep.isLoading) return <SkeletonPage panels={['h-14', 'h-80']} />;
   if (!d) return <Empty title="Deployment not found" />;
   const attempt = d.attempts.at(-1);
 
@@ -124,7 +124,13 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
               </Button>
             )}
             {(d.status === 'FAILED' || d.status === 'CANCELED' || d.status === 'NEEDS_INPUT') && (
-              <Button variant="primary" size="sm" loading={redeploying} onClick={redeploy}>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={redeploying}
+                loader="dots"
+                onClick={redeploy}
+              >
                 Deploy again
               </Button>
             )}
@@ -453,7 +459,12 @@ function RepairCard({ repair: r, onChange }: { repair: RepairT; onChange: () => 
           )}
           {r.status === 'awaiting_approval' && (
             <div className="flex flex-wrap gap-2 pt-1">
-              <Button variant="ai" loading={busy === 'approve'} onClick={() => act('approve')}>
+              <Button
+                variant="ai"
+                loading={busy === 'approve'}
+                loader="dots"
+                onClick={() => act('approve')}
+              >
                 Approve & deploy
               </Button>
               <Button loading={busy === 'pull-request'} onClick={() => act('pull-request')}>
@@ -482,7 +493,7 @@ function RepairCard({ repair: r, onChange }: { repair: RepairT; onChange: () => 
 function Timeline({ id }: { id: string }) {
   const events = useEvents(id);
   const items = useMemo(() => events.data ?? [], [events.data]);
-  if (!events.data) return <Skeleton className="h-40" />;
+  if (!events.data) return <SkeletonRows rows={5} className="h-6" pad={false} />;
   return (
     <ol className="relative ml-2 border-l border-line pl-6">
       {items.map((e, i) => {

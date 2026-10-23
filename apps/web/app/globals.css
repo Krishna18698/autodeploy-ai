@@ -78,6 +78,85 @@
   animation: page-in 180ms ease-out;
 }
 
+/* Loading (components/ui/loaders.tsx; chosen 2026-10-23). */
+/* The logo builds up while the dashboard opens: oldest layer first, live last. */
+@keyframes ld-layer {
+  0% {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  18%,
+  68% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  86%,
+  100% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+.ld-layers polygon {
+  transform-box: fill-box;
+  animation: ld-layer 1.8s cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+}
+.ld-layers .ld-l2 {
+  animation-delay: 0.16s;
+}
+.ld-layers .ld-l1 {
+  animation-delay: 0.32s;
+}
+/* Buttons: an orbit ring. */
+@keyframes ld-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ld-orbit {
+  animation: ld-spin 0.9s linear infinite;
+}
+/* Approving and deploying: three dots in the logo's colours. */
+@keyframes ld-dot {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  35% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.ld-dots > span {
+  animation: ld-dot 1.1s ease-in-out infinite;
+}
+.ld-dots > span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+.ld-dots > span:nth-child(3) {
+  animation-delay: 0.28s;
+}
+/* Lists and panels: the shape of what's coming, with light passing over. */
+@keyframes ld-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -50% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--color-raised) 30%,
+    #24262c 50%,
+    var(--color-raised) 70%
+  );
+  background-size: 200% 100%;
+  animation: ld-shimmer 1.5s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -85,6 +164,13 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  /* Loaders hold still, the logo whole (its last frame would be empty). */
+  .ld-layers polygon,
+  .ld-orbit,
+  .ld-dots > span,
+  .shimmer {
+    animation: none !important;
   }
 }
 
