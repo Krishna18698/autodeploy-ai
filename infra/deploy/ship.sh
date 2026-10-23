@@ -24,7 +24,21 @@ if [ -n "$(git -C "$root" status --porcelain --untracked-files=no -- apps packag
 fi
 tag=$(git -C "$root" rev-parse --short=12 HEAD)
 dir=/opt/autodeploy
-remote() { ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "$target" "$@"; }
+tmp=$(mktemp -d)
+chmod 700 "$tmp"
+trap 'rm -rf "$tmp"' EXIT
+
+# ---- talking to the VM ----
+# The connection (GitHub's runner or the Mac → Cloudflare → the VM) can drop
+# for a moment. ssh exits 255 when the connection itself fails; any other code
+# is the command's own. Only 255 is retried, and every step is safe to repeat.
+# Commands that send data read it from a file, so a retry can send it again.
+# Names this run's long steps on the VM (lib/remote.sh, on_vm).
+# shellcheck disable=SC2034
+RUN_ID="$(date +%s)-$$"
+# shellcheck source=lib/remote.sh
+source "$here/lib/remote.sh"
+
 if [ "${ENV_ON_VM:-}" = 1 ]; then
   env_value() { remote "sudo grep '^$1=' $dir/.env.prod | cut -d= -f2"; }
   remote "sudo test -f $dir/.env.prod" || { echo "no $dir/.env.prod on the VM: ship once from the Mac first" >&2; exit 1; }
@@ -55,17 +69,17 @@ elif [ "${ENV_ON_VM:-}" = 1 ]; then
   exit 1
 else
   remote 'curl -fsSL -o /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb && sudo dpkg -i /tmp/cloudflared.deb >/dev/null'
-  # The token is piped, never put on a command line or in shell history.
-  grep '^CLOUDFLARE_TUNNEL_TOKEN=' "$envfile" | cut -d= -f2- | tr -d '\n' |
-    remote 'sudo cloudflared service install "$(cat)" >/dev/null 2>&1 && systemctl is-active cloudflared'
+  # The token goes as input, never on a command line or in shell history.
+  grep '^CLOUDFLARE_TUNNEL_TOKEN=' "$envfile" | cut -d= -f2- | tr -d '\n' >"$tmp/tunnel-token"
+  remote_in "$tmp/tunnel-token" 'sudo cloudflared service install "$(cat)" >/dev/null 2>&1 && systemctl is-active cloudflared'
 fi
 
 step "tools: age (backups), unattended security updates"
 remote 'command -v age >/dev/null || { sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq age unattended-upgrades >/dev/null; }'
 
 step "source @ $tag"
-git -C "$root" archive --format=tar HEAD |
-  remote "sudo rm -rf $dir/src.new && sudo mkdir -p $dir/src.new && sudo tar -x -C $dir/src.new && sudo rm -rf $dir/src && sudo mv $dir/src.new $dir/src"
+git -C "$root" archive --format=tar -o "$tmp/src.tar" HEAD
+remote_in "$tmp/src.tar" "sudo rm -rf $dir/src.new && sudo mkdir -p $dir/src.new && sudo tar -x -C $dir/src.new && sudo rm -rf $dir/src && sudo mv $dir/src.new $dir/src"
 
 step ".env.prod (mode 600)"
 gid=$(remote "getent group docker | cut -d: -f3")
@@ -74,26 +88,44 @@ if [ "${ENV_ON_VM:-}" = 1 ]; then
     sudo install -m 600 /dev/stdin $dir/src/infra/deploy/.env.prod"
 else
   # Also kept outside src/ (replaced each ship) for ENV_ON_VM=1 ships from CI.
-  sed -e "s/^DOCKER_GID=.*/DOCKER_GID=$gid/" -e "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" "$envfile" |
-    remote "sudo install -m 600 /dev/stdin $dir/src/infra/deploy/.env.prod && sudo install -m 600 $dir/src/infra/deploy/.env.prod $dir/.env.prod"
+  sed -e "s/^DOCKER_GID=.*/DOCKER_GID=$gid/" -e "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" "$envfile" >"$tmp/env.prod"
+  remote_in "$tmp/env.prod" "sudo install -m 600 /dev/stdin $dir/src/infra/deploy/.env.prod && sudo install -m 600 $dir/src/infra/deploy/.env.prod $dir/.env.prod"
 fi
 
 step "runtime bundles dir (SSR)"
 remote "sudo mkdir -p /var/lib/autodeploy/runtimes && sudo chown 1000:1000 /var/lib/autodeploy/runtimes"
 
+# The long steps below run on the VM by themselves (on_vm, lib/remote.sh), so a
+# dropped connection only pauses the watching, never the work.
 step "sandbox images (rebuilt when infra/sandbox changes; first run ~10 min)"
 sandbox_tree=$(git -C "$root" rev-parse HEAD:infra/sandbox)
-remote "if [ \"\$(cat /var/lib/autodeploy/sandbox-tree 2>/dev/null)\" = '$sandbox_tree' ] && sudo docker image inspect autodeploy-build:node24 autodeploy-validator:latest >/dev/null 2>&1; then echo '  up to date'; else sudo bash $dir/src/infra/sandbox/build-images.sh && echo '$sandbox_tree' | sudo tee /var/lib/autodeploy/sandbox-tree >/dev/null; fi"
+cat >"$tmp/sandbox.sh" <<EOF
+if [ "\$(cat /var/lib/autodeploy/sandbox-tree 2>/dev/null)" = '$sandbox_tree' ] &&
+  docker image inspect autodeploy-build:node24 autodeploy-validator:latest >/dev/null 2>&1; then
+  echo '  up to date'
+else
+  bash $dir/src/infra/sandbox/build-images.sh && echo '$sandbox_tree' >/var/lib/autodeploy/sandbox-tree
+fi
+EOF
+on_vm sandbox "$tmp/sandbox.sh"
 
 step "app images @ $tag (built on the VM; no registry needed)"
-remote "cd $dir/src && for spec in api:apps/api/Dockerfile:. worker:apps/worker/Dockerfile:. egress:infra/sandbox/egress/Dockerfile:infra/sandbox/egress; do \
-  IFS=: read -r name file ctx <<<\"\$spec\"; \
-  sudo docker build --progress=plain -f \"\$file\" -t ghcr.io/$owner/autodeploy-\$name:$tag \"\$ctx\" > /tmp/build-\$name.log 2>&1 \
-    || { echo \"✗ \$name image failed:\"; tail -40 /tmp/build-\$name.log; exit 1; }; \
-  echo \"  built \$name\"; done"
+cat >"$tmp/images.sh" <<EOF
+cd $dir/src
+for spec in api:apps/api/Dockerfile:. worker:apps/worker/Dockerfile:. egress:infra/sandbox/egress/Dockerfile:infra/sandbox/egress; do
+  IFS=: read -r name file ctx <<<"\$spec"
+  docker build --progress=plain -f "\$file" -t ghcr.io/$owner/autodeploy-\$name:$tag "\$ctx" >/tmp/build-\$name.log 2>&1 ||
+    { echo "✗ \$name image failed:"; tail -40 /tmp/build-\$name.log; exit 1; }
+  echo "  built \$name"
+done
+EOF
+on_vm images "$tmp/images.sh"
 
 step "deploy (rolling)"
-remote "cd $dir/src/infra/deploy && sudo IMAGE_TAG=$tag SKIP_PULL=1 SMALL=${SMALL:-} bash deploy.sh"
+cat >"$tmp/deploy.sh" <<EOF
+cd $dir/src/infra/deploy && IMAGE_TAG=$tag SKIP_PULL=1 SMALL=${SMALL:-} bash deploy.sh
+EOF
+on_vm deploy "$tmp/deploy.sh"
 
 step "nightly encrypted backup (03:30 UTC)"
 remote "echo '30 3 * * * root bash $dir/src/infra/backup/backup.sh >> /var/log/autodeploy-backup.log 2>&1' | sudo tee /etc/cron.d/autodeploy-backup >/dev/null"
@@ -104,8 +136,8 @@ for _ in $(seq 1 20); do
   sleep 5
 done
 
-step "prune images older than the last 3 deploys"
-remote "sudo docker image prune -f >/dev/null; for r in api worker egress; do sudo docker images ghcr.io/$owner/autodeploy-\$r --format '{{.Tag}}' | tail -n +4 | xargs -r -I{} sudo docker rmi ghcr.io/$owner/autodeploy-\$r:{} >/dev/null 2>&1 || true; done"
+step "prune images older than the last 3 deploys, and step logs older than 2 weeks"
+remote "sudo find $ON_VM_LOGS -type f -mtime +14 -delete 2>/dev/null; sudo docker image prune -f >/dev/null; for r in api worker egress; do sudo docker images ghcr.io/$owner/autodeploy-\$r --format '{{.Tag}}' | tail -n +4 | xargs -r -I{} sudo docker rmi ghcr.io/$owner/autodeploy-\$r:{} >/dev/null 2>&1 || true; done"
 
 echo
 echo "✓ shipped $tag to $domain"
