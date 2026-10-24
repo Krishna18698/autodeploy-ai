@@ -137,3 +137,12 @@ builds and site checks pass `--cgroup-parent`; if Docker refuses (exit 125)
 they start without it and log a warning, so the split can't stop a site or a
 build. Each deploy starts one gVisor container in the sites slice and says in
 its log whether it landed there.
+
+Measured the same day (two sites saturating the sites group, load sent to
+the gateway through run.<domain> so no Worker or KV traffic): a build took
+227 s, against ~71 s alone and 676 s under load before the split. The build
+got 0.44 CPU and the sites 0.91 while it ran, which is the slices' 50:100
+weights, so a build's share no longer shrinks as more sites get busy. The API
+stayed fast (median 52 ms, slowest 5% 190 ms, nothing failed). Neither ceiling
+was reached: the platform's own share of the work (gateway proxying, tunnel)
+took 0.6-0.7 CPU at that load, more than the 10% it is guaranteed.
