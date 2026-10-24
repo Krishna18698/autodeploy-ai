@@ -124,6 +124,8 @@ services:
       OTEL_SERVICE_NAME: autodeploy-worker
       SANDBOX_RUNTIME: runsc
       SANDBOX_NETWORK: autodeploy_sandbox
+      # Builds and site checks run in this CPU group (ship.sh creates it).
+      SANDBOX_CGROUP_PARENT: autodeploy-builds.slice
       BUILD_CONCURRENCY: 1
       AI_PROVIDERS: ${AI_PROVIDERS:-}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
@@ -172,6 +174,8 @@ services:
       RUNTIME_NETWORK: autodeploy-runtime
       RUNTIME_PROXY: http://egress-runtime:3129
       RUNTIME_BUNDLES_DIR: /var/lib/autodeploy/runtimes
+      # Sites run in this CPU group (ship.sh creates it).
+      RUNTIME_CGROUP_PARENT: autodeploy-sites.slice
     group_add: ["${DOCKER_GID}"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -63,40 +63,55 @@ export async function validateSite(
   const stop = AbortSignal.any([signal, timeout]);
   const kill = () => void runProcess('docker', ['rm', '-f', name], () => {});
   stop.addEventListener('abort', kill, { once: true });
-  const code = await runProcess(
-    'docker',
-    [
-      'run',
-      '--rm',
-      '--name',
-      name,
-      '--network',
-      'none',
-      '--cpus',
-      '1',
-      // A build's low weight (SANDBOX_CPU_SHARES): live sites come first.
-      '--cpu-shares',
-      String(deps.env.SANDBOX_CPU_SHARES),
-      '--memory',
-      '1g',
-      '--pids-limit',
-      '256',
-      '--cap-drop',
-      'ALL',
-      '--security-opt',
-      'no-new-privileges',
-      '--ipc',
-      'host',
-      '-v',
-      `${siteDir}:/site:${opts?.ssr ? 'rw' : 'ro'}`,
-      ...ssrArgs,
-      '-v',
-      `${outDir}:/out:rw`,
-      deps.env.VALIDATOR_IMAGE,
-    ],
-    (l) => deps.log.debug({ validator: l }),
-    stop,
-  ).finally(() => stop.removeEventListener('abort', kill));
+  const args = (inGroup: boolean) => [
+    'run',
+    '--rm',
+    '--name',
+    name,
+    '--network',
+    'none',
+    '--cpus',
+    '1',
+    // A build's low weight (SANDBOX_CPU_SHARES): live sites come first.
+    '--cpu-shares',
+    String(deps.env.SANDBOX_CPU_SHARES),
+    ...(inGroup && deps.env.SANDBOX_CGROUP_PARENT
+      ? ['--cgroup-parent', deps.env.SANDBOX_CGROUP_PARENT]
+      : []),
+    '--memory',
+    '1g',
+    '--pids-limit',
+    '256',
+    '--cap-drop',
+    'ALL',
+    '--security-opt',
+    'no-new-privileges',
+    '--ipc',
+    'host',
+    '-v',
+    `${siteDir}:/site:${opts?.ssr ? 'rw' : 'ro'}`,
+    ...ssrArgs,
+    '-v',
+    `${outDir}:/out:rw`,
+    deps.env.VALIDATOR_IMAGE,
+  ];
+  const onLine = (l: string) => deps.log.debug({ validator: l });
+  let code: number | null;
+  try {
+    code = await runProcess('docker', args(true), onLine, stop);
+    if (code === 125 && deps.env.SANDBOX_CGROUP_PARENT && !stop.aborted) {
+      // Docker itself refused (125), with the builds' CPU group in play: a
+      // check without the CPU split beats a deploy that can't be checked.
+      deps.log.warn(
+        { name, cgroupParent: deps.env.SANDBOX_CGROUP_PARENT },
+        'could not start the site check in its CPU group; starting it without',
+      );
+      await runProcess('docker', ['rm', '-f', name], () => {});
+      code = await runProcess('docker', args(false), onLine, stop);
+    }
+  } finally {
+    stop.removeEventListener('abort', kill);
+  }
   if (timeout.aborted) {
     deps.log.warn({ name }, 'validator timed out; container removed');
     return {

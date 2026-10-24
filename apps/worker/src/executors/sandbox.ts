@@ -80,7 +80,10 @@ export async function findIndexDirs(root: string, depth = 3): Promise<string[]> 
 
 export class SandboxExecutor implements Executor {
   readonly name = 'sandbox' as const;
-  constructor(private readonly env: Env) {}
+  constructor(
+    private readonly env: Env,
+    private readonly warn: (fields: object, msg: string) => void = () => {},
+  ) {}
 
   async execute(input: ExecuteInput): Promise<ExecuteResult> {
     const { config, log, signal } = input;
@@ -155,6 +158,9 @@ export class SandboxExecutor implements Executor {
       this.env.SANDBOX_CPUS,
       '--cpu-shares',
       String(this.env.SANDBOX_CPU_SHARES),
+      ...(this.env.SANDBOX_CGROUP_PARENT
+        ? ['--cgroup-parent', this.env.SANDBOX_CGROUP_PARENT]
+        : []),
       '--memory',
       this.env.SANDBOX_MEMORY,
       '--memory-swap',
@@ -192,6 +198,19 @@ export class SandboxExecutor implements Executor {
     let exitCode: number | null;
     try {
       exitCode = await run('docker', args, (l) => log.write(l));
+      if (exitCode === 125 && this.env.SANDBOX_CGROUP_PARENT && !signal.aborted && !timedOut) {
+        // Docker itself refused (125), with the builds' CPU group in play: a
+        // build without the CPU split beats a build that doesn't run.
+        this.warn(
+          { attemptId: input.attemptId, cgroupParent: this.env.SANDBOX_CGROUP_PARENT },
+          'could not start the build in its CPU group; starting it without',
+        );
+        await run('docker', ['rm', '-f', name]);
+        const i = args.indexOf('--cgroup-parent');
+        exitCode = await run('docker', [...args.slice(0, i), ...args.slice(i + 2)], (l) =>
+          log.write(l),
+        );
+      }
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);

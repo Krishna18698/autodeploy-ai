@@ -58,6 +58,17 @@ describe('starting a server container', () => {
     const a = containerArgs({ ...base, command: 'node server.js', workdir: '.' });
     expect(a[a.indexOf('--cpus') + 1]).toBe('1');
     expect(a[a.indexOf('--cpu-shares') + 1]).toBe('512');
+    expect(a).not.toContain('--cgroup-parent');
+  });
+
+  it("puts the site in the sites' CPU group when there is one (production: capped at 75% of the VM)", () => {
+    const a = containerArgs({
+      ...base,
+      command: 'node server.js',
+      workdir: '.',
+      env_: { ...envCfg, RUNTIME_CGROUP_PARENT: 'autodeploy-sites.slice' },
+    });
+    expect(a[a.indexOf('--cgroup-parent') + 1]).toBe('autodeploy-sites.slice');
   });
 
   it('leaves compound commands to the shell, and never leaves the bundle', () => {

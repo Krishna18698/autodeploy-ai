@@ -164,19 +164,34 @@ export class RuntimeManager {
         NODE_OPTIONS: '--disable-warning=UNDICI-EHPA',
       }),
     };
-    const args = containerArgs({
-      container,
-      deploymentId,
-      bundle,
-      image: `${e.SANDBOX_IMAGE_PREFIX}${dep.runtime_node ?? 22}`,
-      // Older Next.js deployments recorded no command: they run server.js.
-      command: dep.runtime_command ?? 'node server.js',
-      workdir: dep.runtime_workdir ?? '.',
-      env,
-      env_: e,
-    });
+    const args = (env_: typeof e) =>
+      containerArgs({
+        container,
+        deploymentId,
+        bundle,
+        image: `${e.SANDBOX_IMAGE_PREFIX}${dep.runtime_node ?? 22}`,
+        // Older Next.js deployments recorded no command: they run server.js.
+        command: dep.runtime_command ?? 'node server.js',
+        workdir: dep.runtime_workdir ?? '.',
+        env,
+        env_,
+      });
     const out: string[] = [];
-    if ((await runProcess('docker', args, (l) => out.push(l))) !== 0) {
+    let code = await runProcess('docker', args(e), (l) => out.push(l));
+    if (code === 125 && e.RUNTIME_CGROUP_PARENT) {
+      // Docker itself refused (125), with the sites' CPU group in play: a site
+      // that runs without the CPU split beats a site that doesn't run.
+      this.d.log.warn(
+        { deploymentId, cgroupParent: e.RUNTIME_CGROUP_PARENT, error: out.join(' ').slice(0, 500) },
+        'could not start the site in its CPU group; starting it without',
+      );
+      await runProcess('docker', ['rm', '-f', container], () => {});
+      out.length = 0;
+      code = await runProcess('docker', args({ ...e, RUNTIME_CGROUP_PARENT: '' }), (l) =>
+        out.push(l),
+      );
+    }
+    if (code !== 0) {
       await this.record(deploymentId, dep.org_id, { status: 'failed', error: out.join(' ') });
       throw new RuntimeUnavailable(502, 'This site could not be started.');
     }
@@ -532,6 +547,7 @@ export function containerArgs(o: {
     | 'RUNTIME_MEMORY'
     | 'RUNTIME_CPUS'
     | 'RUNTIME_CPU_SHARES'
+    | 'RUNTIME_CGROUP_PARENT'
   >;
 }): string[] {
   const e = o.env_;
@@ -561,6 +577,7 @@ export function containerArgs(o: {
     e.RUNTIME_CPUS,
     '--cpu-shares',
     String(e.RUNTIME_CPU_SHARES),
+    ...(e.RUNTIME_CGROUP_PARENT ? ['--cgroup-parent', e.RUNTIME_CGROUP_PARENT] : []),
     '--pids-limit',
     '128',
     '--read-only',

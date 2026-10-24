@@ -119,3 +119,21 @@ problems, fixed here:
   failed (its database record gone), one site per 30-second pass. Each pass now
   stops at once any site whose deployment is gone or no longer served, and a
   stop that can't be recorded for a deleted deployment isn't an error.
+
+## Amendment, 2026-10-24 (evening): a CPU split, after measuring
+
+With 20 sites busy, the platform stayed fast on CPU weights alone (API median
+55 ms at 100% CPU) but a build starved: 71 s alone, 676 s under load, so a
+3-minute build would have hit the 15-minute limit. Now, by systemd slices that
+`ship.sh` creates from the VM's CPU count:
+
+- `autodeploy.slice` (sites and builds together): at most 90% of the CPUs, so
+  the platform and the VM itself always keep 10%;
+- `autodeploy-sites.slice` inside it: at most 75%, so a build always keeps
+  some; `autodeploy-builds.slice` (builds and site checks): weight 50.
+
+Inside them the weights still apply (sites 512, builds 256). The gateway,
+builds and site checks pass `--cgroup-parent`; if Docker refuses (exit 125)
+they start without it and log a warning, so the split can't stop a site or a
+build. Each deploy starts one gVisor container in the sites slice and says in
+its log whether it landed there.

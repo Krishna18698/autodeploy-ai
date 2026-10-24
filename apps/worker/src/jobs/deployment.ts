@@ -264,7 +264,7 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
       const executor: Executor =
         d.executor === 'github_actions'
           ? new GitHubActionsExecutor(Boolean(deps.installations))
-          : new SandboxExecutor(deps.env);
+          : new SandboxExecutor(deps.env, (f, m) => deps.log.warn(f, m));
 
       try {
         log.stage(`attempt ${attempt.attempt_no} · ${executor.name} · node ${config.nodeVersion}`);

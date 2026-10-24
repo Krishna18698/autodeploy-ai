@@ -62,6 +62,12 @@ const EnvSchema = z.object({
    * gateway half as much as an equally busy service would.
    */
   RUNTIME_CPU_SHARES: z.coerce.number().int().min(2).max(1024).default(512),
+  /**
+   * The systemd slice sites run in (production: autodeploy-sites.slice, which
+   * ship.sh caps at 75% of the VM's CPUs inside autodeploy.slice at 90%), so
+   * builds and the platform always keep some CPU. Empty: Docker's default.
+   */
+  RUNTIME_CGROUP_PARENT: z.string().default(''),
   RUNTIME_IDLE_MIN: z.coerce.number().min(1).default(15),
   RUNTIME_MAX_AWAKE: z.coerce.number().int().min(1).default(20),
   /**
@@ -86,6 +92,8 @@ const EnvSchema = z.object({
    * still gets its SANDBOX_CPUS.
    */
   SANDBOX_CPU_SHARES: z.coerce.number().int().min(2).max(1024).default(256),
+  /** The systemd slice builds and site checks run in (production: autodeploy-builds.slice). */
+  SANDBOX_CGROUP_PARENT: z.string().default(''),
   SANDBOX_MEMORY: z.string().default('3g'),
   BUILD_TIMEOUT_S: z.coerce.number().int().min(30).default(900),
   VALIDATOR: z.enum(['docker', 'skip']).default('docker'),

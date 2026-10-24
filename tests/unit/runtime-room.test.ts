@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readdir, readFile, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -30,6 +30,7 @@ const bin = await mkdtemp(join(tmpdir(), 'fake-docker-'));
 await writeFile(
   join(bin, 'docker'),
   `#!/bin/sh
+case "$*" in *--cgroup-parent*) [ -f "${bin}/refuse-cgroup" ] && { echo "cgroup refused" >&2; exit 125; } ;; esac
 case "$1" in
   run) echo container-id ;;
   port) echo "0.0.0.0:${port}" ;;
@@ -100,6 +101,7 @@ function setup(o: {
   free: ((awake: number) => number) | null;
   bundlesDir?: string;
   liveShas?: string[];
+  cgroupParent?: string;
 }) {
   const db = { deleted: new Set<string>(), liveShas: o.liveShas ?? [] };
   const sql = fakeSql(db);
@@ -121,6 +123,7 @@ function setup(o: {
     RUNTIME_PROXY: 'http://proxy:3129',
     RUNTIME_BUNDLES_DIR: o.bundlesDir ?? bundles,
     RUNTIME_BUNDLE_KEEP_H: 24,
+    RUNTIME_CGROUP_PARENT: o.cgroupParent ?? '',
     RUNTIME_MEMORY: `${CAP}m`,
     RUNTIME_CPUS: '0.5',
     RUNTIME_IDLE_MIN: 15,
@@ -237,6 +240,23 @@ describe("a deleted project's awake sites", () => {
     ]);
     expect(warnings).toEqual([]); // recording the stop of a deleted deployment isn't an error
     expect(mgr.awake).toBe(1);
+  });
+});
+
+describe("the sites' CPU group", () => {
+  it('a site that Docker will not start in its CPU group starts without it, and says so', async () => {
+    await writeFile(join(bin, 'refuse-cgroup'), '');
+    try {
+      const { mgr, warnings } = setup({ free: null, cgroupParent: 'autodeploy-sites.slice' });
+      await mgr.ensure('a');
+      expect(mgr.awake).toBe(1);
+      expect(warnings).toEqual(['could not start the site in its CPU group; starting it without']);
+    } finally {
+      await rm(join(bin, 'refuse-cgroup'));
+    }
+    const { mgr, warnings } = setup({ free: null, cgroupParent: 'autodeploy-sites.slice' });
+    await mgr.ensure('b');
+    expect(warnings).toEqual([]); // accepted: no retry
   });
 });
 

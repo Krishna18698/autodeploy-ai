@@ -124,6 +124,42 @@ done
 EOF
 on_vm images "$tmp/images.sh"
 
+step "CPU split: sites and builds at most 90% of the CPUs, sites alone 75%"
+# systemd slices (cgroup v2), sized from the VM's CPU count. The platform and
+# the VM itself always keep 10%; builds always keep what sites can't take.
+# The capacity test (2026-10-24) saw a build go from 71 s to 676 s with sites busy.
+cat >"$tmp/cpu-split.sh" <<'EOF'
+set -e
+n=$(nproc)
+changed=0
+unit() { # unit <name> <[Slice] lines>: written only when it changed
+  local want
+  want=$(printf '[Unit]\nDescription=AutoDeploy %s\n\n[Slice]\n%s\n' "$1" "$2")
+  if [ "$(cat "/etc/systemd/system/$1" 2>/dev/null)" != "$want" ]; then
+    printf '%s\n' "$want" >"/etc/systemd/system/$1"
+    changed=1
+  fi
+}
+unit autodeploy.slice "CPUQuota=$((n * 90))%"
+unit autodeploy-sites.slice "CPUQuota=$((n * 75))%"
+unit autodeploy-builds.slice "CPUWeight=50"
+[ "$changed" = 0 ] || systemctl daemon-reload
+systemctl start autodeploy.slice autodeploy-sites.slice autodeploy-builds.slice
+echo "  sites ≤ $((n * 75))%, sites + builds ≤ $((n * 90))% of $n CPUs (100% = one CPU)"
+# Does a gVisor container really land in the sites slice? If not, the gateway
+# starts sites without it (as before) and logs that it did.
+id=$(docker run -d --rm --runtime=runsc --network none --cgroup-parent autodeploy-sites.slice \
+  autodeploy-build:node24 sleep 20 2>&1) || { echo "  ✗ a gVisor container could not start in the sites slice: $id"; exit 0; }
+sleep 2
+if ls /sys/fs/cgroup/autodeploy.slice/autodeploy-sites.slice/ 2>/dev/null | grep -q "$id"; then
+  echo "  ✓ gVisor containers run inside the sites slice"
+else
+  echo "  ✗ the test container started, but not inside the sites slice: the split won't apply to sites"
+fi
+docker rm -f "$id" >/dev/null 2>&1 || true
+EOF
+on_vm cpu-split "$tmp/cpu-split.sh"
+
 step "deploy (rolling)"
 cat >"$tmp/deploy.sh" <<EOF
 cd $dir/src/infra/deploy && IMAGE_TAG=$tag SKIP_PULL=1 SMALL=${SMALL:-} bash deploy.sh
