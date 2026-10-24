@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { mkdir, readdir, readFile, rename, rm, stat, utimes } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import type { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -52,6 +53,8 @@ export function mib(size: string): number {
 export type Instance = {
   deploymentId: string;
   orgId: string;
+  /** Its bundle's sha (the directory under RUNTIME_BUNDLES_DIR). */
+  sha: string;
   container: string;
   host: string;
   port: number;
@@ -105,7 +108,9 @@ export class RuntimeManager {
     if (hit) return hit;
     const pending = this.starting.get(deploymentId);
     if (pending) return pending;
-    const p = this.start(deploymentId).finally(() => this.starting.delete(deploymentId));
+    const p = this.start(deploymentId).finally(() => {
+      this.starting.delete(deploymentId);
+    });
     this.starting.set(deploymentId, p);
     return p;
   }
@@ -133,7 +138,8 @@ export class RuntimeManager {
     t0: number,
   ): Promise<Instance> {
     await this.record(deploymentId, dep.org_id, { status: 'starting', error: null });
-    const bundle = await this.bundle(dep.runtime_sha);
+    const { dir: bundle, cached } = await this.bundle(dep.runtime_sha);
+    const tBundle = performance.now();
     const secrets = await loadSecrets(this.d, dep.project_id);
     const container = `ad-run-${deploymentId.slice(0, 8)}-${randomBytes(3).toString('hex')}`;
     const e = this.d.env;
@@ -174,6 +180,7 @@ export class RuntimeManager {
       await this.record(deploymentId, dep.org_id, { status: 'failed', error: out.join(' ') });
       throw new RuntimeUnavailable(502, 'This site could not be started.');
     }
+    const tRun = performance.now();
     const target = await this.address(container);
     const ready = await this.waitReady(target, container);
     if (!ready.ok) {
@@ -188,10 +195,12 @@ export class RuntimeManager {
       });
       throw new RuntimeUnavailable(502, 'This site failed to start.');
     }
+    const tReady = performance.now();
     const now = Date.now();
     const inst: Instance = {
       deploymentId,
       orgId: dep.org_id,
+      sha: dep.runtime_sha,
       container,
       ...target,
       startedAt: now,
@@ -208,34 +217,40 @@ export class RuntimeManager {
       cold_start_ms: coldStartMs,
       error: null,
     });
-    this.d.log.info({ deploymentId, container, coldStartMs }, 'runtime started');
+    // Where the time went: fetching and unpacking the bundle (none when the
+    // build left it on disk), starting the container, the server getting ready.
+    this.d.log.info(
+      {
+        deploymentId,
+        container,
+        coldStartMs,
+        bundleCached: cached,
+        bundleMs: Math.round(tBundle - t0),
+        runMs: Math.round(tRun - tBundle),
+        readyMs: Math.round(tReady - tRun),
+      },
+      'runtime started',
+    );
     return inst;
   }
 
-  /** The bundle unpacked on disk (shared by every start of the same build). */
-  private async bundle(sha: string): Promise<string> {
-    const dir = join(this.d.env.RUNTIME_BUNDLES_DIR, sha);
-    // The directory only appears (renamed into place) once fully unpacked.
-    if (await stat(dir).catch(() => null)) return dir;
+  /**
+   * The bundle unpacked on disk, shared by every start of the same build. The
+   * build usually left it there (primeBundle); otherwise it's fetched now.
+   * Each use marks it as used, so pruneBundles keeps it.
+   */
+  private async bundle(sha: string): Promise<{ dir: string; cached: boolean }> {
+    const root = this.d.env.RUNTIME_BUNDLES_DIR;
+    const dir = join(root, sha);
+    if (await stat(dir).catch(() => null)) {
+      const now = new Date();
+      await utimes(dir, now, now).catch(() => {});
+      return { dir, cached: true };
+    }
     const obj = await this.d.storage.getStream(runtimeKey(sha));
     if (!obj) throw new RuntimeUnavailable(502, 'This build is no longer stored.');
-    const tmp = `${dir}.tmp-${randomBytes(3).toString('hex')}`;
-    await mkdir(tmp, { recursive: true });
-    try {
-      await feedProcess([obj.body, createGunzip()], 'tar', ['-x', '-C', tmp]);
-      await rename(tmp, dir).catch(async (err) => {
-        // Another start unpacked it first.
-        if (
-          (err as NodeJS.ErrnoException).code === 'ENOTEMPTY' ||
-          (await stat(dir).catch(() => null))
-        )
-          return;
-        throw err;
-      });
-    } finally {
-      await rm(tmp, { recursive: true, force: true });
-    }
-    return dir;
+    await unpackBundle(root, sha, obj.body);
+    return { dir, cached: false };
   }
 
   private async address(container: string): Promise<{ host: string; port: number }> {
@@ -251,8 +266,10 @@ export class RuntimeManager {
     t: { host: string; port: number },
     container: string,
   ): Promise<{ ok: boolean; exited?: boolean }> {
+    // Asks every 100 ms; whether the server has exited (a docker call, slower)
+    // only every 10th time.
     const deadline = Date.now() + this.d.env.RUNTIME_START_TIMEOUT_S * 1000;
-    while (Date.now() < deadline) {
+    for (let i = 1; Date.now() < deadline; i++) {
       const ok = await fetch(`http://${t.host}:${t.port}/`, {
         redirect: 'manual',
         signal: AbortSignal.timeout(2000),
@@ -261,12 +278,14 @@ export class RuntimeManager {
         () => false,
       );
       if (ok) return { ok: true };
-      const state: string[] = [];
-      await runProcess('docker', ['inspect', '-f', '{{.State.Running}}', container], (l) =>
-        state.push(l),
-      );
-      if (state[0]?.trim() === 'false') return { ok: false, exited: true };
-      await new Promise((r) => setTimeout(r, 200));
+      if (i % 10 === 0) {
+        const state: string[] = [];
+        await runProcess('docker', ['inspect', '-f', '{{.State.Running}}', container], (l) =>
+          state.push(l),
+        );
+        if (state[0]?.trim() === 'false') return { ok: false, exited: true };
+      }
+      await new Promise((r) => setTimeout(r, 100));
     }
     return { ok: false };
   }
@@ -338,17 +357,75 @@ export class RuntimeManager {
    * memory takes everything down.
    */
   async reapIdle(now = Date.now()) {
+    await this.reconcile();
     const limit = this.d.env.RUNTIME_IDLE_MIN * 60_000;
     for (const i of [...this.running.values()]) {
-      if (i.active === 0 && now - i.lastRequest > limit) await this.stop(i.deploymentId, 'idle');
+      if (i.active === 0 && now - i.lastRequest > limit)
+        await this.stopSafely(i.deploymentId, 'idle');
     }
     for (;;) {
       const free = await this.freeMb();
       if (free === null || free >= this.d.env.RUNTIME_MIN_FREE_MB / 2) return;
       const idle = this.longestIdle();
       if (!idle) return;
-      await this.stop(idle.deploymentId, `low memory (${free} MiB free)`);
+      await this.stopSafely(idle.deploymentId, `low memory (${free} MiB free)`);
     }
+  }
+
+  /**
+   * Stops, at once, instances whose deployment is gone (its project deleted)
+   * or can no longer be served, instead of leaving them to the idle timeout.
+   */
+  async reconcile() {
+    const ids = [...this.running.keys()];
+    if (ids.length === 0) return;
+    const rows = await this.d.sql<{ id: string; status: string }[]>`
+      select id, status from deployments where id = any(${ids})`;
+    const servable = new Set(
+      rows.filter((r) => SERVE_STATUSES.includes(r.status)).map((r) => r.id),
+    );
+    for (const id of ids) {
+      if (!servable.has(id)) await this.stopSafely(id, 'deployment deleted or no longer served');
+    }
+  }
+
+  /** stop(), where one failure mustn't keep the next instance running. */
+  private async stopSafely(deploymentId: string, reason: string) {
+    await this.stop(deploymentId, reason).catch((err) =>
+      this.d.log.warn({ err, deploymentId, reason }, 'runtime stop failed'),
+    );
+  }
+
+  /**
+   * Unpacked bundles stay on disk for running instances, every project's live
+   * deployment, and anything built or started in the last RUNTIME_BUNDLE_KEEP_H
+   * hours; the rest are deleted (they're still in object storage, so a later
+   * start fetches them again). Returns how many were deleted.
+   */
+  async pruneBundles(now = Date.now()): Promise<number> {
+    const root = this.d.env.RUNTIME_BUNDLES_DIR;
+    const names = await readdir(root).catch(() => [] as string[]);
+    if (names.length === 0) return 0;
+    const live = await this.d.sql<{ sha: string }[]>`
+      select distinct d.runtime_sha as sha from projects p
+      join deployments d on d.id = p.active_deployment_id
+      where d.runtime_sha = any(${names})`;
+    const keep = new Set([
+      ...live.map((r) => r.sha),
+      ...[...this.running.values()].map((i) => i.sha),
+    ]);
+    const maxAge = this.d.env.RUNTIME_BUNDLE_KEEP_H * 3_600_000;
+    let removed = 0;
+    for (const name of names) {
+      if (keep.has(name)) continue;
+      const st = await stat(join(root, name)).catch(() => null);
+      if (!st || now - st.mtimeMs < maxAge) continue;
+      await rm(join(root, name), { recursive: true, force: true });
+      removed++;
+    }
+    if (removed > 0)
+      this.d.log.info({ removed, kept: names.length - removed }, 'old bundles removed');
+    return removed;
   }
 
   /** Persists last-request times so the dashboard can show activity. */
@@ -390,8 +467,47 @@ export class RuntimeManager {
     await this.d.sql`insert into runtime_instances ${this.d.sql(row)}
       on conflict (deployment_id) do update set ${this.d.sql(
         Object.fromEntries(Object.entries(row).filter(([k]) => k !== 'deployment_id')),
-      )}`;
+      )}`.catch((err: { code?: string }) => {
+      // The deployment was deleted meanwhile (with its project): nothing to record.
+      if (err.code !== '23503') throw err;
+    });
   }
+}
+
+/**
+ * Unpacks a bundle (.tar.gz) into <root>/<sha>. The directory only appears,
+ * renamed into place, once complete; if another unpack got there first, that
+ * one stands.
+ */
+export async function unpackBundle(root: string, sha: string, source: Readable): Promise<void> {
+  const dir = join(root, sha);
+  const tmp = `${dir}.tmp-${randomBytes(3).toString('hex')}`;
+  await mkdir(tmp, { recursive: true });
+  try {
+    await feedProcess([source, createGunzip()], 'tar', ['-x', '-C', tmp]);
+    await rename(tmp, dir).catch(async (err) => {
+      if (
+        (err as NodeJS.ErrnoException).code === 'ENOTEMPTY' ||
+        (await stat(dir).catch(() => null))
+      )
+        return;
+      throw err;
+    });
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Called by the build: leaves the new bundle unpacked where the gateway looks,
+ * so the first visit after a deploy doesn't fetch and unpack it (~4 s of a
+ * Next.js wake, capacity test 2026-10-24). Returns false if it was there already.
+ */
+export async function primeBundle(root: string, sha: string, file: string): Promise<boolean> {
+  if (await stat(join(root, sha)).catch(() => null)) return false;
+  await mkdir(root, { recursive: true });
+  await unpackBundle(root, sha, createReadStream(file));
+  return true;
 }
 
 /**

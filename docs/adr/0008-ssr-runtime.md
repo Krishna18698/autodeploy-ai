@@ -97,3 +97,25 @@ Every 30 s, if free memory has fallen below half the reserve anyway (a build
 started, servers grew into their caps), idle servers sleep until it hasn't.
 `RUNTIME_MAX_AWAKE` (20) stays as an upper bound. The real number is for the
 capacity test on the VM to find.
+
+## Amendment, 2026-10-24 (later): measured, then made faster and tidier
+
+The capacity test (20 real sites, report `AutoDeploy-capacity-test-2026-10-24.docx`)
+found 20 awake used ~1.1 GiB, CPU (not memory) limits busy sites, and three
+problems, fixed here:
+
+- **Slow first wakes.** Next.js took 4.4-7.8 s against the 1-3 s expected
+  above; a re-wake with the bundle already on disk took 3.7 s against 7.8 s. So
+  the build now leaves each new bundle unpacked where the gateway looks (the
+  worker mounts the same directory), and the gateway asks every 100 ms whether
+  a server is ready (was ~400 ms). The "runtime started" log line now says
+  where the time went: `bundleMs`, `runMs`, `readyMs`, `bundleCached`. The rest
+  of a Next.js wake is Next.js starting on 0.5 CPU.
+- **Unpacked bundles were never deleted** (67, 2.5 GB on the VM that day).
+  Every hour the gateway deletes those not running, not a project's live
+  deployment, and unused for `RUNTIME_BUNDLE_KEEP_H` (24) hours; they stay in
+  object storage, so a later wake fetches them again.
+- **A deleted project's awake site kept running** until idle, and its stop then
+  failed (its database record gone), one site per 30-second pass. Each pass now
+  stops at once any site whose deployment is gone or no longer served, and a
+  stop that can't be recorded for a deleted deployment isn't an error.

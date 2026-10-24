@@ -151,6 +151,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/autodeploy/work:/var/lib/autodeploy/work
+      # Where the gateway runs sites from: a build leaves its server bundle
+      # unpacked here, so the first visit doesn't wait for it.
+      - /var/lib/autodeploy/runtimes:/var/lib/autodeploy/runtimes
     stop_grace_period: 40s
     depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
     restart: unless-stopped

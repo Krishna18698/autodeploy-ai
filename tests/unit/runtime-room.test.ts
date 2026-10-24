@@ -1,4 +1,5 @@
-import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { chmod, mkdir, mkdtemp, readdir, readFile, utimes, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -13,6 +14,7 @@ import {
   availableMemoryMb,
   type Instance,
   mib,
+  primeBundle,
   RuntimeManager,
 } from '../../apps/worker/src/gateway/runtimes';
 
@@ -52,29 +54,62 @@ const RESERVE = 4096;
 /** Free memory with `n` servers awake, given what's free with none. */
 const freeWith = (base: number) => (n: number) => base - PER_SERVER * n;
 
-// Every query answers for a live server-rendered deployment; nothing else is read.
-const sql = ((first: unknown) => {
-  if (!Array.isArray(first)) return first; // the sql(row) helper
-  const live = {
-    org_id: 'org',
-    project_id: 'project',
-    status: 'ACTIVE',
-    mode: 'ssr',
-    runtime_sha: 'sha1',
-    runtime_node: 22,
-    runtime_command: null,
-    runtime_workdir: null,
-  };
-  return Promise.resolve((first as string[]).join('?').includes('from deployments') ? [live] : []);
-}) as unknown as Sql;
+/**
+ * A stand-in database: every deployment is a live server-rendered one, unless
+ * the test deleted it; `liveShas` are the bundles of projects' live deployments.
+ */
+function fakeSql(db: { deleted: Set<string>; liveShas: string[] }) {
+  return ((first: unknown, ...values: unknown[]) => {
+    if (!Array.isArray(first)) return first; // the sql(row) helper
+    const text = (first as string[]).join('?');
+    if (text.includes('insert into runtime_instances')) {
+      const row = values[0] as { deployment_id: string };
+      return db.deleted.has(row.deployment_id)
+        ? Promise.reject(Object.assign(new Error('foreign key violation'), { code: '23503' }))
+        : Promise.resolve([]);
+    }
+    if (text.includes('select id, status from deployments')) {
+      const ids = values[0] as string[];
+      return Promise.resolve(
+        ids.filter((id) => !db.deleted.has(id)).map((id) => ({ id, status: 'ACTIVE' })),
+      );
+    }
+    if (text.includes('active_deployment_id')) {
+      return Promise.resolve(db.liveShas.map((sha) => ({ sha })));
+    }
+    if (text.includes('from deployments where id')) {
+      return Promise.resolve([
+        {
+          org_id: 'org',
+          project_id: 'project',
+          status: 'ACTIVE',
+          mode: 'ssr',
+          runtime_sha: 'sha1',
+          runtime_node: 22,
+          runtime_command: null,
+          runtime_workdir: null,
+        },
+      ]);
+    }
+    return Promise.resolve([]);
+  }) as unknown as Sql;
+}
 
-function setup(o: { maxAwake?: number; free: ((awake: number) => number) | null }) {
+function setup(o: {
+  maxAwake?: number;
+  free: ((awake: number) => number) | null;
+  bundlesDir?: string;
+  liveShas?: string[];
+}) {
+  const db = { deleted: new Set<string>(), liveShas: o.liveShas ?? [] };
+  const sql = fakeSql(db);
   const stopped: { id: string; reason: string }[] = [];
+  const warnings: string[] = [];
   const log = {
     info: (f: { deploymentId?: string; reason?: string }) => {
       if (f.reason && f.deploymentId) stopped.push({ id: f.deploymentId, reason: f.reason });
     },
-    warn() {},
+    warn: (_f: unknown, msg: string) => warnings.push(msg),
     debug() {},
     error() {},
   } as unknown as Logger;
@@ -84,7 +119,8 @@ function setup(o: { maxAwake?: number; free: ((awake: number) => number) | null 
     RUNTIME_REACH: 'publish',
     RUNTIME_NETWORK: 'n',
     RUNTIME_PROXY: 'http://proxy:3129',
-    RUNTIME_BUNDLES_DIR: bundles,
+    RUNTIME_BUNDLES_DIR: o.bundlesDir ?? bundles,
+    RUNTIME_BUNDLE_KEEP_H: 24,
     RUNTIME_MEMORY: `${CAP}m`,
     RUNTIME_CPUS: '0.5',
     RUNTIME_IDLE_MIN: 15,
@@ -111,7 +147,7 @@ function setup(o: { maxAwake?: number; free: ((awake: number) => number) | null 
     }
     return out;
   };
-  return { mgr, stopped, wake };
+  return { mgr, stopped, warnings, wake, db };
 }
 
 describe('waking a server-rendered site never squeezes the VM', () => {
@@ -185,6 +221,50 @@ describe('waking a server-rendered site never squeezes the VM', () => {
       { id: 'a', reason: 'idle' },
       { id: 'b', reason: 'idle' },
     ]);
+  });
+});
+
+describe("a deleted project's awake sites", () => {
+  it('are stopped on the next pass, all of them, without waiting to go idle, and nothing fails', async () => {
+    const { mgr, stopped, warnings, wake, db } = setup({ free: freeWith(100_000) });
+    await wake('a', 'b', 'c');
+    db.deleted.add('a');
+    db.deleted.add('b');
+    await mgr.reapIdle(2_000); // nowhere near idle
+    expect(stopped).toEqual([
+      { id: 'a', reason: 'deployment deleted or no longer served' },
+      { id: 'b', reason: 'deployment deleted or no longer served' },
+    ]);
+    expect(warnings).toEqual([]); // recording the stop of a deleted deployment isn't an error
+    expect(mgr.awake).toBe(1);
+  });
+});
+
+describe('server bundles on the VM', () => {
+  it('a build leaves its bundle unpacked where the gateway looks, once, leaving nothing half-done', async () => {
+    const src = await mkdtemp(join(tmpdir(), 'bundle-src-'));
+    await writeFile(join(src, 'server.js'), 'console.log(1)');
+    const file = join(await mkdtemp(join(tmpdir(), 'tgz-')), 'bundle.tar.gz');
+    execFileSync('tar', ['-czf', file, '-C', src, '.']);
+    const root = join(await mkdtemp(join(tmpdir(), 'runtimes-')), 'runtimes');
+    expect(await primeBundle(root, 'abc', file)).toBe(true);
+    expect(await readFile(join(root, 'abc', 'server.js'), 'utf8')).toBe('console.log(1)');
+    expect(await primeBundle(root, 'abc', file)).toBe(false);
+    expect(await readdir(root)).toEqual(['abc']);
+  });
+
+  it('keeps those running, live or used in the last 24 hours, and deletes the rest', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'prune-'));
+    const old = new Date(Date.now() - 48 * 3_600_000);
+    for (const name of ['sha1', 'live-sha', 'old-sha', 'recent-sha', 'old-sha.tmp-abc123']) {
+      await mkdir(join(dir, name));
+      if (name !== 'recent-sha') await utimes(join(dir, name), old, old);
+    }
+    const { mgr, wake } = setup({ free: null, bundlesDir: dir, liveShas: ['live-sha'] });
+    await wake('a'); // runs from sha1
+    await utimes(join(dir, 'sha1'), old, old); // running, though last unpacked long ago
+    expect(await mgr.pruneBundles()).toBe(2);
+    expect((await readdir(dir)).sort()).toEqual(['live-sha', 'recent-sha', 'sha1']);
   });
 });
 

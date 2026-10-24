@@ -31,6 +31,7 @@ import { GitHubActionsExecutor } from '../executors/github-actions.js';
 import { inside } from '../executors/paths.js';
 import { applyPatch, SandboxExecutor } from '../executors/sandbox.js';
 import type { Executor } from '../executors/types.js';
+import { primeBundle } from '../gateway/runtimes.js';
 import { metrics } from '../metrics.js';
 import { storeArtifact } from '../pipeline/artifact.js';
 import { LogSink } from '../pipeline/logs.js';
@@ -432,6 +433,13 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
         const runtime = packed
           ? { ...packed, reused: await retry(() => uploadRuntimeBundle(deps, packed), uploadRetry) }
           : null;
+        if (packed) {
+          // Unpacked where the gateway runs sites from, so the first visit doesn't wait for it.
+          // Only a head start: if it fails, the gateway fetches the bundle itself.
+          await primeBundle(deps.env.RUNTIME_BUNDLES_DIR, packed.sha256, packed.file).catch((err) =>
+            deps.log.warn({ err, deploymentId }, 'could not leave the server bundle unpacked'),
+          );
+        }
         let screenshotKey: string | null = null;
         if (validation.screenshotPath) {
           screenshotKey = `screenshots/${deploymentId}.png`;

@@ -137,9 +137,14 @@ for (let i = 0; ; i++) {
     await new Promise((r) => setTimeout(r, 2000));
   }
 }
+let lastPrune = 0;
 const reaper = setInterval(() => {
   runtimes.reapIdle().catch((err) => log.warn({ err }, 'reap failed'));
   runtimes.flush().catch((err) => log.warn({ err }, 'flush failed'));
+  if (Date.now() - lastPrune > 3_600_000) {
+    lastPrune = Date.now();
+    runtimes.pruneBundles().catch((err) => log.warn({ err }, 'bundle prune failed'));
+  }
 }, 30_000);
 server.listen(env.GATEWAY_PORT, () => log.info({ port: env.GATEWAY_PORT }, 'gateway listening'));
 
