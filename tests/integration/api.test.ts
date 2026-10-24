@@ -504,6 +504,45 @@ describe('Environment variables set while importing', () => {
   });
 });
 
+describe("The origin's answer for a site address (the edge's fallback when KV fails)", () => {
+  it('names the live deployment, and honours takedowns and suspended accounts as KV does', async () => {
+    const org = await makeOrg(deps.sql);
+    const p = await makeProject(deps.sql, org);
+    const d = await makeDeployment(deps.sql, org, p.id, 'ACTIVE', 7);
+    const sha = randomBytes(32).toString('hex');
+    const [a] = await deps.sql<{ id: string }[]>`
+      insert into artifacts (sha256, storage_prefix, file_count, bytes)
+      values (${sha}, ${`sites/${sha}`}, 1, 10) returning id`;
+    await deps.sql`update deployments set artifact_id = ${a!.id} where id = ${d}`;
+    await deps.sql`update projects set active_deployment_id = ${d} where id = ${p.id}`;
+    const ask = (host: string, token = 'internal-token-for-tests-123456') =>
+      app.inject({ url: `/internal/routes/${host}`, headers: { 'x-internal-token': token } });
+
+    expect(
+      (await ask(`${p.slug}.autodeploy.test`, 'wrong-token-wrong-token-wrong')).statusCode,
+    ).toBe(403);
+    const live = await ask(`${p.slug}.autodeploy.test`);
+    expect(live.statusCode).toBe(200);
+    expect(live.json()).toEqual({
+      deploymentId: d,
+      number: 7,
+      artifactSha: sha,
+      projectSlug: p.slug,
+    });
+    expect((await ask(`d7--${p.slug}.autodeploy.test`)).json().deploymentId).toBe(d);
+    expect((await ask(`d8--${p.slug}.autodeploy.test`)).statusCode).toBe(404);
+
+    await deps.sql`update projects set taken_down_at = now() where id = ${p.id}`;
+    expect((await ask(`${p.slug}.autodeploy.test`)).json()).toEqual({ takenDown: true });
+    expect((await ask(`d7--${p.slug}.autodeploy.test`)).json()).toEqual({ takenDown: true });
+    await deps.sql`update projects set taken_down_at = null where id = ${p.id}`;
+    await deps.sql`update orgs set suspended_at = now() where id = ${org}`;
+    expect((await ask(`${p.slug}.autodeploy.test`)).json()).toEqual({ takenDown: true });
+    await deps.sql`update orgs set suspended_at = null where id = ${org}`;
+    expect((await ask(`${p.slug}.autodeploy.test`)).json().deploymentId).toBe(d);
+  });
+});
+
 describe('Server-rendered projects per account', () => {
   it('are capped at SSR_PROJECTS_PER_ORG (3); static sites are not counted against it', async () => {
     const s = await login(`ssr-cap-${randomUUID().slice(0, 6)}`);

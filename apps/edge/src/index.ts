@@ -75,19 +75,63 @@ const SECURITY_HEADERS: Record<string, string> = {
 /** A site a platform admin took down: every address answers with a notice. */
 type TakenDown = { takenDown: true };
 
-async function resolveRoute(
+type Route = RouteValue | TakenDown | null;
+/** How long an address's answer is kept in the edge cache (and in KV's own). */
+const ROUTE_CACHE_S = 30;
+
+/**
+ * Which deployment an address serves. Production reads KV, but each answer is
+ * first kept in the edge cache for 30 s: the Cache API is free and unlimited,
+ * KV reads are 100,000 a day on the free plan. On 2026-10-24 a load test sent
+ * every visit to KV, used them all up, and every site answered 500 until
+ * midnight UTC. Should KV fail anyway, the origin answers from the database.
+ * A rollback or takedown is visible within about a minute (both caches).
+ */
+export async function resolveRoute(
   env: Env,
   host: string,
   route: SiteRoute,
-): Promise<RouteValue | TakenDown | null> {
-  if (env.ROUTE_MODE === 'kv' && env.ROUTES) {
-    // KV reads are edge-cached for 30 s: a rollback (or a takedown) is visible within that.
-    return env.ROUTES.get<RouteValue | TakenDown>(routeKey(route), { type: 'json', cacheTtl: 30 });
+  ctx: Pick<ExecutionContext, 'waitUntil'>,
+  cache: Pick<Cache, 'match' | 'put'> = caches.default,
+): Promise<Route> {
+  if (env.ROUTE_MODE !== 'kv' || !env.ROUTES) return routeFromOrigin(env, host);
+  const key = new Request(
+    `https://edge-cache.internal/routes/${encodeURIComponent(routeKey(route))}`,
+  );
+  const hit = await cache.match(key);
+  if (hit) return (await hit.json()) as Route;
+  let value: Route;
+  try {
+    value = await env.ROUTES.get<RouteValue | TakenDown>(routeKey(route), {
+      type: 'json',
+      cacheTtl: ROUTE_CACHE_S,
+    });
+  } catch (err) {
+    console.warn(`KV lookup failed (${String(err)}); asking the origin`);
+    value = await routeFromOrigin(env, host);
   }
+  ctx.waitUntil(
+    cache.put(
+      key,
+      new Response(JSON.stringify(value), {
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': `max-age=${ROUTE_CACHE_S}`,
+        },
+      }),
+    ),
+  );
+  return value;
+}
+
+/** The origin's answer (from the database): null when nothing lives there. */
+async function routeFromOrigin(env: Env, host: string): Promise<Route> {
   const res = await fetch(`${env.API_URL}/internal/routes/${encodeURIComponent(host)}`, {
     headers: { 'x-internal-token': env.INTERNAL_TOKEN },
   });
-  return res.ok ? ((await res.json()) as RouteValue) : null;
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`origin route lookup failed: ${res.status}`);
+  return (await res.json()) as RouteValue | TakenDown;
 }
 
 /** The path as a storage key, or null when its %-encoding is malformed (e.g. "/%"). */
@@ -279,7 +323,7 @@ export default {
       if (!label || RESERVED_LABELS.has(label)) return fetch(request);
       return notFound('No site lives at this address.');
     }
-    const target = await resolveRoute(env, reqHost, route);
+    const target = await resolveRoute(env, reqHost, route, ctx);
     if (!target) return notFound('No deployment is live at this address.');
     // 451: unavailable for legal reasons (an abuse report, or the terms of service).
     if ('takenDown' in target)
