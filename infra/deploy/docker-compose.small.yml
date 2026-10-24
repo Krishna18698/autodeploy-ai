@@ -28,5 +28,7 @@ services:
     environment:
       RUNTIME_MAX_AWAKE: "6"
       RUNTIME_MEMORY: 192m
+      # One CPU here is the whole VM: keep sites to half of it.
+      RUNTIME_CPUS: "0.5"
       # The worker's 2g build here, plus 512 MiB.
       RUNTIME_MIN_FREE_MB: "2560"

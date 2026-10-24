@@ -526,7 +526,12 @@ export function containerArgs(o: {
   env: Record<string, string>;
   env_: Pick<
     Env,
-    'SANDBOX_RUNTIME' | 'RUNTIME_REACH' | 'RUNTIME_NETWORK' | 'RUNTIME_MEMORY' | 'RUNTIME_CPUS'
+    | 'SANDBOX_RUNTIME'
+    | 'RUNTIME_REACH'
+    | 'RUNTIME_NETWORK'
+    | 'RUNTIME_MEMORY'
+    | 'RUNTIME_CPUS'
+    | 'RUNTIME_CPU_SHARES'
   >;
 }): string[] {
   const e = o.env_;
@@ -554,6 +559,8 @@ export function containerArgs(o: {
     e.RUNTIME_MEMORY,
     '--cpus',
     e.RUNTIME_CPUS,
+    '--cpu-shares',
+    String(e.RUNTIME_CPU_SHARES),
     '--pids-limit',
     '128',
     '--read-only',

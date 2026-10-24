@@ -51,7 +51,17 @@ const EnvSchema = z.object({
   RUNTIME_REACH: z.enum(['network', 'publish']).default('network'),
   RUNTIME_BUNDLES_DIR: z.string().default('/var/lib/autodeploy/runtimes'),
   RUNTIME_MEMORY: z.string().default('256m'),
-  RUNTIME_CPUS: z.string().default('0.5'),
+  /**
+   * A site may use a whole CPU when the VM has it to spare (Next.js starts up
+   * about twice as fast as on half of one; capacity test, 2026-10-24) ...
+   */
+  RUNTIME_CPUS: z.string().default('1'),
+  /**
+   * ... but counts half as much as a platform service (Docker's default weight
+   * is 1024) when CPU is short, so a busy site slows the API, database and
+   * gateway half as much as an equally busy service would.
+   */
+  RUNTIME_CPU_SHARES: z.coerce.number().int().min(2).max(1024).default(512),
   RUNTIME_IDLE_MIN: z.coerce.number().min(1).default(15),
   RUNTIME_MAX_AWAKE: z.coerce.number().int().min(1).default(20),
   /**

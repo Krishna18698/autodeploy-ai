@@ -18,7 +18,8 @@ const envCfg = {
   RUNTIME_REACH: 'network',
   RUNTIME_NETWORK: 'autodeploy-runtime',
   RUNTIME_MEMORY: '256m',
-  RUNTIME_CPUS: '0.5',
+  RUNTIME_CPUS: '1',
+  RUNTIME_CPU_SHARES: 512,
 } as const;
 const base = {
   container: 'c',
@@ -51,6 +52,12 @@ describe('starting a server container', () => {
     expect(a.at(-1)).toBe('exec react-router-serve ./build/server/index.js');
     expect(a).toContain('--read-only');
     expect(a).toContain('--runtime=runsc');
+  });
+
+  it('lets a site use a whole CPU when there is spare, at half the weight of a platform service', () => {
+    const a = containerArgs({ ...base, command: 'node server.js', workdir: '.' });
+    expect(a[a.indexOf('--cpus') + 1]).toBe('1');
+    expect(a[a.indexOf('--cpu-shares') + 1]).toBe('512');
   });
 
   it('leaves compound commands to the shell, and never leaves the bundle', () => {
