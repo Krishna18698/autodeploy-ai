@@ -335,6 +335,14 @@ export const projectRoutes =
         const expected =
           typeof ifMatch === 'string' ? Number(/^"?v(\d+)"?$/.exec(ifMatch)?.[1]) : undefined;
         const b = req.body;
+        // Building in the user's own GitHub Actions is designed (ADR 0002) but
+        // not built: the executor is a placeholder that fails every build.
+        // Refuse it rather than accept a setting that can only break deploys.
+        if (b.executor === 'github_actions')
+          throw badRequest(
+            'executor_unavailable',
+            "Building on GitHub Actions isn't available yet. Projects build in AutoDeploy's own sandbox.",
+          );
         const set: Record<string, unknown> = {};
         if (b.name !== undefined) set.name = b.name;
         if (b.defaultBranch !== undefined) set.default_branch = b.defaultBranch;

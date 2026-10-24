@@ -543,6 +543,30 @@ describe("The origin's answer for a site address (the edge's fallback when KV fa
   });
 });
 
+describe('Where a project builds', () => {
+  it('refuses GitHub Actions, which is not built yet, rather than break every deploy', async () => {
+    const s = await login(`executor-${randomUUID().slice(0, 6)}`);
+    const [{ org_id: org } = { org_id: '' }] = await deps.sql<{ org_id: string }[]>`
+      select org_id from sessions where token_hash = ${sha256Hex(s.cookie.slice(s.cookie.indexOf('=') + 1))}`;
+    const p = await makeProject(deps.sql, org);
+    const patch = (payload: object) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/v1/projects/${p.id}`,
+        headers: { cookie: s.cookie, 'x-csrf-token': s.csrf },
+        payload,
+      });
+    const refused = await patch({ executor: 'github_actions' });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().code).toBe('executor_unavailable');
+    const [row] = await deps.sql<
+      { executor: string }[]
+    >`select executor from projects where id = ${p.id}`;
+    expect(row?.executor).toBe('sandbox');
+    expect((await patch({ executor: 'sandbox', name: 'still editable' })).statusCode).toBe(200);
+  });
+});
+
 describe('Server-rendered projects per account', () => {
   it('are capped at SSR_PROJECTS_PER_ORG (3); static sites are not counted against it', async () => {
     const s = await login(`ssr-cap-${randomUUID().slice(0, 6)}`);

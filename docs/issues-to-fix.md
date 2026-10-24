@@ -15,6 +15,7 @@ last, each only on the owner's yes.
 ## Not done
 
 **To build (nice to have, not blocking launch)**
+- [ ] **Builds on GitHub Actions** (in the user's own repository; ADR 0002): designed, not built. `apps/worker/src/executors/github-actions.ts` is a placeholder that fails every build, so since 2026-10-24 the API refuses `executor: "github_actions"` (the dashboard never offered it). Needs: the App adding a workflow to the user's repo, the workflow sending logs and the built site back with GitHub's per-job (OIDC) token, and storing it as builds are today. Would take builds off the VM's CPU.
 - [ ] **Google sign-in.** Needs a Google OAuth client from the owner, with the redirect `https://api.autodeploy.fyi/auth/google/callback`; then a "Continue with Google" button.
 - [ ] **Different variable values for previews:** environment variables are per project today, so production and pull-request previews get the same values.
 - [ ] **Variables from the command line:** an `autodeploy env` command in the CLI.
