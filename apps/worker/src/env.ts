@@ -79,6 +79,13 @@ const EnvSchema = z.object({
   SANDBOX_PROXY: z.string().default('http://egress:3128'),
   SANDBOX_IMAGE_PREFIX: z.string().default('autodeploy-build:node'),
   SANDBOX_CPUS: z.string().default('1.5'),
+  /**
+   * When CPU is short, builds and site checks count a quarter of a platform
+   * service and half of a live site (RUNTIME_CPU_SHARES): visitors waiting
+   * for a page come before a build finishing sooner. On a quiet VM a build
+   * still gets its SANDBOX_CPUS.
+   */
+  SANDBOX_CPU_SHARES: z.coerce.number().int().min(2).max(1024).default(256),
   SANDBOX_MEMORY: z.string().default('3g'),
   BUILD_TIMEOUT_S: z.coerce.number().int().min(30).default(900),
   VALIDATOR: z.enum(['docker', 'skip']).default('docker'),

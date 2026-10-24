@@ -74,6 +74,9 @@ export async function validateSite(
       'none',
       '--cpus',
       '1',
+      // A build's low weight (SANDBOX_CPU_SHARES): live sites come first.
+      '--cpu-shares',
+      String(deps.env.SANDBOX_CPU_SHARES),
       '--memory',
       '1g',
       '--pids-limit',

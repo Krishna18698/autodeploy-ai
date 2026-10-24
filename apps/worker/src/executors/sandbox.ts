@@ -153,6 +153,8 @@ export class SandboxExecutor implements Executor {
       this.env.SANDBOX_NETWORK,
       '--cpus',
       this.env.SANDBOX_CPUS,
+      '--cpu-shares',
+      String(this.env.SANDBOX_CPU_SHARES),
       '--memory',
       this.env.SANDBOX_MEMORY,
       '--memory-swap',
