@@ -7,10 +7,17 @@ import { describe, expect, it } from 'vitest';
 // tests/deploy/remote.test.sh drops the line on purpose against a stand-in VM.
 describe('deploys survive a dropped connection to the VM', () => {
   it('retries drops, resends input, runs a long step once and streams its log whole', () => {
-    const out = execFileSync('bash', [resolve('tests/deploy/remote.test.sh')], {
-      encoding: 'utf8',
-      timeout: 60_000,
-    });
+    let out: string;
+    try {
+      out = execFileSync('bash', [resolve('tests/deploy/remote.test.sh')], {
+        encoding: 'utf8',
+        timeout: 60_000,
+      });
+    } catch (err) {
+      // Its own report says which check failed.
+      const e = err as { stdout?: string; stderr?: string };
+      out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+    }
     expect(out).toContain('all passed');
   }, 90_000);
 });

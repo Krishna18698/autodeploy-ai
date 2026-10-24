@@ -46,17 +46,20 @@ remote_in() {
 # connections, each patient with drops (about 4 minutes of retrying), so a
 # dropped line pauses the watching while the work carries on. Starting is
 # idempotent: a retry after the unit started, or even finished, starts nothing.
+# The status file is written whole (renamed into place): read half-written, an
+# empty status once ended a deploy step as failed with half its log (2026-10-24).
 on_vm() {
   local name=$1 script=$2
   local unit="autodeploy-ship-$name-${RUN_ID:-$$}"
   local log="$ON_VM_LOGS/$unit.log" st="$ON_VM_LOGS/$unit.status"
   remote_in "$script" "sudo install -D -m 700 /dev/stdin $ON_VM_LOGS/$unit.sh"
   remote "systemctl is-active --quiet $unit || sudo test -f $st ||
-    sudo systemd-run --quiet --collect --setenv=HOME=/root --unit=$unit bash -c 'bash $ON_VM_LOGS/$unit.sh > $log 2>&1; echo \$? > $st'"
+    sudo systemd-run --quiet --collect --setenv=HOME=/root --unit=$unit bash -c 'bash $ON_VM_LOGS/$unit.sh > $log 2>&1; echo \$? > $st.tmp; mv $st.tmp $st'"
   local seen=0 started=$SECONDS out first status size
   while :; do
     # One line "<status or running> <log size>", then the log from where we were.
-    if ! out=$(run_remote 20 '' "s=\$(sudo cat $st 2>/dev/null || echo running); n=\$(sudo stat -c %s $log 2>/dev/null || echo 0); echo \"\$s \$n\"; sudo tail -c +$((seen + 1)) $log 2>/dev/null | head -c \$((n - $seen))"); then
+    # (Only when it grew: BSD head rejects -c 0, which made the Mac test flaky.)
+    if ! out=$(run_remote 20 '' "s=\$(sudo cat $st 2>/dev/null); [ -n \"\$s\" ] || s=running; n=\$(sudo stat -c %s $log 2>/dev/null || echo 0); echo \"\$s \$n\"; if [ \$n -gt $seen ]; then sudo tail -c +$((seen + 1)) $log 2>/dev/null | head -c \$((n - $seen)); fi"); then
       echo "✗ lost the VM while watching '$name'; it may still finish there ($log)" >&2
       return 1
     fi
