@@ -7,7 +7,7 @@ What's left and what's done, kept current. Last updated 2026-10-28.
 The owner's order: finish the product first; the last three steps below come
 last, each only on the owner's yes.
 
-- [ ] **A sites domain of our own on the Public Suffix List** (audit 2026-10-22, finding #1). User sites live on `autodeploy.dpdns.org`, apart from the dashboard (dpdns.org is on the list, so browsers and Safe Browsing treat it separately from autodeploy.fyi). But every user site shares that one entry, so one site can set cookies for another and one phishing site can get every user site flagged. Vercel's fix: `vercel.app` is itself on the list. Ours: buy a sites domain for 2+ years (the list requires it; free dpdns renews yearly) and submit it; approval takes weeks, browsers pick it up over months.
+- [ ] **A sites domain of our own on the Public Suffix List** (audit 2026-10-22, finding #1). Not possible on dpdns: the list needs 2+ years of registration, and dpdns renews yearly. Until then (decided 2026-10-28, sign-ups still closed): the edge can strip `Domain=` from cookies server-rendered sites set (offered, owner to decide), and before opening sign-ups, Google Search Console on `autodeploy.dpdns.org` to hear of any flag the same day (owner's Google account and one DNS record). User sites live on `autodeploy.dpdns.org`, apart from the dashboard (dpdns.org is on the list, so browsers and Safe Browsing treat it separately from autodeploy.fyi). But every user site shares that one entry, so one site can set cookies for another and one phishing site can get every user site flagged. Vercel's fix: `vercel.app` is itself on the list. Ours: buy a sites domain for 2+ years (the list requires it; free dpdns renews yearly) and submit it; approval takes weeks, browsers pick it up over months.
 - [ ] **Open sign-ups:** remove `ALLOWED_GITHUB_LOGINS` from `.env.prod` and ship. Ready: per-account limits, email sign-in with verification and reset, two-step sign-in, legal pages.
 - [ ] **Make the GitHub App public** (app settings → Advanced) so other people can install it on their own accounts.
 - [ ] **Make the repository public.**
@@ -21,10 +21,10 @@ last, each only on the owner's yes.
 **To build (nice to have, not blocking launch)**
 - [ ] **Different variable values for previews:** environment variables are per project today, so production and pull-request previews get the same values.
 - [ ] **Variables from the command line:** an `autodeploy env` command in the CLI.
-- [ ] **Audit #21:** the AI repair still fails the JSON trailing-comma case (the model repeats an ambiguous snippet). A `line` field in the edit schema broke NVIDIA's structured output (7/8 → 1/8 in an A/B), so never re-add it untested. Still failing on 2026-10-24: 0 of 4 runs (NVIDIA ×3, Workers AI ×1).
-- [ ] **Status lights:** the pulsing current pipeline step, the "live" dot on build logs and an app "waking up" still pulse the old way; the owner may want a design for them.
-- [ ] **Projects table on load:** column headers can shift a few pixels sideways as real names replace the placeholders (nothing moves up or down).
-- [ ] **Smoke: fetching a just-deployed site sometimes times out from the test machine:** "a failed build is never a dead end" timed out twice (60 s) on its very last step, loading the new site from the Mac, then passed on the third run. Site serving didn't change that day; watch whether it comes back.
+
+**To watch**
+- [ ] **The validation time-limit test failed once** in a full parallel unit run on 2026-10-28 (passed 3 full runs, 3 alone and 6 under heavy CPU load right after). Its checks now print the stand-in Docker's calls and the timing, so the next failure explains itself.
+- [ ] **Slow site loads in the smoke suite:** each miss is now logged with its cause (see Done, 2026-10-28).
 
 **Clean-up with a date**
 - [ ] **Remove the session move after 2026-11-10:** `apps/api/src/routes/session-move.ts`, the handoff rewrite in `apps/web/next.config.ts` and `moveSession` in `apps/web/lib/api.ts`. By then every old cookie on the dashboard's host has expired.
@@ -38,6 +38,10 @@ last, each only on the owner's yes.
 ## Done
 
 **2026-10-28**
+- [x] **Audit #21, the JSON trailing-comma case:** fixed without AI. R-009 runs before the AI: when a build fails reading JSON and exactly one JSON file in the repository is invalid only because of trailing commas (JSON-with-comments files like tsconfig.json are left alone), it removes them. It changes the user's code, so like an AI patch it is policy-checked, rebuilt, validated and waits for approval; it runs even when AI is off, and approving it counts as a rule recovery, not an AI one. Tested on the AI evaluation's real build log and on a package.json npm couldn't read.
+- [x] **Status lights:** the pipeline's current step, the build log's "live" dot and a server "waking up" use the same ring pulse as every other live status (were a fading pulse).
+- [x] **Projects table on load:** fixed column widths, so the headers stay put when the names arrive (measured: same positions before and after, phone and desktop); long names end in "…" with the full name on hover.
+- [x] **Smoke timeout (60 s loading a just-deployed site, 2026-10-23):** cause not provable now, but one likely one removed: the edge's storage client retried a "busy" Backblaze up to 10 times with growing waits (up to ~50 s). Reads now get 2 retries within 10 s, then the page says the site is temporarily unavailable. The smoke suite asks a slow site again (3 × 20 s) and logs each miss with its cause.
 - [x] **One account per confirmed email, as on Vercel:** Continue with Google now joins any account (GitHub ones too) whose email is *confirmed*: a link we emailed was opened, or Google vouched for that same address. An address only typed into Settings, or GitHub's public email, never matches (anyone can type someone else's address). A new address in Settings → Account → Email gets a confirmation link (one a minute per address, five a day per account); a new GitHub account whose email another account confirmed is refused ("sign in there and connect GitHub"), and so is an email sign-up for it. One confirmed address belongs to one account (migration 0018).
 - [x] **Google sign-in reached production off:** its two settings were on the VM but the compose file never passed them to the API. Fixed, and a test now checks that every setting the API reads reaches both API containers.
 - [x] **Sign in with Google** (OpenID Connect, code flow with PKCE; nonce and state; Google's ID token verified against its published keys). Accounts are found by Google's permanent ID; the first time, a confirmed email-and-password account with Google's verified address is linked; GitHub accounts never are by email (they Connect Google in Settings). No new accounts while sign-ups are closed; two-step sign-in still applies; Disconnect is refused when Google is the only way in. No Google tokens are kept (migration 0017).

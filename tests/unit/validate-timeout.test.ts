@@ -35,10 +35,15 @@ describe('validation has a hard time limit', () => {
     const out = await mkdtemp(join(tmpdir(), 'out-'));
     const t0 = Date.now();
     const r = await validateSite(deps, site, out, new AbortController().signal);
-    expect(Date.now() - t0).toBeLessThan(10_000);
-    expect(r.ok).toBe(false);
-    expect(r.skipped).toBe(false);
-    expect(r.pageErrors[0]).toMatch(/did not finish within 1 s/);
+    const took = Date.now() - t0;
+    // It once failed under a full parallel run and not since: every check
+    // says what it saw, so a failure explains itself.
+    const seen = async () =>
+      `took ${took} ms; result ${JSON.stringify(r)}; docker calls:\n${await readFile(calls, 'utf8').catch(() => '(none yet)')}`;
+    expect(took, await seen()).toBeLessThan(10_000);
+    expect(r.ok, await seen()).toBe(false);
+    expect(r.skipped, await seen()).toBe(false);
+    expect(r.pageErrors[0], await seen()).toMatch(/did not finish within 1 s/);
     // Both stand-in docker calls run in the background: wait for the run and
     // the rm to be logged (up to 5 s). On a busy machine the run can start
     // after the 1 s limit has already removed the container.
@@ -49,9 +54,9 @@ describe('validation has a hard time limit', () => {
       log = await readFile(calls, 'utf8').catch(() => ''); // not written yet
     }
     const name = /--name (ad-validate-[0-9a-f]+)/.exec(log)?.[1];
-    expect(name).toBeDefined();
-    expect(log).toContain(`rm -f ${name}`);
+    expect(name, await seen()).toBeDefined();
+    expect(log, await seen()).toContain(`rm -f ${name}`);
     // Like a build, the site check counts least when CPU is short.
-    expect(log).toContain('--cpu-shares 256');
+    expect(log, await seen()).toContain('--cpu-shares 256');
   });
 });
