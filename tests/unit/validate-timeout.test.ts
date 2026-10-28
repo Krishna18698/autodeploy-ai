@@ -39,10 +39,12 @@ describe('validation has a hard time limit', () => {
     expect(r.ok).toBe(false);
     expect(r.skipped).toBe(false);
     expect(r.pageErrors[0]).toMatch(/did not finish within 1 s/);
-    // The rm runs in the background: wait for it (up to 5 s; a fixed 300 ms
-    // was sometimes too short on a busy machine).
+    // Both stand-in docker calls run in the background: wait for the run and
+    // the rm to be logged (up to 5 s). On a busy machine the run can start
+    // after the 1 s limit has already removed the container.
     let log = '';
-    for (let i = 0; i < 50 && !/\nrm -f /.test(`\n${log}`); i++) {
+    const both = () => /--name ad-validate-/.test(log) && /(^|\n)rm -f /.test(log);
+    for (let i = 0; i < 50 && !both(); i++) {
       await new Promise((res) => setTimeout(res, 100));
       log = await readFile(calls, 'utf8');
     }
