@@ -1,12 +1,14 @@
 import type { Deployment } from '@autodeploy/contracts';
 import { Panel } from '@/components/ui/panel';
+import { Dot } from '@/components/ui/status';
 import { ago } from '@/lib/format';
+import type { Tone } from '@/lib/status';
 
-const STATE: Record<string, { label: string; dot: string }> = {
-  running: { label: 'awake', dot: 'bg-ok' },
-  starting: { label: 'waking up', dot: 'bg-run animate-pulse' },
-  stopped: { label: 'asleep', dot: 'bg-muted/60' },
-  failed: { label: 'failed to start', dot: 'bg-fail' },
+const STATE: Record<string, { label: string; tone: Tone; pulse?: boolean }> = {
+  running: { label: 'awake', tone: 'ok' },
+  starting: { label: 'waking up', tone: 'run', pulse: true },
+  stopped: { label: 'asleep', tone: 'idle' },
+  failed: { label: 'failed to start', tone: 'fail' },
 };
 
 /** SSR deployments: the server process behind the site (ADR 0008). */
@@ -19,7 +21,7 @@ export function RuntimePanel({ d }: { d: Deployment }) {
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 font-mono text-[12px]">
         <dt className="text-muted">state</dt>
         <dd className="flex items-center gap-1.5">
-          <span aria-hidden className={`size-1.5 rounded-full ${s?.dot}`} />
+          <Dot tone={s?.tone ?? 'idle'} pulse={Boolean(s?.pulse)} />
           {r ? s?.label : 'not started yet'}
         </dd>
         <dt className="text-muted">last visit</dt>

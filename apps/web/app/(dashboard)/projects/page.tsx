@@ -36,7 +36,15 @@ export default function ProjectsPage() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-[13px]">
+            {/* Fixed column widths: placeholders and real rows line up, so the
+                headers don't move when the names arrive. */}
+            <table className="w-full min-w-[720px] table-fixed text-left text-[13px]">
+              <colgroup>
+                <col />
+                <col className="w-28" />
+                <col className="w-64" />
+                <col />
+              </colgroup>
               <thead className="border-b border-line font-mono text-[11px] uppercase tracking-wider text-muted">
                 <tr>
                   <th className="px-4 py-2 font-normal">Project</th>
@@ -79,12 +87,23 @@ export default function ProjectsPage() {
                 {projects.data?.items.map((p) => (
                   <tr key={p.id} className="hover:bg-raised/40">
                     <td className="px-4 py-3">
-                      <Link href={`/projects/${p.id}`} className="font-medium hover:underline">
+                      <Link
+                        href={`/projects/${p.id}`}
+                        title={p.slug}
+                        className="block truncate font-medium hover:underline"
+                      >
                         {p.slug}
                       </Link>
-                      <div className="font-mono text-[11px] text-muted">{p.repoFullName}</div>
+                      <div
+                        title={p.repoFullName}
+                        className="truncate font-mono text-[11px] text-muted"
+                      >
+                        {p.repoFullName}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-[12px] text-muted">{p.framework}</td>
+                    <td className="truncate px-4 py-3 font-mono text-[12px] text-muted">
+                      {p.framework}
+                    </td>
                     <td className="px-4 py-3">
                       {p.latestDeployment ? (
                         <span className="flex items-center gap-2">
@@ -97,7 +116,10 @@ export default function ProjectsPage() {
                         <span className="text-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono text-[12px] text-run/90">
+                    <td
+                      title={p.activeDeploymentId ? p.url : undefined}
+                      className="truncate px-4 py-3 font-mono text-[12px] text-run/90"
+                    >
                       {p.activeDeploymentId ? (
                         p.url.replace('https://', '')
                       ) : (

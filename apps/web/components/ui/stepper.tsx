@@ -3,6 +3,7 @@
 import type { Deployment } from '@autodeploy/contracts';
 import { motion } from 'motion/react';
 import { STAGES, stageIndex } from '@/lib/status';
+import { Dot } from './status';
 
 export function Stepper({ status }: { status: Deployment['status'] }) {
   const { index, failed } = stageIndex(status);
@@ -25,7 +26,13 @@ export function Stepper({ status }: { status: Deployment['status'] }) {
           failed: 'text-fail',
           todo: 'text-muted/60',
         }[state];
-        const glyph = { done: '✓', current: '●', failed: '✗', todo: '○' }[state];
+        // The step in progress pulses like every other live status dot.
+        const glyph = {
+          done: '✓',
+          current: <Dot tone="run" pulse className="size-2" />,
+          failed: '✗',
+          todo: '○',
+        }[state];
         return (
           <li
             key={s}
@@ -37,7 +44,7 @@ export function Stepper({ status }: { status: Deployment['status'] }) {
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-              className={`${color} ${state === 'current' ? 'animate-pulse' : ''}`}
+              className={`inline-flex w-[1ch] justify-center ${color}`}
             >
               {glyph}
             </motion.span>

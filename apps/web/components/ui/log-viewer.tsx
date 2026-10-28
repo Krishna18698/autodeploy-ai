@@ -2,6 +2,7 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Dot } from './status';
 
 export type LogLine = { seq: number; attemptNo: number; text: string };
 
@@ -120,7 +121,7 @@ export function LogViewer({ lines, live }: { lines: LogLine[]; live: boolean }) 
           follow
         </label>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-muted">
-          {live && <span className="size-1.5 animate-pulse rounded-full bg-run" />}
+          {live && <Dot tone="run" pulse />}
           {filtered.length.toLocaleString()} {query ? 'matches' : 'lines'}
         </span>
       </div>
