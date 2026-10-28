@@ -5,6 +5,7 @@ import { createDeps, type Deps } from '@autodeploy/api/deps';
 import { loadEnv } from '@autodeploy/api/env';
 import { upsertUserWithOrg } from '@autodeploy/api/routes/auth';
 import { sha256Hex } from '@autodeploy/crypto';
+import { ciWorkflowYaml } from '@autodeploy/github';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { makeDeployment, makeOrg, makeProject } from './helpers';
@@ -578,26 +579,134 @@ describe("The origin's answer for a site address (the edge's fallback when KV fa
 });
 
 describe('Where a project builds', () => {
-  it('refuses GitHub Actions, which is not built yet, rather than break every deploy', async () => {
+  // A signed-in owner and a project on acme/actions-site; installed: whether
+  // the GitHub App is on the repository.
+  async function owned(installed: boolean) {
     const s = await login(`executor-${randomUUID().slice(0, 6)}`);
     const [{ org_id: org } = { org_id: '' }] = await deps.sql<{ org_id: string }[]>`
       select org_id from sessions where token_hash = ${sha256Hex(s.cookie.slice(s.cookie.indexOf('=') + 1))}`;
-    const p = await makeProject(deps.sql, org);
-    const patch = (payload: object) =>
+    const p = await makeProject(deps.sql, org, {
+      repo: 'acme/actions-site',
+      repoUrl: 'https://github.com/acme/actions-site',
+    });
+    if (installed) {
+      await deps.sql`insert into github_installations (id, account_login, org_id)
+        values (4242, 'acme', ${org}) on conflict (id) do nothing`;
+      await deps.sql`update projects set installation_id = 4242 where id = ${p.id}`;
+    }
+    const call = (method: 'GET' | 'POST' | 'PATCH', path: string, payload?: object) =>
       app.inject({
-        method: 'PATCH',
-        url: `/api/v1/projects/${p.id}`,
+        method,
+        url: `/api/v1/projects/${p.id}${path}`,
         headers: { cookie: s.cookie, 'x-csrf-token': s.csrf },
-        payload,
+        ...(payload && { payload }),
       });
-    const refused = await patch({ executor: 'github_actions' });
+    const executor = async () =>
+      (await deps.sql<{ executor: string }[]>`select executor from projects where id = ${p.id}`)[0]
+        ?.executor;
+    return { call, executor };
+  }
+
+  it('without the GitHub App on the repository: unavailable, and switching is refused', async () => {
+    const { call, executor } = await owned(false);
+    expect((await call('GET', '/github-actions')).json()).toMatchObject({ state: 'unavailable' });
+    const refused = await call('PATCH', '', { executor: 'github_actions' });
     expect(refused.statusCode).toBe(400);
-    expect(refused.json().code).toBe('executor_unavailable');
-    const [row] = await deps.sql<
-      { executor: string }[]
-    >`select executor from projects where id = ${p.id}`;
-    expect(row?.executor).toBe('sandbox');
-    expect((await patch({ executor: 'sandbox', name: 'still editable' })).statusCode).toBe(200);
+    expect(refused.json().code).toBe('executor_not_ready');
+    expect(await executor()).toBe('sandbox');
+    expect(
+      (await call('PATCH', '', { executor: 'sandbox', name: 'still editable' })).statusCode,
+    ).toBe(200);
+  });
+
+  it('opens one setup pull request, and allows switching only once the workflow is on the branch', async () => {
+    // GitHub's API, stood in for: the repository's workflow and open pull requests.
+    const world = {
+      workflow: null as string | null,
+      prs: [] as { html_url: string; head: { ref: string } }[],
+      trees: 0,
+      files: [] as { path: string; content: string }[],
+    };
+    const realFetch = globalThis.fetch;
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      );
+      if (url.hostname !== 'api.github.com') return realFetch(input, init);
+      const path = url.pathname;
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      if (path.endsWith('/contents/.github/workflows/autodeploy.yml'))
+        return world.workflow
+          ? json({ encoding: 'base64', content: Buffer.from(world.workflow).toString('base64') })
+          : json({ message: 'Not Found' }, 404);
+      if (path.endsWith('/pulls') && init?.method !== 'POST') return json(world.prs);
+      if (path.endsWith('/git/ref/heads/main')) return json({ object: { sha: 'base-sha' } });
+      if (path.endsWith('/git/trees')) {
+        world.trees++;
+        world.files = body.tree;
+        return json({ sha: 'tree-sha' });
+      }
+      if (path.endsWith('/git/commits')) return json({ sha: 'commit-sha' });
+      if (path.endsWith('/git/refs')) return json({ ref: body.ref }, 201);
+      if (path.endsWith('/pulls')) {
+        const pr = {
+          html_url: 'https://github.com/acme/actions-site/pull/7',
+          head: { ref: body.head },
+        };
+        world.prs.push(pr);
+        return json(pr, 201);
+      }
+      return json({ message: `unexpected ${path}` }, 500);
+    }) as typeof fetch;
+    const realInstallations = deps.installations;
+    (deps as { installations: unknown }).installations = { get: async () => 'installation-token' };
+    try {
+      const { call, executor } = await owned(true);
+      expect((await call('GET', '/github-actions')).json()).toEqual({
+        state: 'missing',
+        branch: 'main',
+      });
+      expect((await call('PATCH', '', { executor: 'github_actions' })).json().detail).toContain(
+        "isn't on main yet",
+      );
+
+      const opened = await call('POST', '/github-actions');
+      expect(opened.json()).toEqual({
+        state: 'pr_open',
+        branch: 'main',
+        prUrl: 'https://github.com/acme/actions-site/pull/7',
+      });
+      expect(world.files).toEqual([
+        expect.objectContaining({
+          path: '.github/workflows/autodeploy.yml',
+          content: ciWorkflowYaml(),
+        }),
+      ]);
+      expect(world.prs[0]?.head.ref).toMatch(/^autodeploy\/github-actions-v1-/);
+      await call('POST', '/github-actions'); // again: the open one, not a second
+      expect(world.trees).toBe(1);
+      expect((await call('PATCH', '', { executor: 'github_actions' })).json().detail).toContain(
+        'Merge the setup pull request first',
+      );
+
+      // The owner merges it.
+      world.workflow = ciWorkflowYaml();
+      world.prs = [];
+      expect((await call('GET', '/github-actions')).json()).toEqual({
+        state: 'ready',
+        branch: 'main',
+      });
+      expect((await call('PATCH', '', { executor: 'github_actions' })).statusCode).toBe(200);
+      expect(await executor()).toBe('github_actions');
+    } finally {
+      globalThis.fetch = realFetch;
+      (deps as { installations: unknown }).installations = realInstallations;
+    }
   });
 });
 

@@ -91,6 +91,10 @@ const POLICY: Record<string, Rule> = {
   },
   'GET /api/v1/projects/{id}': { need: 'viewer' },
   'PATCH /api/v1/projects/{id}': { need: 'admin', body: () => ({ name: 'renamed' }) },
+  // Building on GitHub Actions: anyone in the org may see where it stands;
+  // opening the setup pull request changes the repository, so owners and admins.
+  'GET /api/v1/projects/{id}/github-actions': { need: 'viewer' },
+  'POST /api/v1/projects/{id}/github-actions': { need: 'admin' },
   'DELETE /api/v1/projects/{id}': { need: 'admin' },
   'GET /api/v1/projects/{id}/env': { need: 'member' },
   'POST /api/v1/projects/{id}/env/import': {

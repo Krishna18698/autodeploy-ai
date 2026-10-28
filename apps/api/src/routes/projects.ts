@@ -23,6 +23,7 @@ import { sitesDomain } from '../env.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { authOf, requireRecentMfa, requireRole } from '../plugins/auth.js';
 import { createDeployment } from '../services/deployments.js';
+import { actionsSetup, openActionsSetup } from '../services/github-actions.js';
 import { enforceProjectLimit } from '../services/limits.js';
 import { decodeCursor, encodeCursor, type ProjectRow, toProject } from '../services/mappers.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
@@ -317,6 +318,42 @@ export const projectRoutes =
       },
     );
 
+    // Building on GitHub Actions (ADR 0010): where the project stands, and the
+    // pull request that adds AutoDeploy's workflow to its repository.
+    const SetupState = z.object({
+      state: z.enum(['unavailable', 'missing', 'outdated', 'pr_open', 'ready']),
+      branch: z.string(),
+      prUrl: z.string().optional(),
+    });
+    app.get(
+      '/api/v1/projects/:id/github-actions',
+      {
+        preHandler: requireRole(),
+        schema: {
+          tags: ['projects'],
+          params: z.object({ id: z.uuid() }),
+          response: { 200: SetupState },
+        },
+      },
+      async (req) => actionsSetup(deps, authOf(req).orgId, req.params.id),
+    );
+    app.post(
+      '/api/v1/projects/:id/github-actions',
+      {
+        preHandler: [requireRole('admin'), requireRecentMfa],
+        config: {
+          audit: 'project.github_actions_setup',
+          rateLimit: { limit: 10, windowMs: 60_000 },
+        },
+        schema: {
+          tags: ['projects'],
+          params: z.object({ id: z.uuid() }),
+          response: { 200: SetupState },
+        },
+      },
+      async (req) => openActionsSetup(deps, authOf(req).orgId, req.params.id),
+    );
+
     app.patch(
       '/api/v1/projects/:id',
       {
@@ -335,14 +372,20 @@ export const projectRoutes =
         const expected =
           typeof ifMatch === 'string' ? Number(/^"?v(\d+)"?$/.exec(ifMatch)?.[1]) : undefined;
         const b = req.body;
-        // Building in the user's own GitHub Actions is designed (ADR 0002) but
-        // not built: the executor is a placeholder that fails every build.
-        // Refuse it rather than accept a setting that can only break deploys.
-        if (b.executor === 'github_actions')
-          throw badRequest(
-            'executor_unavailable',
-            "Building on GitHub Actions isn't available yet. Projects build in AutoDeploy's own sandbox.",
-          );
+        // Building on GitHub Actions (ADR 0010) needs AutoDeploy's workflow on
+        // the project's branch first; without it every build would fail.
+        if (b.executor === 'github_actions') {
+          const setup = await actionsSetup(deps, authOf(req).orgId, req.params.id);
+          if (setup.state !== 'ready')
+            throw badRequest(
+              'executor_not_ready',
+              setup.state === 'unavailable'
+                ? 'Building on GitHub Actions needs the AutoDeploy GitHub App on this repository.'
+                : setup.state === 'pr_open'
+                  ? `Merge the setup pull request first (${setup.prUrl}), then switch.`
+                  : `Set up GitHub Actions first: AutoDeploy's workflow isn't on ${setup.branch} yet.`,
+            );
+        }
         const set: Record<string, unknown> = {};
         if (b.name !== undefined) set.name = b.name;
         if (b.defaultBranch !== undefined) set.default_branch = b.defaultBranch;
