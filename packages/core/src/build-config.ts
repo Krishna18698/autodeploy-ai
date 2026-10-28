@@ -12,7 +12,7 @@ export type BuildConfig = {
   rootDir: string;
   /** Non-secret build env (secrets are injected separately and never stored here). */
   env: Record<string, string>;
-  /** Unified diff applied to the source before building (AI repairs only). */
+  /** Unified diff applied to the source before building (code repairs: AI, or a rule like R-009). */
   patch?: string;
   /** Publishing this attempt needs a human to approve it. */
   requiresApproval?: boolean;

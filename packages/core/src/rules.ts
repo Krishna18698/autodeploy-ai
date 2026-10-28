@@ -188,7 +188,7 @@ export const RULES: readonly Rule[] = [
 export const NEEDS_HUMAN: ReadonlySet<ErrorCode> = new Set(['MISSING_ENV']);
 /** Codes that mean "not supported in V1"; fail with an explanation. */
 export const UNSUPPORTED: ReadonlySet<ErrorCode> = new Set(['SSR_REQUIRED']);
-/** Codes worth sending to the AI path when no rule applies. */
+/** Codes where the code itself may need changing when no rule applies. */
 export const AI_ELIGIBLE: ReadonlySet<ErrorCode> = new Set([
   'TS_COMPILE',
   'MODULE_NOT_FOUND',
@@ -199,7 +199,8 @@ export const AI_ELIGIBLE: ReadonlySet<ErrorCode> = new Set([
 
 export type RecoveryDecision =
   | { kind: 'rule'; result: RuleResult }
-  | { kind: 'ai' }
+  /** Change the code: a deterministic fix (source-fixes.ts) first, then AI if `ai`. */
+  | { kind: 'source'; ai: boolean }
   | { kind: 'needs_input'; reason: string }
   | { kind: 'give_up'; reason: string };
 
@@ -266,7 +267,7 @@ export function decideRecovery(
   if (signature.code === 'TIMEOUT') {
     return { kind: 'give_up', reason: 'The build exceeded the time limit.' };
   }
-  if (aiAvailable && AI_ELIGIBLE.has(signature.code)) return { kind: 'ai' };
+  if (AI_ELIGIBLE.has(signature.code)) return { kind: 'source', ai: aiAvailable };
   return {
     kind: 'give_up',
     reason: aiAvailable

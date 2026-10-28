@@ -27,8 +27,9 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
   capabilities, cgroup limits, no network except an allowlisting proxy to the
   package registries.
 - **Recovers**: error signatures → deterministic, configuration-only rules
-  (Node version, output dir, lockfile, heap) → AI diagnosis and a minimal patch
-  that is policy-checked, rebuilt, validated, and **approved by a human**.
+  (Node version, output dir, lockfile, heap) → deterministic fixes to the code
+  (trailing commas in JSON) → AI diagnosis and a minimal patch. Every change to
+  the code is policy-checked, rebuilt, validated, and **approved by a human**.
   Validated rule fixes become project settings.
 - **Validates** in headless Chromium with no network, and keeps a screenshot.
 - **Ships** content-addressed artifacts; going live or rolling back moves one

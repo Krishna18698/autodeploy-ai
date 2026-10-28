@@ -9,6 +9,10 @@ import {
   diffConfig,
   type ErrorCode,
   type ErrorSignature,
+  editsToDiff,
+  findSourceFix,
+  type RepoFiles,
+  type SourceFix,
 } from '@autodeploy/core';
 import { recordEvent, transition } from '@autodeploy/db';
 import { readTree } from '@autodeploy/github';
@@ -22,9 +26,9 @@ import type { JobContext } from '../runner.js';
 import { loadDeployment } from './deployment.js';
 
 // Recovery is layered: deterministic rules first (cheap, explainable,
-// reversible), AI only for failures no rule understands, and a human always
-// approves AI source changes. Every decision lands in repair_attempts and the
-// deployment timeline.
+// reversible), then deterministic fixes to the code, AI only for failures
+// neither understands, and a human always approves changes to the code. Every
+// decision lands in repair_attempts and the deployment timeline.
 
 type AttemptRow = {
   id: string;
@@ -177,21 +181,107 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
     return;
   }
 
-  // ---- AI path ----
+  // ---- the code itself: a deterministic fix first, then AI ----
+  const dir = await mkdtemp(join(await mkdirp(join(deps.env.WORK_DIR, 'repair')), 'r-'));
+  try {
+    let tree: RepoFiles;
+    try {
+      await fetchSource(deps, d.repo_url, d.commit_sha ?? 'HEAD', dir, d.installation_id);
+      // inside(): a root directory pointing out of the checkout would put host
+      // files in the prompt sent to the AI provider.
+      tree = await readTree(await inside(dir, failed.build_config.rootDir));
+    } catch (err) {
+      deps.log.warn({ err, deploymentId }, 'recovery could not read the source');
+      await stop(deps, ref, `Could not read the code to repair it: ${(err as Error).message}`);
+      return;
+    }
+    const fix = findSourceFix(signature, tree);
+    if (fix && !repairs.some((r) => r.rule_id === fix.ruleId)) {
+      if (await proposeSourceFix(deps, ref, failed, signature, fix, tree)) return;
+    }
+    if (!decision.ai) {
+      await stop(
+        deps,
+        ref,
+        deps.ai.available
+          ? 'No rule matched, and AI repair is turned off for this project (Build settings).'
+          : 'No rule matched and AI diagnosis is not configured.',
+      );
+      return;
+    }
+    await repairWithAi(deps, ref, failed, signature, tree);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A deterministic change to the code (source-fixes.ts): proposed like an AI
+ * patch (policy-checked, built, validated, then waiting for approval), but
+ * recorded as the rule it is. False when it can't be used.
+ */
+async function proposeSourceFix(
+  deps: Deps,
+  ref: { id: string; org_id: string; project_id: string },
+  failed: AttemptRow,
+  signature: ErrorSignature,
+  fix: SourceFix,
+  tree: RepoFiles,
+): Promise<boolean> {
+  const built = editsToDiff((p) => tree.read(p), fix.edits);
+  if (!built.ok) return false;
+  const policy = checkPatch(built.diff);
+  if (!policy.allowed) return false;
+  const policyView = {
+    allowed: policy.allowed,
+    violations: policy.violations,
+    approvalReasons: policy.approvalReasons,
+  };
+  const config: BuildConfig = { ...failed.build_config, patch: built.diff, requiresApproval: true };
+  await deps.sql.begin(async (tx) => {
+    const [repair] = await tx<{ id: string }[]>`
+      insert into repair_attempts (deployment_id, org_id, attempt_no, error_code, error_signature, strategy, rule_id, title, explanation, diff, policy, status, needs_approval)
+      values (${ref.id}, ${ref.org_id}, ${failed.attempt_no}, ${signature.code}, ${signature.signature}, 'rule', ${fix.ruleId},
+              ${fix.title}, ${fix.explanation}, ${built.diff}, ${tx.json(policyView as never)}, 'applied', true)
+      returning id`;
+    await recordEvent(tx, ref, 'repair_proposed', {
+      strategy: 'rule',
+      ruleId: fix.ruleId,
+      repairId: repair?.id,
+      files: policy.files.map((f) => f.path),
+    });
+    await transition(tx, {
+      deploymentId: ref.id,
+      to: 'QUEUED',
+      payload: { ruleId: fix.ruleId, repairId: repair?.id },
+    });
+    await enqueue(
+      tx,
+      'deployment.build',
+      { deploymentId: ref.id, config, repairId: repair?.id, traceparent: currentTraceparent() },
+      { orgId: ref.org_id, idempotencyKey: `build:${ref.id}:${failed.attempt_no + 1}` },
+    );
+  });
+  return true;
+}
+
+async function repairWithAi(
+  deps: Deps,
+  ref: { id: string; org_id: string; project_id: string },
+  failed: AttemptRow,
+  signature: ErrorSignature,
+  tree: RepoFiles,
+) {
+  const deploymentId = ref.id;
   const [repair] = await deps.sql<{ id: string }[]>`
     insert into repair_attempts (deployment_id, org_id, attempt_no, error_code, error_signature, strategy, title, explanation, status, needs_approval)
-    values (${deploymentId}, ${d.org_id}, ${failed.attempt_no}, ${signature.code}, ${signature.signature}, 'ai',
+    values (${deploymentId}, ${ref.org_id}, ${failed.attempt_no}, ${signature.code}, ${signature.signature}, 'ai',
             'AI diagnosis', 'Diagnosing the failure…', 'proposed', true)
     returning id`;
   if (!repair) throw new Error('repair insert failed');
 
-  const dir = await mkdtemp(join(await mkdirp(join(deps.env.WORK_DIR, 'repair')), 'r-'));
   try {
-    await aiContext.run({ orgId: d.org_id, repairId: repair.id }, async () => {
-      await fetchSource(deps, d.repo_url, d.commit_sha ?? 'HEAD', dir, d.installation_id);
-      // inside(): a root directory pointing out of the checkout would put host
-      // files in the prompt sent to the AI provider.
-      const tree = await readTree(await inside(dir, failed.build_config.rootDir));
+    await aiContext.run({ orgId: ref.org_id, repairId: repair.id }, async () => {
       const first = buildFailureContext(signature, tree);
 
       const classification = await deps.ai.classify(first.text).catch(() => null);
@@ -282,7 +372,7 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
           tx,
           'deployment.build',
           { deploymentId, config, repairId: repair.id, traceparent: currentTraceparent() },
-          { orgId: d.org_id, idempotencyKey: `build:${deploymentId}:${failed.attempt_no + 1}` },
+          { orgId: ref.org_id, idempotencyKey: `build:${deploymentId}:${failed.attempt_no + 1}` },
         );
       });
     });
@@ -293,9 +383,19 @@ async function recoverInner(deps: Deps, deploymentId: string, attemptId: string)
         : (err as Error).message;
     deps.log.warn({ err, deploymentId }, 'AI recovery failed');
     await stopAi(deps, ref, repair.id, msg, null);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
   }
+}
+
+/** Recovery ends here: the deployment fails with this reason. */
+async function stop(
+  deps: Deps,
+  ref: { id: string; org_id: string; project_id: string },
+  reason: string,
+) {
+  await deps.sql.begin(async (tx) => {
+    await recordEvent(tx, ref, 'recovery_stopped', { reason });
+    await transition(tx, { deploymentId: ref.id, to: 'FAILED', set: { error_summary: reason } });
+  });
 }
 
 async function stopAi(

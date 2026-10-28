@@ -434,7 +434,7 @@ export const deploymentRoutes =
     app.post(
       '/api/v1/repairs/:id/approve',
       {
-        // Approving puts the AI's code change live: a fresh code, as for other changes.
+        // Approving puts a code change (the AI's, or a rule's) live: a fresh code, as for other changes.
         preHandler: [requireRole('admin'), requireRecentMfa],
         config: { audit: 'repair.approve' },
         schema: { tags: ['repairs'], params: Params, response: { 200: Repair } },
@@ -459,7 +459,7 @@ export const deploymentRoutes =
             payload: {
               approvedBy: a.login,
               repairId: r.id,
-              recoveredBy: 'ai',
+              recoveredBy: r.strategy,
               attempts:
                 (
                   await tx<
@@ -474,7 +474,7 @@ export const deploymentRoutes =
                 )[0]?.ms ?? null,
             },
             expectFrom: ['AWAITING_APPROVAL'],
-            set: { recovered_by: 'ai' },
+            set: { recovered_by: r.strategy },
           });
           if (dep.kind === 'production') {
             await enqueue(

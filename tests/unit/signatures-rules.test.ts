@@ -214,10 +214,11 @@ describe('recovery rules', () => {
     ).toBe('give_up');
   });
 
-  it('routes code errors to AI only when AI is available, env errors to a human, SSR to unsupported', () => {
+  it('routes code errors to a code fix (AI only when available), env errors to a human, SSR to unsupported', () => {
     const ts = ctx(['src/a.ts(1,1): error TS2339: x']);
-    expect(decideRecovery(ts, fresh('x'), true).kind).toBe('ai');
-    expect(decideRecovery(ts, fresh('x'), false).kind).toBe('give_up');
+    expect(decideRecovery(ts, fresh('x'), true)).toEqual({ kind: 'source', ai: true });
+    // Without AI, a deterministic fix to the code may still apply.
+    expect(decideRecovery(ts, fresh('x'), false)).toEqual({ kind: 'source', ai: false });
     expect(decideRecovery(ctx(['Error: VITE_KEY is not defined']), fresh('x'), true).kind).toBe(
       'needs_input',
     );
