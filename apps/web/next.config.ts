@@ -61,6 +61,8 @@ const config: NextConfig = {
     return [
       { source: '/api/:path*', destination: `${API_URL}/api/:path*` },
       { source: '/auth/:path*', destination: `${API_URL}/auth/:path*` },
+      // The outage banner's readiness check (lib/api-status.ts).
+      { source: '/readyz', destination: `${API_URL}/readyz` },
     ];
   },
   async headers() {

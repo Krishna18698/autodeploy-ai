@@ -8,8 +8,14 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { githubAppConfigured } from '../env.js';
+import {
+  CONFIRM_LINKS_PER_DAY,
+  confirmAccountEmail,
+  confirmedOwners,
+  sendEmailConfirmation,
+} from '../lib/account-email.js';
 import { clientIp } from '../lib/client-ip.js';
-import { badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
+import { AppError, badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
 import { authOf, requireRecentMfa, requireRole, sessionCookie } from '../plugins/auth.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
 import { isPlatformAdmin } from './admin.js';
@@ -45,7 +51,7 @@ export async function upsertUserWithOrg(
   },
 ) {
   return sql.begin(async (tx) => {
-    let user: { id: string } | undefined;
+    let user: { id: string; created: boolean } | undefined;
     if (u.githubId !== null) {
       // Another account holding this login (its owner renamed on GitHub and
       // someone took the name) keeps its id and gives up the name; it gets
@@ -53,24 +59,24 @@ export async function upsertUserWithOrg(
       await tx`
         update users set login = login || '~' || substr(md5(random()::text), 1, 6)
         where lower(login) = lower(${u.login}) and github_id is distinct from ${u.githubId}`;
-      [user] = await tx<{ id: string }[]>`
+      [user] = await tx<{ id: string; created: boolean }[]>`
         insert into users (github_id, login, name, email, avatar_url)
         values (${u.githubId}, ${u.login}, ${u.name}, ${u.email}, ${u.avatarUrl})
         on conflict (github_id) do update set
           login = excluded.login, name = excluded.name,
           email = coalesce(users.email, excluded.email), avatar_url = excluded.avatar_url
-        returning id`;
+        returning id, (xmax = 0) as created`;
     } else {
       // Local development sign-in only: no GitHub identity to match on.
-      [user] = await tx<{ id: string }[]>`
+      [user] = await tx<{ id: string; created: boolean }[]>`
         insert into users (login, name, email, avatar_url)
         values (${u.login}, ${u.name}, ${u.email}, ${u.avatarUrl})
         on conflict (login) do update set name = excluded.name
-        returning id`;
+        returning id, (xmax = 0) as created`;
     }
     if (!user) throw new Error('user upsert failed');
     const orgId = await ensurePersonalOrg(tx, user.id, u.login, u.name);
-    return { userId: user.id, orgId };
+    return { userId: user.id, orgId, created: user.created };
   });
 }
 
@@ -290,8 +296,9 @@ export const authRoutes =
       async (req, reply) => {
         // A person lands here in a browser: failures go back to the sign-in
         // page with a code it turns into a fixed message (never text from the URL).
-        const toLogin = (error: 'expired' | 'cancelled' | 'github' | 'closed' | 'relogin') =>
-          reply.redirect(`${deps.env.APP_URL}/login?error=${error}`);
+        const toLogin = (
+          error: 'expired' | 'cancelled' | 'github' | 'closed' | 'relogin' | 'github_email_taken',
+        ) => reply.redirect(`${deps.env.APP_URL}/login?error=${error}`);
         const [linkState, linkUser] = (req.cookies[linkCookie(deps.env)] ?? '').split('.');
         const linking = Boolean(linkState) && linkState === req.query.state;
         if (linking) reply.clearCookie(linkCookie(deps.env), cleared(deps));
@@ -342,13 +349,24 @@ export const authRoutes =
         }
         const allow = deps.env.ALLOWED_GITHUB_LOGINS;
         if (allow.length > 0 && !allow.includes(gh.login.toLowerCase())) return toLogin('closed');
-        const { userId, orgId } = await upsertUserWithOrg(deps.sql, {
+        // A GitHub account new to us whose email another account holds
+        // confirmed: that person signs in there and connects GitHub, instead
+        // of getting a second account.
+        const [known] = await deps.sql`select 1 from users where github_id = ${gh.id}`;
+        if (!known && gh.email && (await confirmedOwners(deps.sql, gh.email.toLowerCase())).length)
+          return toLogin('github_email_taken');
+        const { userId, orgId, created } = await upsertUserWithOrg(deps.sql, {
           githubId: gh.id,
           login: gh.login,
           name: gh.name,
           email: gh.email,
           avatarUrl: gh.avatar_url,
         });
+        // A new account's email came from GitHub, unconfirmed: send the link.
+        if (created && gh.email)
+          await sendEmailConfirmation(deps, { id: userId, login: gh.login }, gh.email).catch(
+            (err) => req.log.warn({ err }, 'email confirmation not sent'),
+          );
         const { twoFactor } = await startSession(deps, req, reply, userId, orgId);
         return reply.redirect(`${deps.env.APP_URL}${twoFactor ? '/login/2fa' : '/overview'}`);
       },
@@ -403,10 +421,13 @@ export const authRoutes =
             name: string | null;
             avatar_url: string | null;
             email: string | null;
+            email_confirmed: boolean;
             google: boolean;
           }[]
         >`
-        select id, login, name, avatar_url, email, google_sub is not null as google from users where id = ${a.userId}`;
+        select id, login, name, avatar_url, email, email_verified_at is not null as email_confirmed,
+          google_sub is not null as google
+        from users where id = ${a.userId}`;
         const orgs = await deps.sql<
           {
             id: string;
@@ -426,6 +447,7 @@ export const authRoutes =
             name: user.name,
             avatarUrl: user.avatar_url,
             email: user.email,
+            emailConfirmed: user.email_confirmed,
             githubConnected: a.githubId !== null,
             googleConnected: user.google,
             platformAdmin: isPlatformAdmin(deps.env, a),
@@ -437,8 +459,10 @@ export const authRoutes =
       },
     );
 
-    // GitHub only shares public emails, so people set where notifications go.
-    // Sign-in never overwrites it (a missing GitHub email keeps this one).
+    // The account email: where notifications go and, once confirmed, what a
+    // Google sign-in or a new GitHub account is matched on. GitHub only shares
+    // public emails, so people set it here; sign-in never overwrites it. A new
+    // address starts unconfirmed and gets a link.
     app.patch(
       '/api/v1/me',
       {
@@ -447,14 +471,98 @@ export const authRoutes =
         schema: {
           tags: ['auth'],
           body: z.object({ email: z.email().max(254).nullable() }),
-          response: { 204: z.null().describe('Saved') },
+          response: {
+            200: z.object({
+              emailConfirmed: z.boolean(),
+              linkSent: z.boolean().describe('A confirmation link was emailed'),
+            }),
+          },
         },
+      },
+      async (req) => {
+        const a = authOf(req);
+        const email = req.body.email?.trim() || null;
+        const address = email?.toLowerCase() ?? null;
+        const r = await deps.sql.begin(async (tx) => {
+          const [u] = await tx<{ login: string; email: string | null; confirmed: boolean }[]>`
+            select login, email, email_verified_at is not null as confirmed
+            from users where id = ${a.userId} for update`;
+          if (!u) throw forbidden();
+          // The same address (perhaps in other letter case) stays as it was.
+          if ((u.email?.toLowerCase() ?? null) === address) {
+            await tx`update users set email = ${email} where id = ${a.userId}`;
+            return { login: u.login, confirmed: u.confirmed, changed: false };
+          }
+          await tx`update users set email = ${email}, email_verified_at = null where id = ${a.userId}`;
+          // Links sent earlier were for the old address.
+          await tx`update email_tokens set used_at = now()
+            where user_id = ${a.userId} and kind = 'email' and used_at is null`;
+          // Their own confirmed sign-in address needs no new proof.
+          const [own] = address
+            ? await tx`select 1 from user_passwords
+                where user_id = ${a.userId} and email = ${address} and verified_at is not null`
+            : [];
+          const confirmed =
+            address !== null &&
+            own !== undefined &&
+            (await confirmAccountEmail(tx, a.userId, address)) === 'confirmed';
+          return { login: u.login, confirmed, changed: true };
+        });
+        req.auditTarget = { type: 'user', id: a.userId };
+        let linkSent = false;
+        if (email && r.changed && !r.confirmed) {
+          const sent = await sendEmailConfirmation(
+            deps,
+            { id: a.userId, login: r.login },
+            email,
+          ).catch((err) => {
+            req.log.warn({ err }, 'email confirmation not sent');
+            return 'failed' as const;
+          });
+          linkSent = sent === 'sent';
+        }
+        return { emailConfirmed: r.confirmed, linkSent };
+      },
+    );
+
+    // Another link for an unconfirmed account email.
+    app.post(
+      '/api/v1/me/email/confirmation',
+      {
+        preHandler: requireRole(),
+        // The real limits are in sendEmailConfirmation (per address, per day).
+        config: { rateLimit: { limit: 10, windowMs: 60_000 } },
+        schema: { tags: ['auth'], response: { 202: z.object({ ok: z.literal(true) }) } },
       },
       async (req, reply) => {
         const a = authOf(req);
-        await deps.sql`update users set email = ${req.body.email} where id = ${a.userId}`;
-        req.auditTarget = { type: 'user', id: a.userId };
-        return reply.code(204).send(null);
+        const [u] = await deps.sql<{ login: string; email: string | null; confirmed: boolean }[]>`
+          select login, email, email_verified_at is not null as confirmed
+          from users where id = ${a.userId}`;
+        if (!u?.email) throw badRequest('no_email', 'Add an email first.');
+        if (u.confirmed) throw conflict('already_confirmed', 'This email is already confirmed.');
+        const sent = await sendEmailConfirmation(
+          deps,
+          { id: a.userId, login: u.login },
+          u.email,
+        ).catch((err) => {
+          req.log.warn({ err }, 'email confirmation not sent');
+          throw unavailable('email_failed', 'Could not send the email just now. Try again later.');
+        });
+        if (sent === 'wait')
+          throw new AppError(
+            429,
+            'just_sent',
+            'We sent a link a moment ago. Check your inbox (and spam), or try again in a minute.',
+            { headers: { 'retry-after': '60' } },
+          );
+        if (sent === 'limited')
+          throw new AppError(
+            429,
+            'too_many_links',
+            `That's ${CONFIRM_LINKS_PER_DAY} links today. Use the latest one, or try again tomorrow.`,
+          );
+        return reply.code(202).send({ ok: true as const });
       },
     );
 

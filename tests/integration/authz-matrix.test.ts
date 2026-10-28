@@ -77,6 +77,7 @@ const POLICY: Record<string, Rule> = {
 
   // Anyone signed in may unlink their own Google account (refused if it's their only way in).
   'DELETE /api/v1/me/google': { need: 'viewer' },
+  'POST /api/v1/me/email/confirmation': { need: 'viewer' },
   'GET /api/v1/me/2fa': { need: 'viewer' },
   'POST /api/v1/me/2fa/setup': { need: 'viewer' },
   'POST /api/v1/me/2fa/enable': { need: 'viewer', body: () => ({ code: '000000' }) },

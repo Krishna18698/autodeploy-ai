@@ -38,6 +38,11 @@ export const Me = z.object({
     name: z.string().nullable(),
     avatarUrl: z.string().nullable(),
     email: z.string().nullable().describe('Where failure and approval emails go'),
+    emailConfirmed: z
+      .boolean()
+      .describe(
+        'The email was confirmed (a link we sent was opened, or Google vouched for it); only then is a Google sign-in with this address matched to this account',
+      ),
     githubConnected: z
       .boolean()
       .describe('false for an email account that has not linked a GitHub account'),

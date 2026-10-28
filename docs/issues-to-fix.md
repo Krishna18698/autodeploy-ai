@@ -16,7 +16,7 @@ last, each only on the owner's yes.
 
 **Next: planned for 2026-10-25, with the owner**
 - [ ] **Builds on GitHub Actions: the first real build.** Built and tested on 2026-10-28 (ADR 0010) with only GitHub stood in for. After deploying: open the setup pull request on a test project's repository, merge it, switch the project, deploy once, and check the log, the site and the cleanup.
-- [ ] **Google sign-in: the owner's first try on production.** Sign in with GitHub, Settings → Account → Connect Google; then sign out and Continue with Google.
+- [ ] **Google sign-in: the owner's first try on production** (live since 2026-10-28). Sign in with GitHub, Settings → Account → Connect Google (this also confirms the account email when it's the same address); then sign out and Continue with Google.
 
 **To build (nice to have, not blocking launch)**
 - [ ] **Different variable values for previews:** environment variables are per project today, so production and pull-request previews get the same values.
@@ -38,6 +38,8 @@ last, each only on the owner's yes.
 ## Done
 
 **2026-10-28**
+- [x] **One account per confirmed email, as on Vercel:** Continue with Google now joins any account (GitHub ones too) whose email is *confirmed*: a link we emailed was opened, or Google vouched for that same address. An address only typed into Settings, or GitHub's public email, never matches (anyone can type someone else's address). A new address in Settings → Account → Email gets a confirmation link (one a minute per address, five a day per account); a new GitHub account whose email another account confirmed is refused ("sign in there and connect GitHub"), and so is an email sign-up for it. One confirmed address belongs to one account (migration 0018).
+- [x] **Google sign-in reached production off:** its two settings were on the VM but the compose file never passed them to the API. Fixed, and a test now checks that every setting the API reads reaches both API containers.
 - [x] **Sign in with Google** (OpenID Connect, code flow with PKCE; nonce and state; Google's ID token verified against its published keys). Accounts are found by Google's permanent ID; the first time, a confirmed email-and-password account with Google's verified address is linked; GitHub accounts never are by email (they Connect Google in Settings). No new accounts while sign-ups are closed; two-step sign-in still applies; Disconnect is refused when Google is the only way in. No Google tokens are kept (migration 0017).
 - [x] **Builds on GitHub Actions** (ADR 0010): a project can build in its repository's own Actions instead of on the VM. The App opens a pull request adding the workflow; builds report back with GitHub's per-job token (verified, for that repository, workflow, run and attempt only); variables are masked in GitHub's log; the output comes back in capped parts and is checked before unpacking (no escaping the checkout, no hard links, nothing through a link, no compressed bombs). Project settings → Build on.
 - [x] **Previews of pull requests from forks get none of the project's variables** (found while designing the above): a fork's code could have printed them into its public preview. The webhook records forks (migration 0016); their builds and server-rendered previews run without variables.

@@ -3,7 +3,6 @@ import {
   DUMMY_PASSWORD_HASH,
   hashPassword,
   passwordNeedsRehash,
-  randomToken,
   sha256Hex,
   verifyPassword,
 } from '@autodeploy/crypto';
@@ -12,7 +11,14 @@ import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
-import { AppError, badRequest, forbidden } from '../lib/errors.js';
+import {
+  confirmAccountEmail,
+  confirmedOwners,
+  issueToken,
+  mayEmail as mayEmailTo,
+  useToken,
+} from '../lib/account-email.js';
+import { AppError, conflict, forbidden } from '../lib/errors.js';
 import { ensurePersonalOrg, startSession } from './auth.js';
 
 // Email + password accounts: sign up → confirm the address from an emailed
@@ -49,27 +55,6 @@ export function loginFor(email: string) {
   return `${base}_${randomBytes(3).toString('hex')}`;
 }
 
-/** A one-time link token; issuing one retires the user's earlier links of that kind. */
-async function issueToken(tx: Tx, userId: string, kind: 'verify' | 'reset', ttl: string) {
-  const token = randomToken(32);
-  await tx`update email_tokens set used_at = now()
-    where user_id = ${userId} and kind = ${kind} and used_at is null`;
-  await tx`insert into email_tokens (token_hash, user_id, kind, expires_at)
-    values (${sha256Hex(token)}, ${userId}, ${kind}, now() + ${ttl}::interval)`;
-  return token;
-}
-
-/** Marks a valid, unused link as used and returns its user. */
-async function useToken(tx: Tx, token: string, kind: 'verify' | 'reset') {
-  const [row] = await tx<{ user_id: string }[]>`
-    update email_tokens set used_at = now()
-    where token_hash = ${sha256Hex(token)} and kind = ${kind}
-      and used_at is null and expires_at > now()
-    returning user_id`;
-  if (!row) throw badRequest('link_invalid', 'This link has expired or was already used.');
-  return row.user_id;
-}
-
 async function orgOf(tx: Tx, userId: string) {
   const [m] = await tx<
     { org_id: string }[]
@@ -101,11 +86,8 @@ export const emailAuthRoutes =
       twoFactor: z.boolean(),
     });
 
-    // At most one account email per address a minute, so nobody can flood a
-    // stranger's inbox by signing up with their address. A throttled request
-    // changes nothing: the link sent a moment ago still works.
-    const mayEmail = async (to: string) =>
-      (await deps.valkey.set(`account-mail:${sha256Hex(to)}`, '1', 'EX', 60, 'NX')) === 'OK';
+    // At most one account email per address a minute (see mayEmail).
+    const mayEmail = (to: string) => mayEmailTo(deps, to);
 
     const sendVerify = async (to: string, token: string) =>
       deps.sendEmail({
@@ -131,7 +113,9 @@ export const emailAuthRoutes =
           .begin(async (tx) => {
             const [existing] = await tx<{ user_id: string; verified_at: Date | null }[]>`
             select user_id, verified_at from user_passwords where email = ${email} for update`;
-            if (existing?.verified_at) return { kind: 'exists' as const };
+            // A confirmed sign-in address, or an account (GitHub, Google)
+            // whose confirmed email this is: one address, one account.
+            if ((await confirmedOwners(tx, email)).length) return { kind: 'exists' as const };
             if (existing) {
               // Signed up before but never confirmed: the latest password counts.
               await tx`update user_passwords set hash = ${hash}, updated_at = now() where user_id = ${existing.user_id}`;
@@ -166,7 +150,7 @@ export const emailAuthRoutes =
           await deps.sendEmail({
             to: email,
             subject: 'You already have an AutoDeploy account',
-            text: `Someone tried to sign up with ${email}, which already has an account.\n\nSign in: ${app_}/login\nForgot your password? ${app_}/forgot-password\n\nIf this wasn't you, you can ignore this email.`,
+            text: `Someone tried to sign up with ${email}, which already has an account.\n\nSign in the way you did before (email, GitHub or Google): ${app_}/login\nForgot your password? ${app_}/forgot-password\n\nIf this wasn't you, you can ignore this email.`,
           });
         return reply.code(202).send(accepted);
       },
@@ -181,12 +165,54 @@ export const emailAuthRoutes =
       },
       async (req, reply) => {
         const { userId, orgId } = await deps.sql.begin(async (tx) => {
-          const userId = await useToken(tx, req.body.token, 'verify');
-          await tx`update user_passwords set verified_at = coalesce(verified_at, now()) where user_id = ${userId}`;
+          const { userId } = await useToken(tx, req.body.token, 'verify');
+          const [pw] = await tx<{ email: string }[]>`
+            update user_passwords set verified_at = coalesce(verified_at, now())
+            where user_id = ${userId} returning email`;
+          // The account email is this address (set at sign-up): confirmed too,
+          // unless another account confirmed it meanwhile.
+          if (pw && (await confirmAccountEmail(tx, userId, pw.email)) === 'taken')
+            throw conflict(
+              'email_taken',
+              'Another AutoDeploy account already uses this email. Sign in to that one instead.',
+            );
           return { userId, orgId: await orgOf(tx, userId) };
         });
         if (!orgId) throw forbidden('This account has no organisation.');
         return { ok: true as const, ...(await startSession(deps, req, reply, userId, orgId)) };
+      },
+    );
+
+    // The link that confirms an account's email (any account kind). It proves
+    // the address only, so it signs nobody in.
+    app.post(
+      '/auth/email/confirm-address',
+      {
+        config: limited(20),
+        preHandler: fromApp,
+        schema: {
+          hide: true,
+          body: TokenBody,
+          response: { 200: z.object({ ok: z.literal(true), email: z.string() }) },
+        },
+      },
+      async (req) => {
+        const email = await deps.sql.begin(async (tx) => {
+          const { userId, email } = await useToken(tx, req.body.token, 'email');
+          const outcome = email ? await confirmAccountEmail(tx, userId, email) : 'changed';
+          if (outcome === 'changed')
+            throw conflict(
+              'link_outdated',
+              "This link is for an email the account doesn't use any more. Send a new one from Settings.",
+            );
+          if (outcome === 'taken')
+            throw conflict(
+              'email_taken',
+              'Another AutoDeploy account already uses this email, so it can’t be confirmed here too.',
+            );
+          return email as string;
+        });
+        return { ok: true as const, email };
       },
     );
 
@@ -298,7 +324,7 @@ export const emailAuthRoutes =
       async (req, reply) => {
         const hash = await hashPassword(req.body.password);
         const { userId, email, orgId } = await deps.sql.begin(async (tx) => {
-          const userId = await useToken(tx, req.body.token, 'reset');
+          const { userId } = await useToken(tx, req.body.token, 'reset');
           // The link proved they own the address, so it counts as confirmed;
           // every other session ends (whoever knew the old password is out).
           const [pw] = await tx<{ email: string }[]>`
@@ -306,6 +332,7 @@ export const emailAuthRoutes =
               verified_at = coalesce(verified_at, now()) where user_id = ${userId}
             returning email`;
           await tx`delete from sessions where user_id = ${userId}`;
+          if (pw) await confirmAccountEmail(tx, userId, pw.email);
           return { userId, email: pw?.email, orgId: await orgOf(tx, userId) };
         });
         // They proved they own the address: a pause from wrong guesses ends.

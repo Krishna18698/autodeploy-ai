@@ -1081,7 +1081,8 @@ describe('Email sign-in', () => {
       email: null,
       avatarUrl: null,
     });
-    expect(again).toEqual(alice);
+    expect(again).toEqual({ ...alice, created: false });
+    expect(alice.created).toBe(true);
     const [row] = await deps.sql<
       { login: string }[]
     >`select login from users where id = ${alice.userId}`;

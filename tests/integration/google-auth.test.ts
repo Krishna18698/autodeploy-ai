@@ -3,12 +3,15 @@ import { resolve } from 'node:path';
 import { buildApp } from '@autodeploy/api/app';
 import { createDeps, type Deps } from '@autodeploy/api/deps';
 import { loadEnv } from '@autodeploy/api/env';
-import { encrypt, hashPassword } from '@autodeploy/crypto';
+import { ensurePersonalOrg } from '@autodeploy/api/routes/auth';
+import { encrypt, hashPassword, sha256Hex } from '@autodeploy/crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
 // Sign in with Google against a stand-in Google: our own signing key, and its
 // token endpoint answered here (fetch is wrapped for oauth2.googleapis.com).
+// GitHub's code exchange and /user are stood in for the same way, and emails
+// are kept here instead of sent.
 
 const CLIENT = 'test-client.apps.googleusercontent.com';
 const APP = 'https://app.autodeploy.test';
@@ -24,6 +27,9 @@ let signer = google;
 let tokenStatus = 200;
 let lastTokenRequest = new URLSearchParams();
 const realFetch = globalThis.fetch;
+// What the stand-in GitHub says the person is.
+let ghUser: { id: number; login: string; email: string | null } = { id: 0, login: '', email: null };
+const mails: { to: string; subject: string; text: string }[] = [];
 
 beforeAll(async () => {
   const env = loadEnv({
@@ -46,9 +52,16 @@ beforeAll(async () => {
     WORK_DIR: resolve('.dev/test-work'),
   });
   deps = createDeps(env);
+  deps.sendEmail = async (m) => {
+    mails.push(m);
+  };
   app = await buildApp(deps, { googleKeys: async (kid) => (kid === 'g-1' ? jwk : null) });
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://github.com/login/oauth/access_token'))
+      return Response.json({ access_token: 'gh-user-token' });
+    if (url === 'https://api.github.com/user')
+      return Response.json({ ...ghUser, name: null, avatar_url: null });
     if (!url.startsWith('https://oauth2.googleapis.com/token')) return realFetch(input, init);
     lastTokenRequest = new URLSearchParams(String(init?.body ?? ''));
     if (tokenStatus !== 200)
@@ -230,7 +243,7 @@ describe('sign in with Google', () => {
     expect(await userBySub(s)).toBeUndefined();
   });
 
-  it('never matches a GitHub account by email (its address was never confirmed by us)', async () => {
+  it('matches no account on an email nobody confirmed (typed in, or GitHub’s public email)', async () => {
     const email = `gh-${randomUUID().slice(0, 6)}@example.com`;
     const [gh] = await deps.sql<{ id: string }[]>`
       insert into users (login, email, github_id) values (${`gh-${randomUUID().slice(0, 6)}`}, ${email}, ${Math.floor(Math.random() * 1e9)}) returning id`;
@@ -358,5 +371,231 @@ describe('connecting and disconnecting Google', () => {
 
   it('the sign-in page can ask which methods this server offers', async () => {
     expect((await app.inject({ url: '/auth/providers' })).json()).toEqual({ google: true });
+  });
+});
+
+// The account email counts for matching a sign-in only once it's confirmed.
+const tag = () => randomUUID().slice(0, 8);
+const ghId = () => Math.floor(Math.random() * 1e9);
+const linkIn = (to: string, page: string) => {
+  const m = mails.filter((x) => x.to === to).at(-1);
+  return new RegExp(`/${page}\\?token=([\\w-]+)`).exec(m?.text ?? '')?.[1];
+};
+const asMe = (me: { session: string; csrf: string }) => ({
+  cookie: me.session,
+  'x-csrf-token': me.csrf,
+});
+const saveEmail = (me: { session: string; csrf: string }, email: string | null) =>
+  app.inject({ method: 'PATCH', url: '/api/v1/me', headers: asMe(me), payload: { email } });
+const confirm = (token: string | undefined) =>
+  app.inject({
+    method: 'POST',
+    url: '/auth/email/confirm-address',
+    remoteAddress: from(),
+    payload: { token },
+  });
+const meOf = async (me: { session: string }) =>
+  (await app.inject({ url: '/api/v1/me', headers: { cookie: me.session } })).json().user;
+async function emailAccount(email: string, confirmed = true) {
+  const login = `e_${tag()}`;
+  const [u] = await deps.sql<{ id: string }[]>`
+    insert into users (login, email) values (${login}, ${email}) returning id`;
+  await deps.sql`insert into user_passwords (user_id, email, hash, verified_at)
+    values (${u!.id}, ${email}, ${await hashPassword('a password 1')}, ${confirmed ? new Date() : null})`;
+  await deps.sql.begin((tx) => ensurePersonalOrg(tx, u!.id, login, null));
+  return u!.id;
+}
+/** GitHub sign-in, with the stand-in GitHub answering as `who`. */
+async function viaGitHub(who: typeof ghUser) {
+  ghUser = who;
+  const r = await app.inject({
+    url: '/auth/github/callback?code=c&state=s1',
+    remoteAddress: from(),
+    headers: { cookie: 'ad_oauth_state=s1' },
+  });
+  return String(r.headers.location);
+}
+
+describe('the confirmed account email', () => {
+  it('a new email gets a link; once opened, Google finds the account (a GitHub account too)', async () => {
+    const me = await devUser();
+    await deps.sql`update users set github_id = ${ghId()} where id = ${me.id}`;
+    const email = `confirm-${tag()}@example.com`;
+    const saved = await saveEmail(me, email.toUpperCase());
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toEqual({ emailConfirmed: false, linkSent: true });
+    expect((await meOf(me)).emailConfirmed).toBe(false);
+
+    const ok = await confirm(linkIn(email.toUpperCase(), 'confirm-email'));
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().email).toBe(email);
+    expect((await meOf(me)).emailConfirmed).toBe(true);
+    // A link works once.
+    expect((await confirm(linkIn(email.toUpperCase(), 'confirm-email'))).statusCode).toBe(400);
+
+    const s = sub();
+    const r = await viaGoogle({ sub: s, email, email_verified: true });
+    expect(r.location).toBe(`${APP}/overview`);
+    expect((await userBySub(s))?.id).toBe(me.id);
+  });
+
+  it('a link stops counting once the email changes', async () => {
+    const me = await devUser();
+    const first = `first-${tag()}@example.com`;
+    const second = `second-${tag()}@example.com`;
+    await saveEmail(me, first);
+    const old = linkIn(first, 'confirm-email');
+    await saveEmail(me, second);
+    expect((await confirm(old)).statusCode).toBe(400);
+    expect((await meOf(me)).emailConfirmed).toBe(false);
+    expect((await confirm(linkIn(second, 'confirm-email'))).statusCode).toBe(200);
+    expect((await meOf(me)).emailConfirmed).toBe(true);
+    // And a live link for an address the account no longer uses, however it changed.
+    const third = `third-${tag()}@example.com`;
+    await saveEmail(me, third);
+    await deps.sql`update users set email = ${`fourth-${tag()}@example.com`} where id = ${me.id}`;
+    const stale = await confirm(linkIn(third, 'confirm-email'));
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().code).toBe('link_outdated');
+    expect((await meOf(me)).emailConfirmed).toBe(false);
+  });
+
+  it('one address, one account: an address confirmed elsewhere is not confirmed again', async () => {
+    const email = `taken-${tag()}@example.com`;
+    const me = await devUser();
+    await saveEmail(me, email);
+    const link = linkIn(email, 'confirm-email');
+    // Meanwhile someone signs up with Google on that address (Google verified it).
+    await viaGoogle({ sub: sub(), email, email_verified: true });
+    const r = await confirm(link);
+    expect(r.statusCode).toBe(409);
+    expect(r.json().code).toBe('email_taken');
+    expect((await meOf(me)).emailConfirmed).toBe(false);
+  });
+
+  it('sends one link a minute per address and five a day per account', async () => {
+    const me = await devUser();
+    const email = `limit-${tag()}@example.com`;
+    await saveEmail(me, email); // link 1
+    const resend = () =>
+      app.inject({ method: 'POST', url: '/api/v1/me/email/confirmation', headers: asMe(me) });
+    const soon = await resend();
+    expect(soon.statusCode).toBe(429);
+    expect(soon.json().code).toBe('just_sent');
+    for (let i = 2; i <= 5; i++) {
+      await deps.valkey.del(`account-mail:${sha256Hex(email)}`); // a minute later
+      expect((await resend()).statusCode).toBe(202);
+    }
+    await deps.valkey.del(`account-mail:${sha256Hex(email)}`);
+    const sixth = await resend();
+    expect(sixth.statusCode).toBe(429);
+    expect(sixth.json().code).toBe('too_many_links');
+    expect(mails.filter((m) => m.to === email)).toHaveLength(5);
+  });
+
+  it('Google vouches: connecting a Google account with the same verified address confirms it', async () => {
+    const me = await devUser();
+    const email = `vouch-${tag()}@example.com`;
+    await deps.sql`update users set email = ${email} where id = ${me.id}`;
+    await viaGoogle(
+      { sub: sub(), email, email_verified: true },
+      { start: 'connect', session: me.session },
+    );
+    expect((await meOf(me)).emailConfirmed).toBe(true);
+  });
+
+  it('two accounts holding one address confirmed: Google links neither', async () => {
+    const email = `both-${tag()}@example.com`;
+    await emailAccount(email);
+    await deps.sql`insert into users (login, email, email_verified_at, github_id)
+      values (${`gh-${tag()}`}, ${email}, now(), ${ghId()})`;
+    await deps.sql`update users set email = ${`other-${tag()}@example.com`}
+      where id = (select user_id from user_passwords where email = ${email})`;
+    const s = sub();
+    const r = await viaGoogle({ sub: s, email, email_verified: true });
+    expect(r.location).toBe(`${APP}/login?error=google_ambiguous`);
+    expect(await userBySub(s)).toBeUndefined();
+  });
+
+  it('a new GitHub account with an email another account confirmed is refused; known ones sign in', async () => {
+    const email = `ghtaken-${tag()}@example.com`;
+    await emailAccount(email);
+    const id = ghId();
+    const login = `gh-${tag()}`;
+    expect(await viaGitHub({ id, login, email })).toBe(`${APP}/login?error=github_email_taken`);
+    expect(await deps.sql`select 1 from users where github_id = ${id}`).toHaveLength(0);
+
+    const known = ghId();
+    await deps.sql`insert into users (login, github_id) values (${`gh-${tag()}`}, ${known})`;
+    expect(await viaGitHub({ id: known, login: `gh-${tag()}`, email })).toBe(`${APP}/overview`);
+  });
+
+  it("a new GitHub account gets a link for GitHub's email, unconfirmed until opened", async () => {
+    const email = `ghnew-${tag()}@example.com`;
+    const id = ghId();
+    expect(await viaGitHub({ id, login: `gh-${tag()}`, email })).toBe(`${APP}/overview`);
+    const [u] = await deps.sql<{ confirmed: boolean }[]>`
+      select email_verified_at is not null as confirmed from users where github_id = ${id}`;
+    expect(u?.confirmed).toBe(false);
+    expect((await confirm(linkIn(email, 'confirm-email'))).statusCode).toBe(200);
+  });
+
+  it('email sign-up with an address another account confirmed says "you already have an account"', async () => {
+    const email = `signup-${tag()}@example.com`;
+    await deps.sql`insert into users (login, email, email_verified_at, github_id)
+      values (${`gh-${tag()}`}, ${email}, now(), ${ghId()})`;
+    const r = await app.inject({
+      method: 'POST',
+      url: '/auth/email/signup',
+      remoteAddress: from(),
+      payload: { email, password: 'a long password 1' },
+    });
+    expect(r.statusCode).toBe(202);
+    expect(await deps.sql`select 1 from user_passwords where email = ${email}`).toHaveLength(0);
+    expect(mails.filter((m) => m.to === email).at(-1)?.subject).toBe(
+      'You already have an AutoDeploy account',
+    );
+  });
+
+  it.each([
+    ['confirming a new email account', 'verify'],
+    ['resetting the password', 'reset'],
+  ] as const)('%s confirms its account email too', async (_why, how) => {
+    const email = `${how}-${tag()}@example.com`;
+    if (how === 'verify') {
+      await app.inject({
+        method: 'POST',
+        url: '/auth/email/signup',
+        remoteAddress: from(),
+        payload: { email, password: 'a long password 1' },
+      });
+      const token = linkIn(email, 'verify-email');
+      const r = await app.inject({
+        method: 'POST',
+        url: '/auth/email/verify',
+        remoteAddress: from(),
+        payload: { token },
+      });
+      expect(r.statusCode).toBe(200);
+    } else {
+      await emailAccount(email, false);
+      await app.inject({
+        method: 'POST',
+        url: '/auth/email/forgot',
+        remoteAddress: from(),
+        payload: { email },
+      });
+      const token = linkIn(email, 'reset-password');
+      const r = await app.inject({
+        method: 'POST',
+        url: '/auth/email/reset',
+        remoteAddress: from(),
+        payload: { token, password: 'a new long password 2' },
+      });
+      expect(r.statusCode).toBe(200);
+    }
+    const [u] = await deps.sql<{ confirmed: boolean }[]>`
+      select email_verified_at is not null as confirmed from users where email = ${email}`;
+    expect(u?.confirmed).toBe(true);
   });
 });

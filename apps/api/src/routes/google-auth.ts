@@ -5,6 +5,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { googleConfigured } from '../env.js';
+import { confirmAccountEmail, confirmedOwners } from '../lib/account-email.js';
 import { AppError, unavailable } from '../lib/errors.js';
 import { JwtError, type KeyLookup, publishedKeys, verifyJwt } from '../lib/jwt.js';
 import { authOf, requireRecentMfa, requireRole } from '../plugins/auth.js';
@@ -13,11 +14,12 @@ import { loginFor } from './email-auth.js';
 
 // Sign in with Google (OpenID Connect, authorization code flow with PKCE).
 // Google's answer is an ID token we verify ourselves; we keep no Google tokens.
-// Accounts are found by Google's permanent ID ("sub"); the first time, a
-// confirmed email-and-password account with Google's *verified* address is
-// linked; GitHub accounts never are (we never confirmed GitHub's address) and
-// connect Google from Settings instead. While sign-ups are closed, Google
-// can't create accounts. Two-step sign-in applies as to every sign-in.
+// Accounts are found by Google's permanent ID ("sub"); the first time, the
+// account (of any kind) holding Google's *verified* address confirmed is
+// linked: a confirmed sign-in address, or an account email confirmed from a
+// link. An address only typed in (or GitHub's public email) never matches.
+// While sign-ups are closed, Google can't create accounts. Two-step sign-in
+// applies as to every sign-in.
 
 export const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'] as const;
 export const googleSigningKeys = () => publishedKeys('https://www.googleapis.com/oauth2/v3/certs');
@@ -86,9 +88,10 @@ export const googleAuthRoutes =
       return deps.sql.begin(async (tx) => {
         for (let i = 0; i < 5; i++) {
           const login = loginFor(email);
+          // Google verified the address: the account email starts confirmed.
           const [u] = await tx<{ id: string }[]>`
-            insert into users (login, name, email, avatar_url, google_sub)
-            values (${login}, ${c.name ?? null}, ${email}, ${c.picture ?? null}, ${c.sub})
+            insert into users (login, name, email, email_verified_at, avatar_url, google_sub)
+            values (${login}, ${c.name ?? null}, ${email}, now(), ${c.picture ?? null}, ${c.sub})
             on conflict (login) do nothing returning id`;
           if (u) {
             await ensurePersonalOrg(tx, u.id, login, c.name ?? null);
@@ -143,7 +146,8 @@ export const googleAuthRoutes =
           | 'relogin'
           | 'google_unverified'
           | 'google_unconfirmed'
-          | 'google_other';
+          | 'google_other'
+          | 'google_ambiguous';
         const toLogin = (why: Why) => reply.redirect(`${deps.env.APP_URL}/login?error=${why}`);
         const toSettings = (google?: 'connected' | 'taken') =>
           reply.redirect(
@@ -190,6 +194,12 @@ export const googleAuthRoutes =
         }
         const email = typeof c.email === 'string' ? c.email.toLowerCase() : null;
         const verified = c.email_verified === true || c.email_verified === 'true';
+        // Google vouches for the address: if it is this account's email, it
+        // counts as confirmed (unless another account holds it confirmed).
+        const vouch = async (userId: string) => {
+          if (email && verified)
+            await deps.sql.begin((tx) => confirmAccountEmail(tx, userId, email));
+        };
 
         if (mode === 'connect') {
           // Still the same signed-in person who started it.
@@ -203,6 +213,7 @@ export const googleAuthRoutes =
             if (err.code === '23505') return [];
             throw err;
           });
+          if (linked.length) await vouch(a.userId);
           // One Google account, one AutoDeploy account.
           return toSettings(linked.length ? 'connected' : 'taken');
         }
@@ -211,26 +222,38 @@ export const googleAuthRoutes =
         const [known] = await deps.sql<
           { id: string }[]
         >`select id from users where google_sub = ${c.sub}`;
-        if (known) userId = known.id;
-        else {
+        if (known) {
+          userId = known.id;
+          await vouch(userId);
+        } else {
           if (!email || !verified) return toLogin('google_unverified');
-          const [pw] = await deps.sql<{ user_id: string; verified_at: Date | null }[]>`
-            select user_id, verified_at from user_passwords where email = ${email}`;
-          // Someone signed up with this address but never confirmed it: not linked.
-          if (pw && !pw.verified_at) return toLogin('google_unconfirmed');
-          if (pw) {
+          const owners = await confirmedOwners(deps.sql, email);
+          // Two accounts confirmed the same address (one by its sign-in
+          // address, one by its account email): the person picks by signing in.
+          if (owners.length > 1) return toLogin('google_ambiguous');
+          const [owner] = owners;
+          if (owner) {
             const linked = await deps.sql`
-              update users set google_sub = ${c.sub} where id = ${pw.user_id} and google_sub is null
+              update users set google_sub = ${c.sub} where id = ${owner} and google_sub is null
               returning id`.catch((err: { code?: string }) => {
               if (err.code === '23505') return [];
               throw err;
             });
             // That account is linked to another Google account already.
             if (!linked.length) return toLogin('google_other');
-            userId = pw.user_id;
+            userId = owner;
           } else {
+            // Someone signed up with this address but never confirmed it: not linked.
+            const [pw] = await deps.sql`select 1 from user_passwords where email = ${email}`;
+            if (pw) return toLogin('google_unconfirmed');
             if (deps.env.ALLOWED_GITHUB_LOGINS.length > 0) return toLogin('closed');
-            userId = await createAccount(email, c);
+            const created = await createAccount(email, c).catch((err: { code?: string }) => {
+              // Another account confirmed this address a moment ago.
+              if (err.code === '23505') return null;
+              throw err;
+            });
+            if (!created) return toLogin('google');
+            userId = created;
           }
         }
         const [u] = await deps.sql<{ login: string; name: string | null }[]>`

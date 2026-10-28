@@ -26,6 +26,10 @@ const SIGN_IN_ERRORS: Record<string, string> = {
   google_unconfirmed:
     'An account with this email is waiting to be confirmed: open the link we emailed you (or sign in with its password), then connect Google in Settings.',
   google_other: 'That account is already linked to a different Google account.',
+  google_ambiguous:
+    'More than one AutoDeploy account uses this email. Sign in the way you usually do, then connect Google in Settings → Account.',
+  github_email_taken:
+    'An AutoDeploy account already uses the email on this GitHub account. Sign in to it with email or Google, then connect GitHub in Settings → Account.',
 };
 
 function LoginInner() {

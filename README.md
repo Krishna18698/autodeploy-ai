@@ -39,7 +39,9 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
   one free VM hosts many of them ([ADR 0008](docs/adr/0008-ssr-runtime.md)).
 - **Streams** build logs and status over SSE (resumable), via Kafka.
 - **Signs people in** with GitHub, Google, or email and a password (scrypt hashes,
-  confirmed addresses, single-use reset links, no account enumeration). Session
+  confirmed addresses, single-use reset links, no account enumeration). One
+  account per confirmed email: Google joins the account whose address was
+  proven by a link or by Google, never one only typed in. Session
   cookies are host-only with the `__Host-` prefix, so the sites users deploy
   under the same domain never receive them.
 

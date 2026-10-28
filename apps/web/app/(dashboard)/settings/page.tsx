@@ -305,28 +305,53 @@ function Notifications() {
   const toast = useToast();
   const [email, setEmail] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const current = me.data?.user.email ?? '';
+  const confirmed = me.data?.user.emailConfirmed ?? false;
   const value = email ?? current;
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await patch('/api/v1/me', { email: value.trim() || null });
+      const to = value.trim();
+      const r = await patch<{ emailConfirmed: boolean; linkSent: boolean }>('/api/v1/me', {
+        email: to || null,
+      });
       await me.refetch();
       setEmail(null);
-      toast(value.trim() ? `Notifications go to ${value.trim()}` : 'Email notifications off', 'ok');
+      toast(
+        !to
+          ? 'Email notifications off'
+          : r.linkSent
+            ? `Saved. We sent a link to ${to} to confirm it.`
+            : r.emailConfirmed
+              ? `Notifications go to ${to}`
+              : 'Saved. Confirm it with "Send link" below.',
+        'ok',
+      );
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Could not save', 'fail');
     } finally {
       setSaving(false);
     }
   };
+  const resend = async () => {
+    setSending(true);
+    try {
+      await post('/api/v1/me/email/confirmation');
+      toast(`We sent a link to ${current}.`, 'ok');
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not send the link', 'fail');
+    } finally {
+      setSending(false);
+    }
+  };
   return (
-    <Panel title="Email notifications">
+    <Panel title="Email">
       <p className="mb-3 text-[13px] text-muted">
         Failed deployments, missing environment variables and repairs waiting for your approval are
         emailed here. GitHub only shares public emails, so set it yourself; leave it empty to turn
-        emails off.
+        emails off. Once it’s confirmed, you can also sign in with a Google account that uses it.
       </p>
       <form onSubmit={save} className="flex flex-col gap-2 sm:flex-row">
         <input
@@ -334,13 +359,32 @@ function Notifications() {
           value={value}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
-          aria-label="Notification email"
+          aria-label="Account email"
           className={`${input} sm:flex-1`}
         />
         <Button type="submit" variant="primary" loading={saving} disabled={value === current}>
           Save
         </Button>
       </form>
+      {current && value === current && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px]">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className={`size-1.5 rounded-full ${confirmed ? 'bg-ok' : 'bg-warn'}`}
+            />
+            {confirmed ? 'Confirmed' : 'Not confirmed yet'}
+          </span>
+          {!confirmed && (
+            <>
+              <span className="text-muted">Open the link we emailed you.</span>
+              <Button size="sm" loading={sending} onClick={resend}>
+                Send link
+              </Button>
+            </>
+          )}
+        </div>
+      )}
     </Panel>
   );
 }
