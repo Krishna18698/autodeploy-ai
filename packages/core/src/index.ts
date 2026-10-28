@@ -9,5 +9,6 @@ export * from './redact.js';
 export * from './rules.js';
 export * from './semver.js';
 export * from './signatures.js';
+export * from './site-cookies.js';
 export * from './source-fixes.js';
 export * from './state-machine.js';

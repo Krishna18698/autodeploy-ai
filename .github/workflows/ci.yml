@@ -28,6 +28,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      # The cookie rules are tested in a real browser (tests/unit/site-cookies-browser.test.ts).
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm test
       - run: pnpm build
 

@@ -38,6 +38,10 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
   Router, SolidStart, or any Node server with a start script) as gVisor
   containers that wake on the first request and sleep after 15 idle minutes, so
   one free VM hosts many of them ([ADR 0008](docs/adr/0008-ssr-runtime.md)).
+  Users' sites share one domain, so the gateway keeps each one's cookies its
+  own: no `Domain=` sharing, sessions stored as `__Host-` cookies another site
+  can't plant, and a sibling site's forms treated as cross-site
+  ([ADR 0011](docs/adr/0011-cookies-on-the-shared-sites-domain.md)).
 - **Streams** build logs and status over SSE (resumable), via Kafka.
 - **Signs people in** with GitHub, Google, or email and a password (scrypt hashes,
   confirmed addresses, single-use reset links, no account enumeration). One

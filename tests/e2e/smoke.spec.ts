@@ -99,8 +99,8 @@ async function printLogTail(req: APIRequestContext, d: Deployment) {
 async function site(
   url: string,
   path = '/',
-  init: { method?: string; body?: string } = {},
-): Promise<{ status: number; body: string }> {
+  init: { method?: string; body?: string; headers?: Record<string, string> } = {},
+): Promise<{ status: number; body: string; setCookie: string[] }> {
   const target = new URL(path, url);
   if (REMOTE) {
     // 2026-10-23: a just-deployed site once took over 60 s to answer this
@@ -113,11 +113,11 @@ async function site(
         const r = await fetch(target, {
           method: init.method ?? 'GET',
           body: init.body,
-          headers: init.body ? { 'content-type': 'application/json' } : {},
+          headers: { ...(init.body && { 'content-type': 'application/json' }), ...init.headers },
           redirect: 'manual',
           signal: AbortSignal.timeout(read ? 20_000 : 60_000),
         });
-        return { status: r.status, body: await r.text() };
+        return { status: r.status, body: await r.text(), setCookie: r.headers.getSetCookie() };
       } catch (err) {
         const e = err as Error & { cause?: { code?: string } };
         console.warn(`site ${target.href}: attempt ${attempt} failed (${e.cause?.code ?? e.name})`);
@@ -137,12 +137,19 @@ async function site(
           host: target.host,
           'accept-encoding': 'identity',
           ...(init.body && { 'content-type': 'application/json' }),
+          ...init.headers,
         },
       },
       (res) => {
         let body = '';
         res.on('data', (c) => (body += c));
-        res.on('end', () => resolveP({ status: res.statusCode ?? 0, body }));
+        res.on('end', () =>
+          resolveP({
+            status: res.statusCode ?? 0,
+            body,
+            setCookie: res.headers['set-cookie'] ?? [],
+          }),
+        );
       },
     );
     req.on('error', reject);
@@ -345,6 +352,30 @@ for (const app of SERVER_APPS) {
           body: JSON.stringify({ message: RUN }),
         });
         expect(JSON.parse(echo.body)).toEqual({ echo: RUN });
+
+        // Cookies on the sites' shared domain (packages/core/src/site-cookies.ts),
+        // through the real edge, tunnel and gateway: the app's are kept its own,
+        // planted copies dropped and deleted, a sibling's form sent none.
+        const url = d.url ?? '';
+        const parent = new URL(url).hostname.split('.').slice(1).join('.');
+        const login = (await site(url, '/login')).setCookie.join('\n');
+        expect(login).toMatch(/^__Host-ad_sid=e2e; .*Path=\/; Secure$/m);
+        expect(login).not.toMatch(/domain=/i);
+        const jar = await site(url, '/cookies', {
+          headers: { cookie: 'sid=planted; __Host-ad_sid=e2e' },
+        });
+        expect(JSON.parse(jar.body)).toEqual({ cookie: 'sid=e2e' });
+        expect(jar.setCookie).toContain(`sid=; Domain=${parent}; Path=/; Max-Age=0; Secure`);
+        const forged = await site(url, '/cookies', {
+          method: 'POST',
+          headers: {
+            cookie: '__Host-ad_sid=e2e',
+            'sec-fetch-site': 'same-site',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-dest': 'document',
+          },
+        });
+        expect(JSON.parse(forged.body)).toEqual({ cookie: null });
       }
     } finally {
       const dep = await api<Deployment>(page.request, A(`/api/v1/deployments/${id}`));

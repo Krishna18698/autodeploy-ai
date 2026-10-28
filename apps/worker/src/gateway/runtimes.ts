@@ -53,6 +53,7 @@ export function mib(size: string): number {
 export type Instance = {
   deploymentId: string;
   orgId: string;
+  projectId: string;
   /** Its bundle's sha (the directory under RUNTIME_BUNDLES_DIR). */
   sha: string;
   container: string;
@@ -217,6 +218,7 @@ export class RuntimeManager {
     const inst: Instance = {
       deploymentId,
       orgId: dep.org_id,
+      projectId: dep.project_id,
       sha: dep.runtime_sha,
       container,
       ...target,
