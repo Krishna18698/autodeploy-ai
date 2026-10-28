@@ -46,7 +46,7 @@ describe('validation has a hard time limit', () => {
     const both = () => /--name ad-validate-/.test(log) && /(^|\n)rm -f /.test(log);
     for (let i = 0; i < 50 && !both(); i++) {
       await new Promise((res) => setTimeout(res, 100));
-      log = await readFile(calls, 'utf8');
+      log = await readFile(calls, 'utf8').catch(() => ''); // not written yet
     }
     const name = /--name (ad-validate-[0-9a-f]+)/.exec(log)?.[1];
     expect(name).toBeDefined();
