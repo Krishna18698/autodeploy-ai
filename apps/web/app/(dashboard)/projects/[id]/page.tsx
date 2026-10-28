@@ -15,7 +15,14 @@ import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, del, newIdempotencyKey, patch, post, put } from '@/lib/api';
 import { ago, shortSha } from '@/lib/format';
-import { type DeploymentSummaryT, useDeployments, useEnv, useProject } from '@/lib/queries';
+import {
+  type ActionsSetupT,
+  type DeploymentSummaryT,
+  useActionsSetup,
+  useDeployments,
+  useEnv,
+  useProject,
+} from '@/lib/queries';
 
 export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -85,7 +92,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       />
       <div className="mt-5">
         {tab === 'deployments' && <History projectId={id} />}
-        {tab === 'settings' && <Settings project={p} onSaved={() => project.refetch()} />}
+        {tab === 'settings' && (
+          <div className="flex flex-col gap-5">
+            <Settings project={p} onSaved={() => project.refetch()} />
+            <BuildOn project={p} onSaved={() => project.refetch()} />
+          </div>
+        )}
         {tab === 'env' && <EnvVars projectId={id} />}
       </div>
     </>
@@ -293,6 +305,145 @@ function Settings({
           </span>
         </div>
       </form>
+    </Panel>
+  );
+}
+
+/** Where builds run: AutoDeploy's sandbox, or the repository's own GitHub Actions (ADR 0010). */
+function BuildOn({
+  project,
+  onSaved,
+}: {
+  project: NonNullable<ReturnType<typeof useProject>['data']>;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const setup = useActionsSetup(project.id);
+  const [busy, setBusy] = useState<'setup' | 'switch' | null>(null);
+  const onActions = project.executor === 'github_actions';
+  const s = setup.data;
+
+  const openSetup = async () => {
+    setBusy('setup');
+    try {
+      const r = await post<ActionsSetupT>(`/api/v1/projects/${project.id}/github-actions`);
+      await setup.refetch();
+      if (r.prUrl) window.open(r.prUrl, '_blank', 'noopener');
+      toast('Pull request opened: merge it, then come back here', 'ok');
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not open the pull request', 'fail');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const use = async (executor: 'sandbox' | 'github_actions') => {
+    setBusy('switch');
+    try {
+      await patch(
+        `/api/v1/projects/${project.id}`,
+        { executor },
+        { 'if-match': `"v${project.version}"` },
+      );
+      toast(
+        executor === 'github_actions'
+          ? 'Builds now run on GitHub Actions'
+          : 'Builds now run on AutoDeploy',
+        'ok',
+      );
+      onSaved();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not switch', 'fail');
+      await setup.refetch();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const status = !s
+    ? null
+    : s.state === 'unavailable'
+      ? 'Needs the AutoDeploy GitHub App on this repository.'
+      : s.state === 'missing'
+        ? `Needs AutoDeploy's workflow in the repository: a pull request adds it to ${s.branch}.`
+        : s.state === 'outdated'
+          ? `An older AutoDeploy workflow is on ${s.branch}; a pull request updates it.`
+          : s.state === 'pr_open'
+            ? 'Waiting for you to merge the setup pull request.'
+            : `Ready: the workflow is on ${s.branch}.`;
+
+  const option = (
+    id: 'sandbox' | 'github_actions',
+    title: string,
+    body: string,
+    extra?: React.ReactNode,
+  ) => {
+    const current = (id === 'github_actions') === onActions;
+    return (
+      <div
+        className={`flex flex-col gap-2 rounded-md border p-3 text-[13px] ${current ? 'border-run/60' : 'border-line'}`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-fg">{title}</span>
+          {current ? (
+            <span className="font-mono text-[11px] text-run">in use</span>
+          ) : id === 'sandbox' || s?.state === 'ready' ? (
+            <Button loading={busy === 'switch'} onClick={() => use(id)}>
+              Use this
+            </Button>
+          ) : null}
+        </div>
+        <span className="text-muted">{body}</span>
+        {extra}
+      </div>
+    );
+  };
+
+  return (
+    <Panel title="Build on">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {option(
+          'sandbox',
+          'AutoDeploy',
+          "Builds run on AutoDeploy's servers, in a locked-down sandbox. Nothing to set up.",
+        )}
+        {option(
+          'github_actions',
+          'GitHub Actions',
+          "Builds run in this repository's own GitHub Actions: bigger machines, and your repository's Actions minutes (unlimited on public repositories). AutoDeploy still checks and serves the site.",
+          <div className="flex flex-col gap-2">
+            {setup.isLoading ? (
+              <span className="text-muted">Checking the repository…</span>
+            ) : (
+              <span className={s?.state === 'ready' ? 'text-ok' : 'text-muted'}>{status}</span>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {(s?.state === 'missing' || s?.state === 'outdated') && (
+                <Button variant="primary" loading={busy === 'setup'} onClick={openSetup}>
+                  {s.state === 'outdated' ? 'Update the workflow' : 'Set up GitHub Actions'}
+                </Button>
+              )}
+              {s?.state === 'pr_open' && s.prUrl && (
+                <a
+                  href={s.prUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-run hover:underline"
+                >
+                  Open the pull request ↗
+                </a>
+              )}
+              {s && s.state !== 'ready' && s.state !== 'unavailable' && (
+                <Button
+                  onClick={() => setup.refetch()}
+                  loading={setup.isFetching && !setup.isLoading}
+                >
+                  Check again
+                </Button>
+              )}
+            </div>
+          </div>,
+        )}
+      </div>
     </Panel>
   );
 }

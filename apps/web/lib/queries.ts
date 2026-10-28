@@ -163,3 +163,16 @@ export const useAudit = () =>
     queryKey: ['audit'],
     queryFn: () => api<Page<T<typeof AuditEvent>>>('/api/v1/audit?limit=50'),
   });
+
+/** Building on the repository's own GitHub Actions: where the project stands (ADR 0010). */
+export type ActionsSetupT = {
+  state: 'unavailable' | 'missing' | 'outdated' | 'pr_open' | 'ready';
+  branch: string;
+  prUrl?: string;
+};
+export const useActionsSetup = (projectId: string) =>
+  useQuery({
+    queryKey: ['github-actions', projectId],
+    queryFn: () => api<ActionsSetupT>(`/api/v1/projects/${projectId}/github-actions`),
+    staleTime: 30_000,
+  });
