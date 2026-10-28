@@ -1,6 +1,6 @@
 # Issues to fix
 
-What's left and what's done, kept current. Last updated 2026-10-24.
+What's left and what's done, kept current. Last updated 2026-10-28.
 
 ## Not done, needed before launch
 
@@ -15,7 +15,7 @@ last, each only on the owner's yes.
 ## Not done
 
 **Next: planned for 2026-10-25, with the owner**
-- [ ] **Builds on GitHub Actions** (in the user's own repository, ADR 0002; takes builds off the VM's CPU). Designed, not built: `apps/worker/src/executors/github-actions.ts` is a placeholder that fails every build, so since 2026-10-24 the API refuses `executor: "github_actions"` (the dashboard never offered it). To build: (1) the GitHub App opens a pull request adding a workflow to the user's repo; (2) the workflow builds the site on GitHub's machines and sends the log and the output to the API, signed with GitHub's per-job OIDC token; (3) the API accepts it only for that repository and that build attempt, then the site check and going live run as today; (4) a project setting to choose it. **Owner:** add "Actions: read and write" and "Workflows: read and write" to the GitHub App, then accept them on the installation. **Testing:** automated tests first (no deployments); then one real build end to end (one deployment, a few of the repo's free Actions minutes).
+- [ ] **Builds on GitHub Actions: the first real build.** Built and tested on 2026-10-28 (ADR 0010) with only GitHub stood in for. After deploying: open the setup pull request on a test project's repository, merge it, switch the project, deploy once, and check the log, the site and the cleanup.
 - [ ] **Google sign-in.** **Owner:** create a Google OAuth client with the redirect `https://api.autodeploy.fyi/auth/google/callback` and save its ID and secret with the hidden-input command; then a "Continue with Google" button on sign-in and sign-up.
 
 **To build (nice to have, not blocking launch)**
@@ -36,6 +36,11 @@ last, each only on the owner's yes.
 - [ ] **Renew the deploy's Access service token** before October 2027: `terraform apply -replace=cloudflare_zero_trust_access_service_token.deploy`, then update the two `CF_ACCESS_*` GitHub secrets.
 
 ## Done
+
+**2026-10-28**
+- [x] **Builds on GitHub Actions** (ADR 0010): a project can build in its repository's own Actions instead of on the VM. The App opens a pull request adding the workflow; builds report back with GitHub's per-job token (verified, for that repository, workflow, run and attempt only); variables are masked in GitHub's log; the output comes back in capped parts and is checked before unpacking (no escaping the checkout, no hard links, nothing through a link, no compressed bombs). Project settings → Build on.
+- [x] **Previews of pull requests from forks get none of the project's variables** (found while designing the above): a fork's code could have printed them into its public preview. The webhook records forks (migration 0016); their builds and server-rendered previews run without variables.
+- [x] **Two flaky tests steadied:** the validation-timeout test waits for both of its stand-in Docker calls; the dropped-connection test's watcher no longer asks for zero bytes of log (BSD head refused that).
 
 **2026-10-24**
 - [x] **Next.js sites wake in 1.7-2.8 s** (gateway; 4.4-7.8 s that morning): bundles left unpacked by the build, and a site may use a whole CPU when it's spare (`RUNTIME_CPUS` 1, weight 512, below the platform's 1024). The Node server wakes in ~0.5 s.
