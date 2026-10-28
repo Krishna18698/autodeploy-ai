@@ -6,9 +6,11 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "gen:ci-runner": "node scripts/embed-ci-runner.mjs"
   },
   "dependencies": {
+    "@autodeploy/core": "workspace:*",
     "@autodeploy/resilience": "workspace:*",
     "tar": "7.5.22"
   }

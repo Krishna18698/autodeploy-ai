@@ -381,6 +381,9 @@ importers:
 
   packages/github:
     dependencies:
+      '@autodeploy/core':
+        specifier: workspace:*
+        version: link:../core
       '@autodeploy/resilience':
         specifier: workspace:*
         version: link:../resilience
