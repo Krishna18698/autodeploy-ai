@@ -12,6 +12,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import type { Deps } from './deps.js';
+import type { KeyLookup } from './lib/github-oidc.js';
 import { auditPlugin } from './plugins/audit.js';
 import { authPlugin } from './plugins/auth.js';
 import { registerErrorHandling } from './plugins/errors.js';
@@ -19,6 +20,7 @@ import { idempotencyPlugin } from './plugins/idempotency.js';
 import { rateLimitPlugin } from './plugins/rate-limit.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
+import { ciRoutes } from './routes/ci.js';
 import { clientErrorRoutes } from './routes/client-errors.js';
 import { deploymentRoutes } from './routes/deployments.js';
 import { emailAuthRoutes } from './routes/email-auth.js';
@@ -30,7 +32,11 @@ import { projectRoutes } from './routes/projects.js';
 import { sessionMoveRoutes } from './routes/session-move.js';
 import { twoFactorRoutes } from './routes/two-factor.js';
 
-export async function buildApp(deps: Deps) {
+export async function buildApp(
+  deps: Deps,
+  /** Tests: GitHub's OIDC signing keys (production fetches GitHub's). */
+  opts?: { githubKeys?: KeyLookup },
+) {
   const { env } = deps;
   const app = Fastify({
     logger: {
@@ -142,6 +148,8 @@ export async function buildApp(deps: Deps) {
   await app.register(adminRoutes(deps));
   await app.register(twoFactorRoutes(deps));
   await app.register(internalRoutes(deps));
+  // Builds in users' own GitHub Actions report here (ADR 0010).
+  await app.register(ciRoutes(deps, opts?.githubKeys));
   await app.register(clientErrorRoutes(deps));
   // Encapsulated so its raw-body JSON parser doesn't affect other routes.
   await app.register(async (scope) => githubWebhookRoutes(scope, deps));

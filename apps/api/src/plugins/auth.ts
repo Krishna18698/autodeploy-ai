@@ -144,6 +144,7 @@ export const authPlugin = fp(async (app: FastifyInstance, deps: Deps) => {
   app.decorateRequest('pendingMfa', null);
 
   app.addHook('onRequest', async (req) => {
+    if (req.routeOptions.config?.ownAuth) return;
     const header = req.headers.authorization;
     if (header?.startsWith('Bearer ')) {
       req.auth = await resolveToken(deps, header.slice(7).trim());

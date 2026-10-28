@@ -33,6 +33,12 @@ declare module 'fastify' {
     idempotent?: boolean;
     /** false: a cookie-authenticated write that needs no CSRF token (it only records). */
     csrf?: false;
+    /**
+     * The route checks its own credentials (GitHub Actions job tokens, ADR
+     * 0010): sessions and API tokens are not read, so its Bearer header isn't
+     * taken for an API token.
+     */
+    ownAuth?: true;
   }
 }
 

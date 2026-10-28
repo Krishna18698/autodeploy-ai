@@ -350,6 +350,9 @@ importers:
       '@autodeploy/core':
         specifier: workspace:*
         version: link:../core
+      '@autodeploy/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       postgres:
         specifier: 3.4.9
         version: 3.4.9

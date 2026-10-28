@@ -10,8 +10,9 @@
     "migrate": "tsx --env-file=../../.env src/cli.ts"
   },
   "dependencies": {
-    "postgres": "3.4.9",
     "@autodeploy/core": "workspace:*",
+    "@autodeploy/crypto": "workspace:*",
+    "postgres": "3.4.9",
     "ulid": "3.0.2"
   },
   "devDependencies": {

@@ -4,5 +4,6 @@ export * from './deployments.js';
 export * from './migrate.js';
 export * from './outbox.js';
 export * from './routes.js';
+export * from './secrets.js';
 export * from './takedown.js';
 export * from './with-org.js';
