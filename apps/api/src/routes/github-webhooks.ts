@@ -23,7 +23,12 @@ type PushEvent = {
 type PullRequestEvent = {
   action: string;
   number: number;
-  pull_request: { head: { sha: string; ref: string }; title: string; merged?: boolean };
+  pull_request: {
+    // head.repo is null when the fork has since been deleted.
+    head: { sha: string; ref: string; repo?: { full_name: string } | null };
+    title: string;
+    merged?: boolean;
+  };
   repository: { full_name: string };
   installation?: { id: number };
 };
@@ -137,6 +142,10 @@ async function onPullRequest(deps: Deps, e: PullRequestEvent): Promise<number> {
     return 0;
   }
   if (!['opened', 'synchronize', 'reopened'].includes(e.action)) return 0;
+  // From a fork: someone else's code, so it builds and runs without the
+  // project's variables (it could print them into the public preview).
+  const fromFork =
+    e.pull_request.head.repo?.full_name.toLowerCase() !== e.repository.full_name.toLowerCase();
   let n = 0;
   for (const p of projects) {
     await createDeployment(deps, {
@@ -149,6 +158,7 @@ async function onPullRequest(deps: Deps, e: PullRequestEvent): Promise<number> {
       commitMessage: e.pull_request.title,
       branch: e.pull_request.head.ref,
       prNumber: e.number,
+      fromFork,
     });
     n++;
   }

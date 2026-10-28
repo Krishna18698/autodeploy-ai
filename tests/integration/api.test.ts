@@ -281,6 +281,40 @@ describe('GitHub webhooks', () => {
     console.info('[measure] 100 concurrent redeliveries of one webhook → 1 deployment');
   });
 
+  it("marks a pull request from a fork, so its preview gets none of the project's variables", async () => {
+    const org = await makeOrg(deps.sql);
+    const p = await makeProject(deps.sql, org, { repo: 'acme/fork-target' });
+    const pr = async (n: number, head: { full_name: string } | null) => {
+      const body = JSON.stringify({
+        action: 'opened',
+        number: n,
+        pull_request: {
+          head: { sha: `${n}`.repeat(40).slice(0, 40), ref: `feature-${n}`, repo: head },
+          title: `pr ${n}`,
+        },
+        repository: { full_name: 'acme/fork-target' },
+      });
+      const r = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/github',
+        headers: {
+          'content-type': 'application/json',
+          'x-hub-signature-256': sign(body),
+          'x-github-delivery': `fork-${p.id}-${n}`,
+          'x-github-event': 'pull_request',
+        },
+        payload: body,
+      });
+      expect(r.statusCode).toBe(202);
+      const [d] = await deps.sql<{ from_fork: boolean }[]>`
+        select from_fork from deployments where project_id = ${p.id} and pr_number = ${n}`;
+      return d?.from_fork;
+    };
+    expect(await pr(1, { full_name: 'Acme/Fork-Target' })).toBe(false); // a branch of the same repository
+    expect(await pr(2, { full_name: 'stranger/fork-target' })).toBe(true); // someone's fork
+    expect(await pr(3, null)).toBe(true); // a fork deleted since
+  });
+
   it('records who installed the App, so an organisation install is theirs to use until claimed', async () => {
     const id = 900_000 + Math.floor(Math.random() * 90_000);
     const body = JSON.stringify({

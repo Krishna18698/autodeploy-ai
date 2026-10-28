@@ -59,7 +59,12 @@ const freeWith = (base: number) => (n: number) => base - PER_SERVER * n;
  * A stand-in database: every deployment is a live server-rendered one, unless
  * the test deleted it; `liveShas` are the bundles of projects' live deployments.
  */
-function fakeSql(db: { deleted: Set<string>; liveShas: string[] }) {
+function fakeSql(db: {
+  deleted: Set<string>;
+  liveShas: string[];
+  forks: Set<string>;
+  secretReads: string[];
+}) {
   return ((first: unknown, ...values: unknown[]) => {
     if (!Array.isArray(first)) return first; // the sql(row) helper
     const text = (first as string[]).join('?');
@@ -78,10 +83,15 @@ function fakeSql(db: { deleted: Set<string>; liveShas: string[] }) {
     if (text.includes('active_deployment_id')) {
       return Promise.resolve(db.liveShas.map((sha) => ({ sha })));
     }
+    if (text.includes('from env_vars')) {
+      db.secretReads.push(String(values[0]));
+      return Promise.resolve([]);
+    }
     if (text.includes('from deployments where id')) {
       return Promise.resolve([
         {
           org_id: 'org',
+          from_fork: db.forks.has(String(values[0])),
           project_id: 'project',
           status: 'ACTIVE',
           mode: 'ssr',
@@ -103,7 +113,12 @@ function setup(o: {
   liveShas?: string[];
   cgroupParent?: string;
 }) {
-  const db = { deleted: new Set<string>(), liveShas: o.liveShas ?? [] };
+  const db = {
+    deleted: new Set<string>(),
+    liveShas: o.liveShas ?? [],
+    forks: new Set<string>(),
+    secretReads: [] as string[],
+  };
   const sql = fakeSql(db);
   const stopped: { id: string; reason: string }[] = [];
   const warnings: string[] = [];
@@ -257,6 +272,17 @@ describe("the sites' CPU group", () => {
     const { mgr, warnings } = setup({ free: null, cgroupParent: 'autodeploy-sites.slice' });
     await mgr.ensure('b');
     expect(warnings).toEqual([]); // accepted: no retry
+  });
+});
+
+describe("a fork's preview", () => {
+  it("runs without the project's variables; every other site gets them", async () => {
+    const { mgr, db } = setup({ free: null });
+    db.forks.add('from-a-fork');
+    await mgr.ensure('from-a-fork');
+    expect(db.secretReads).toEqual([]);
+    await mgr.ensure('own-branch');
+    expect(db.secretReads).toEqual(['project']);
   });
 });
 

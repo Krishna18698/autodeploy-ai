@@ -16,6 +16,8 @@ export type CreateDeploymentInput = {
   commitMessage: string | null;
   branch: string | null;
   prNumber?: number | null;
+  /** A pull request from a fork: built and run without the project's variables. */
+  fromFork?: boolean;
   createdBy?: string | null;
   idempotencyKey?: string | null;
 };
@@ -48,10 +50,10 @@ export async function createDeployment(
 
     const [dep] = await tx<{ id: string; number: number }[]>`
       insert into deployments (org_id, project_id, number, kind, trigger, ref, branch, commit_sha, commit_message,
-                               pr_number, created_by, idempotency_key, queued_at)
+                               pr_number, from_fork, created_by, idempotency_key, queued_at)
       values (${input.orgId}, ${input.projectId}, ${alloc.number}, ${input.kind}, ${input.trigger}, ${input.ref},
               ${input.branch}, ${input.commitSha}, ${input.commitMessage}, ${input.prNumber ?? null},
-              ${input.createdBy ?? null}, ${input.idempotencyKey ?? null}, now())
+              ${input.fromFork ?? false}, ${input.createdBy ?? null}, ${input.idempotencyKey ?? null}, now())
       returning id, number`;
     if (!dep) throw new Error('insert failed');
 

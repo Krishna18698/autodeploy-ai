@@ -77,6 +77,8 @@ const SERVE_STATUSES = ['READY', 'ACTIVE', 'SUPERSEDED', 'ROLLED_BACK', 'AWAITIN
 
 type DeploymentRow = {
   org_id: string;
+  /** A pull request from a fork: it runs without the project's variables. */
+  from_fork: boolean;
   project_id: string;
   status: string;
   mode: string;
@@ -119,7 +121,7 @@ export class RuntimeManager {
     const t0 = performance.now();
     const [dep] = await this.d.sql<
       DeploymentRow[]
-    >`select org_id, project_id, status, mode, runtime_sha, runtime_node, runtime_command, runtime_workdir
+    >`select org_id, from_fork, project_id, status, mode, runtime_sha, runtime_node, runtime_command, runtime_workdir
       from deployments where id = ${deploymentId}`;
     if (dep?.mode !== 'ssr' || !dep.runtime_sha || !SERVE_STATUSES.includes(dep.status))
       throw new RuntimeUnavailable(404, 'No server-rendered deployment is live here.');
@@ -140,7 +142,7 @@ export class RuntimeManager {
     await this.record(deploymentId, dep.org_id, { status: 'starting', error: null });
     const { dir: bundle, cached } = await this.bundle(dep.runtime_sha);
     const tBundle = performance.now();
-    const secrets = await loadSecrets(this.d, dep.project_id);
+    const secrets = dep.from_fork ? {} : await loadSecrets(this.d, dep.project_id);
     const container = `ad-run-${deploymentId.slice(0, 8)}-${randomBytes(3).toString('hex')}`;
     const e = this.d.env;
     const proxy =

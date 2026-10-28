@@ -54,6 +54,8 @@ type DepRow = {
   number: number;
   status: DeploymentStatus;
   kind: 'production' | 'preview';
+  /** A pull request from a fork (migration 0016). */
+  from_fork: boolean;
   commit_sha: string | null;
   pr_number: number | null;
   build_config: BuildConfig | null;
@@ -72,7 +74,7 @@ type DepRow = {
 
 export async function loadDeployment(deps: Deps, id: string): Promise<DepRow | undefined> {
   const [row] = await deps.sql<DepRow[]>`
-    select d.id, d.org_id, d.project_id, d.number, d.status, d.kind, d.commit_sha, d.pr_number, d.build_config, d.started_at,
+    select d.id, d.org_id, d.project_id, d.number, d.status, d.kind, d.commit_sha, d.pr_number, d.from_fork, d.build_config, d.started_at,
            p.slug, p.repo_url, p.repo_full_name, p.root_dir, p.executor, p.installation_id,
            p.node_version, p.install_command, p.build_command, p.output_dir
     from deployments d join projects p on p.id = d.project_id where d.id = ${id}`;
@@ -249,7 +251,8 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
       span.setAttribute('attempt.no', attempt.attempt_no);
 
       const ws = workspaceFor(deps, attempt.id);
-      const secrets = await loadSecrets(deps, d.project_id);
+      // A pull request from a fork is someone else's code: no variables for it.
+      const secrets = d.from_fork ? {} : await loadSecrets(deps, d.project_id);
       const log = new LogSink(
         deps,
         {
@@ -268,6 +271,10 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
 
       try {
         log.stage(`attempt ${attempt.attempt_no} · ${executor.name} · node ${config.nodeVersion}`);
+        if (d.from_fork)
+          log.write(
+            "autodeploy: this pull request comes from a fork, so its build doesn't get the project's environment variables",
+          );
         await fetchSource(deps, d.repo_url, d.commit_sha ?? 'HEAD', ws.src, d.installation_id);
         if (config.patch) {
           log.stage('applying proposed repair');
