@@ -176,3 +176,11 @@ export const useActionsSetup = (projectId: string) =>
     queryFn: () => api<ActionsSetupT>(`/api/v1/projects/${projectId}/github-actions`),
     staleTime: 30_000,
   });
+
+/** Which sign-in methods this server offers (Google needs its OAuth client configured). */
+export const useProviders = () =>
+  useQuery({
+    queryKey: ['providers'],
+    queryFn: () => api<{ google: boolean }>('/auth/providers'),
+    staleTime: 3_600_000,
+  });

@@ -38,7 +38,8 @@ const Credentials = z.object({ email: Email, password: Password });
 const TokenBody = z.object({ token: z.string().min(20).max(100) });
 
 /** "krishna_3fa9c1": never a valid GitHub login, so never matched to a GitHub account. */
-function loginFor(email: string) {
+/** A new account's login from its email: never a valid GitHub login (the _ suffix). */
+export function loginFor(email: string) {
   const local = email.split('@')[0] ?? '';
   const base =
     local

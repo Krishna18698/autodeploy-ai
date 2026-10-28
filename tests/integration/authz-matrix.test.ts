@@ -75,6 +75,8 @@ const POLICY: Record<string, Rule> = {
   'DELETE /api/v1/me': { need: 'viewer', body: (c) => ({ confirm: c.self }) },
   'POST /api/v1/session/org': { need: 'viewer', body: (c) => ({ orgId: c.orgId }) },
 
+  // Anyone signed in may unlink their own Google account (refused if it's their only way in).
+  'DELETE /api/v1/me/google': { need: 'viewer' },
   'GET /api/v1/me/2fa': { need: 'viewer' },
   'POST /api/v1/me/2fa/setup': { need: 'viewer' },
   'POST /api/v1/me/2fa/enable': { need: 'viewer', body: () => ({ code: '000000' }) },

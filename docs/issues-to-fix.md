@@ -16,7 +16,7 @@ last, each only on the owner's yes.
 
 **Next: planned for 2026-10-25, with the owner**
 - [ ] **Builds on GitHub Actions: the first real build.** Built and tested on 2026-10-28 (ADR 0010) with only GitHub stood in for. After deploying: open the setup pull request on a test project's repository, merge it, switch the project, deploy once, and check the log, the site and the cleanup.
-- [ ] **Google sign-in.** **Owner:** create a Google OAuth client with the redirect `https://api.autodeploy.fyi/auth/google/callback` and save its ID and secret with the hidden-input command; then a "Continue with Google" button on sign-in and sign-up.
+- [ ] **Google sign-in: the owner's first try on production.** Sign in with GitHub, Settings → Account → Connect Google; then sign out and Continue with Google.
 
 **To build (nice to have, not blocking launch)**
 - [ ] **Different variable values for previews:** environment variables are per project today, so production and pull-request previews get the same values.
@@ -38,6 +38,7 @@ last, each only on the owner's yes.
 ## Done
 
 **2026-10-28**
+- [x] **Sign in with Google** (OpenID Connect, code flow with PKCE; nonce and state; Google's ID token verified against its published keys). Accounts are found by Google's permanent ID; the first time, a confirmed email-and-password account with Google's verified address is linked; GitHub accounts never are by email (they Connect Google in Settings). No new accounts while sign-ups are closed; two-step sign-in still applies; Disconnect is refused when Google is the only way in. No Google tokens are kept (migration 0017).
 - [x] **Builds on GitHub Actions** (ADR 0010): a project can build in its repository's own Actions instead of on the VM. The App opens a pull request adding the workflow; builds report back with GitHub's per-job token (verified, for that repository, workflow, run and attempt only); variables are masked in GitHub's log; the output comes back in capped parts and is checked before unpacking (no escaping the checkout, no hard links, nothing through a link, no compressed bombs). Project settings → Build on.
 - [x] **Previews of pull requests from forks get none of the project's variables** (found while designing the above): a fork's code could have printed them into its public preview. The webhook records forks (migration 0016); their builds and server-rendered previews run without variables.
 - [x] **Two flaky tests steadied:** the validation-timeout test waits for both of its stand-in Docker calls; the dropped-connection test's watcher no longer asks for zero bytes of log (BSD head refused that).

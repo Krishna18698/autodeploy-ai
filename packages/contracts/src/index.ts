@@ -41,6 +41,7 @@ export const Me = z.object({
     githubConnected: z
       .boolean()
       .describe('false for an email account that has not linked a GitHub account'),
+    googleConnected: z.boolean().describe('Signs in with Google too'),
     platformAdmin: z.boolean().describe('May take sites down and suspend accounts'),
   }),
   org: z.object({ id: Id, slug: z.string(), name: z.string(), role: Role }),

@@ -25,6 +25,7 @@ import { clientErrorRoutes } from './routes/client-errors.js';
 import { deploymentRoutes } from './routes/deployments.js';
 import { emailAuthRoutes } from './routes/email-auth.js';
 import { githubWebhookRoutes } from './routes/github-webhooks.js';
+import { googleAuthRoutes } from './routes/google-auth.js';
 import { healthRoutes } from './routes/health.js';
 import { internalRoutes } from './routes/internal.js';
 import { orgRoutes } from './routes/org.js';
@@ -34,8 +35,8 @@ import { twoFactorRoutes } from './routes/two-factor.js';
 
 export async function buildApp(
   deps: Deps,
-  /** Tests: GitHub's OIDC signing keys (production fetches GitHub's). */
-  opts?: { githubKeys?: KeyLookup },
+  /** Tests: GitHub's and Google's signing keys (production fetches theirs). */
+  opts?: { githubKeys?: KeyLookup; googleKeys?: KeyLookup },
 ) {
   const { env } = deps;
   const app = Fastify({
@@ -142,6 +143,7 @@ export async function buildApp(
   await app.register(authRoutes(deps));
   await app.register(sessionMoveRoutes(deps));
   await app.register(emailAuthRoutes(deps));
+  await app.register(googleAuthRoutes(deps, opts?.googleKeys));
   await app.register(projectRoutes(deps));
   await app.register(deploymentRoutes(deps));
   await app.register(orgRoutes(deps));

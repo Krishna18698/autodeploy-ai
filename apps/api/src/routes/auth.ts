@@ -403,9 +403,10 @@ export const authRoutes =
             name: string | null;
             avatar_url: string | null;
             email: string | null;
+            google: boolean;
           }[]
         >`
-        select id, login, name, avatar_url, email from users where id = ${a.userId}`;
+        select id, login, name, avatar_url, email, google_sub is not null as google from users where id = ${a.userId}`;
         const orgs = await deps.sql<
           {
             id: string;
@@ -426,6 +427,7 @@ export const authRoutes =
             avatarUrl: user.avatar_url,
             email: user.email,
             githubConnected: a.githubId !== null,
+            googleConnected: user.google,
             platformAdmin: isPlatformAdmin(deps.env, a),
           },
           org,

@@ -1,5 +1,6 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ import {
   useMe,
   useMembers,
   usePendingInvites,
+  useProviders,
   useQuota,
   useTokens,
   useTwoFactor,
@@ -77,6 +79,7 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-5">
             <TwoFactor />
             <GitHubLink />
+            <GoogleLink />
             <Notifications />
             <DeleteAccount />
           </div>
@@ -118,6 +121,67 @@ function GitHubLink() {
           </a>
         </div>
       )}
+    </Panel>
+  );
+}
+
+function GoogleLink() {
+  const me = useMe();
+  const offered = useProviders().data?.google;
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  // Back from Google: a one-line note (fixed texts only, never the URL's).
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    const g = new URLSearchParams(window.location.search).get('google');
+    if (g === 'connected') setNote('Google connected: you can now sign in with it.');
+    if (g === 'taken')
+      setNote('That Google account is already linked to another AutoDeploy account.');
+    if (g) {
+      // Once shown, gone from the address (a refresh doesn't repeat it).
+      const url = new URL(window.location.href);
+      url.searchParams.delete('google');
+      window.history.replaceState(null, '', url);
+    }
+  }, []);
+  if (!me.data || offered === false) return null;
+  const connected = me.data.user.googleConnected;
+  const disconnect = async () => {
+    setBusy(true);
+    try {
+      await del('/api/v1/me/google');
+      await qc.invalidateQueries({ queryKey: ['me'] });
+      setNote(null);
+      toast('Google disconnected', 'ok');
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not disconnect Google', 'fail');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel title="Google">
+      {note && <p className="mb-3 text-[13px] text-fg">{note}</p>}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-[13px] text-muted">
+          {connected
+            ? 'Connected: you can sign in with Google.'
+            : 'Connect your Google account to sign in with it too.'}
+        </p>
+        {connected ? (
+          <Button loading={busy} onClick={disconnect} className="shrink-0">
+            Disconnect
+          </Button>
+        ) : (
+          <a
+            href={apiUrl('/auth/google/connect')}
+            className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-fg px-3.5 text-[13px] font-medium text-bg hover:bg-fg/90 pointer-coarse:h-10"
+          >
+            Connect Google
+          </a>
+        )}
+      </div>
     </Panel>
   );
 }

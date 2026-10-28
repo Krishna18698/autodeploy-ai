@@ -66,6 +66,9 @@ const EnvSchema = z
     GITHUB_APP_SLUG: z.string().optional(),
     GITHUB_APP_CLIENT_ID: z.string().optional(),
     GITHUB_APP_CLIENT_SECRET: z.string().optional(),
+    /** Sign in with Google (an OAuth web client; redirect: <API_PUBLIC_URL>/auth/google/callback). */
+    GOOGLE_CLIENT_ID: z.string().optional(),
+    GOOGLE_CLIENT_SECRET: z.string().optional(),
     GITHUB_APP_PRIVATE_KEY: z.string().optional(),
     GITHUB_WEBHOOK_SECRET: z.string().optional(),
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(300),
@@ -96,6 +99,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(`Invalid environment:\n${issues.join('\n')}`);
   }
   return parsed.data;
+}
+
+export function googleConfigured(
+  env: Pick<Env, 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET'>,
+): boolean {
+  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 }
 
 export function githubAppConfigured(env: Env): boolean {

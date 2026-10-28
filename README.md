@@ -38,7 +38,7 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
   containers that wake on the first request and sleep after 15 idle minutes, so
   one free VM hosts many of them ([ADR 0008](docs/adr/0008-ssr-runtime.md)).
 - **Streams** build logs and status over SSE (resumable), via Kafka.
-- **Signs people in** with GitHub or with email and a password (scrypt hashes,
+- **Signs people in** with GitHub, Google, or email and a password (scrypt hashes,
   confirmed addresses, single-use reset links, no account enumeration). Session
   cookies are host-only with the `__Host-` prefix, so the sites users deploy
   under the same domain never receive them.
