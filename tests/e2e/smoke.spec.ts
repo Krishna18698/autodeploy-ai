@@ -103,14 +103,27 @@ async function site(
 ): Promise<{ status: number; body: string }> {
   const target = new URL(path, url);
   if (REMOTE) {
-    const r = await fetch(target, {
-      method: init.method ?? 'GET',
-      body: init.body,
-      headers: init.body ? { 'content-type': 'application/json' } : {},
-      redirect: 'manual',
-      signal: AbortSignal.timeout(60_000),
-    });
-    return { status: r.status, body: await r.text() };
+    // 2026-10-23: a just-deployed site once took over 60 s to answer this
+    // machine. A read is asked again (up to 3 times, 20 s each), and every miss
+    // is logged with its cause: this machine's network (DNS, connecting) or a
+    // slow answer. A POST is sent once: it may have done its work.
+    const read = init.method === undefined || init.method === 'GET' || init.method === 'HEAD';
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const r = await fetch(target, {
+          method: init.method ?? 'GET',
+          body: init.body,
+          headers: init.body ? { 'content-type': 'application/json' } : {},
+          redirect: 'manual',
+          signal: AbortSignal.timeout(read ? 20_000 : 60_000),
+        });
+        return { status: r.status, body: await r.text() };
+      } catch (err) {
+        const e = err as Error & { cause?: { code?: string } };
+        console.warn(`site ${target.href}: attempt ${attempt} failed (${e.cause?.code ?? e.name})`);
+        if (!read || attempt === 3) throw err;
+      }
+    }
   }
   const edge = new URL(EDGE_URL);
   return new Promise((resolveP, reject) => {

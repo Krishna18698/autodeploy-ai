@@ -152,6 +152,35 @@ function candidates(p: string): string[] {
 
 const MANIFEST = '.autodeploy-manifest.tsv';
 const EDGE_CACHE = 'public, max-age=31536000, immutable';
+
+// Backblaze sometimes answers "busy" (503) and expects a retry. aws4fetch
+// retries 10 times by default with growing waits (up to ~50 s), long enough to
+// leave a visitor on a hung page; here a read gets 2 retries within 10 s, and
+// then the page says the site is temporarily unavailable.
+export const STORAGE_RETRIES = 2;
+export const STORAGE_TIMEOUT_MS = 10_000;
+
+/** Reads files of one artifact from storage, each read bounded in time. */
+export function storageReader(
+  env: Pick<
+    Env,
+    'S3_ACCESS_KEY_ID' | 'S3_SECRET_ACCESS_KEY' | 'S3_REGION' | 'S3_ENDPOINT' | 'S3_BUCKET'
+  >,
+  prefix: string,
+  timeoutMs = STORAGE_TIMEOUT_MS,
+) {
+  const s3 = new AwsClient({
+    accessKeyId: env.S3_ACCESS_KEY_ID,
+    secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+    service: 's3',
+    region: env.S3_REGION,
+    retries: STORAGE_RETRIES,
+  });
+  return (key: string) =>
+    s3.fetch(`${env.S3_ENDPOINT}/${env.S3_BUCKET}/${prefix}/${key}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+}
 const BROWSER_CC = 'x-browser-cache-control';
 // Per-isolate memo of artifact file lists; artifacts never change, so no expiry.
 const manifests = new Map<string, Set<string>>();
@@ -333,19 +362,13 @@ export default {
       return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
     }
 
-    const s3 = new AwsClient({
-      accessKeyId: env.S3_ACCESS_KEY_ID,
-      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-      service: 's3',
-      region: env.S3_REGION,
-    });
     const cache = caches.default;
     const prefix = `sites/${target.artifactSha}`;
-    const fromStorage = (key: string) =>
-      s3.fetch(`${env.S3_ENDPOINT}/${env.S3_BUCKET}/${prefix}/${key}`);
+    const fromStorage = storageReader(env, prefix);
     // The manifest says which files exist, so misses (SPA routes, /about →
     // about.html probing) never reach storage. Free B2 allows 2,500 reads a day.
-    const files = await loadManifest(target.artifactSha, cache, ctx, fromStorage);
+    // Storage not answering: probe the files themselves (and fail there).
+    const files = await loadManifest(target.artifactSha, cache, ctx, fromStorage).catch(() => null);
 
     const tryKey = async (key: string): Promise<Response | null> => {
       if (key === MANIFEST || (files && !files.has(key))) return null;
