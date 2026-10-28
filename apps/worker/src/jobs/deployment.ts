@@ -22,7 +22,7 @@ import {
   takeDownRoutes,
   transition,
 } from '@autodeploy/db';
-import { readTree } from '@autodeploy/github';
+import { GitHubClient, parseRepoUrl, readTree } from '@autodeploy/github';
 import { enqueue } from '@autodeploy/queue';
 import { retry } from '@autodeploy/resilience';
 import { currentTraceparent, withSpan } from '@autodeploy/telemetry';
@@ -63,6 +63,7 @@ type DepRow = {
   slug: string;
   repo_url: string;
   repo_full_name: string;
+  default_branch: string;
   root_dir: string;
   executor: 'sandbox' | 'github_actions';
   installation_id: number | null;
@@ -75,7 +76,7 @@ type DepRow = {
 export async function loadDeployment(deps: Deps, id: string): Promise<DepRow | undefined> {
   const [row] = await deps.sql<DepRow[]>`
     select d.id, d.org_id, d.project_id, d.number, d.status, d.kind, d.commit_sha, d.pr_number, d.from_fork, d.build_config, d.started_at,
-           p.slug, p.repo_url, p.repo_full_name, p.root_dir, p.executor, p.installation_id,
+           p.slug, p.repo_url, p.repo_full_name, p.default_branch, p.root_dir, p.executor, p.installation_id,
            p.node_version, p.install_command, p.build_command, p.output_dir
     from deployments d join projects p on p.id = d.project_id where d.id = ${id}`;
   return row;
@@ -264,9 +265,32 @@ export async function buildDeployment(deps: Deps, ctx: JobContext): Promise<void
         },
         createRedactor(Object.values(secrets)),
       );
+      const installations = deps.installations;
+      const installationId = d.installation_id;
       const executor: Executor =
         d.executor === 'github_actions'
-          ? new GitHubActionsExecutor(Boolean(deps.installations))
+          ? new GitHubActionsExecutor(
+              {
+                env: deps.env,
+                valkey: deps.valkey,
+                storage: deps.storage,
+                github:
+                  installations && installationId
+                    ? new GitHubClient({ token: () => installations.get(installationId) })
+                    : null,
+                warn: (f, m) => deps.log.warn(f, m),
+              },
+              {
+                repo: parseRepoUrl(d.repo_url),
+                fullName: d.repo_full_name,
+                branch: d.default_branch,
+                sha: d.commit_sha ?? d.default_branch,
+                deploymentId,
+                projectId: d.project_id,
+                orgId: d.org_id,
+                label: `${d.slug} #${d.number}`,
+              },
+            )
           : new SandboxExecutor(deps.env, (f, m) => deps.log.warn(f, m));
 
       try {

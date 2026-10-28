@@ -158,6 +158,39 @@ export class GitHubClient {
     });
   }
 
+  /** A file's text on a branch; null when it isn't there. */
+  async fileText(r: RepoRef, path: string, ref: string): Promise<string | null> {
+    try {
+      const f = await this.get<{ content?: string; encoding?: string }>(
+        `/repos/${r.owner}/${r.repo}/contents/${path}?ref=${encodeURIComponent(ref)}`,
+      );
+      return f.encoding === 'base64' && f.content
+        ? Buffer.from(f.content, 'base64').toString('utf8')
+        : null;
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Starts a workflow_dispatch workflow on a branch (needs Actions: write). */
+  async dispatchWorkflow(
+    r: RepoRef,
+    file: string,
+    ref: string,
+    inputs: Record<string, string>,
+  ): Promise<void> {
+    await this.send('POST', `/repos/${r.owner}/${r.repo}/actions/workflows/${file}/dispatches`, {
+      ref,
+      inputs,
+    });
+  }
+
+  /** Cancels a workflow run (a deploy was cancelled, or ran out of time). */
+  async cancelRun(r: RepoRef, runId: string): Promise<void> {
+    await this.send('POST', `/repos/${r.owner}/${r.repo}/actions/runs/${runId}/cancel`);
+  }
+
   /** Opens a PR containing one commit with the given file contents (Git Data API). */
   async openPullRequest(
     r: RepoRef,

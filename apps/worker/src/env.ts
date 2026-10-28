@@ -96,6 +96,13 @@ const EnvSchema = z.object({
   SANDBOX_CGROUP_PARENT: z.string().default(''),
   SANDBOX_MEMORY: z.string().default('3g'),
   BUILD_TIMEOUT_S: z.coerce.number().int().min(30).default(900),
+  // ---- builds on the user's GitHub Actions (ADR 0010) ----
+  /** Biggest build output a workflow may send back, compressed. */
+  CI_MAX_OUTPUT_MB: z.coerce.number().int().min(1).default(400),
+  /** ...and once unpacked (refused before unpacking: a compressed bomb can't fill the disk). */
+  CI_MAX_UNPACKED_MB: z.coerce.number().int().min(1).default(3072),
+  /** How long GitHub may take to start the workflow (runners can queue). */
+  CI_START_TIMEOUT_S: z.coerce.number().int().min(30).default(600),
   VALIDATOR: z.enum(['docker', 'skip']).default('docker'),
   VALIDATOR_IMAGE: z.string().default('autodeploy-validator:latest'),
   // A validation takes well under a minute (a server start is capped at 30 s inside).
