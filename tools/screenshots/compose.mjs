@@ -6,13 +6,14 @@
  *   project/featured/autodeploy-featured.png|jpg    portfolio cover: headline, desktop + phone (4:3)
  *   project/featured/autodeploy-card.png|jpg        portfolio card image, built to read at ~300px wide
  *   project/featured/card-preview*.png              each inside a card like the portfolio's own
+ *   docs/screenshots/*.jpg                          web-sized copies the README shows (committed)
  *
  * Every composition is an HTML page rendered by Chromium, so layout is plain CSS.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from '@playwright/test';
-import { OUT, RAW } from './config.mjs';
+import { OUT, RAW, REPO } from './config.mjs';
 
 const FRAMED = path.join(OUT, 'screens', 'framed');
 const COVERS = path.join(OUT, 'covers');
@@ -351,6 +352,56 @@ function cardPreview(image) {
   </div>`;
 }
 
+// ---------- README images ------------------------------------------------------------------
+
+/**
+ * Web-sized copies for the README, in the repo because project/ is gitignored and GitHub only
+ * shows committed files. Rebuilt from scratch, so the README never shows a screen that's gone.
+ */
+const README_SHOTS = {
+  desktop: [
+    '10-import-analysis',
+    '15-deploy-building',
+    '17-deploy-live',
+    '18-rollback-dialog',
+    '08-overview',
+  ],
+  mobile: ['15-deploy-building', '17-deploy-live'],
+};
+async function readmeAssets() {
+  const docs = path.join(REPO, 'docs', 'screenshots');
+  fs.rmSync(docs, { recursive: true, force: true });
+  fs.mkdirSync(docs, { recursive: true });
+  const jpg = async (src, out, width, height, scale, quality) => {
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+    await page.setContent(
+      `<body style="margin:0"><img src="${img(src)}" style="display:block;width:${width}px;height:${height}px"></body>`,
+      { waitUntil: 'load' },
+    );
+    await page.screenshot({ path: out, type: 'jpeg', quality });
+    await page.close();
+  };
+  for (const id of README_SHOTS.desktop.filter((i) => has('desktop', i)))
+    await jpg(
+      path.join(RAW, 'desktop', `${id}.png`),
+      path.join(docs, `${id}.jpg`),
+      1440,
+      900,
+      1,
+      82,
+    );
+  for (const id of README_SHOTS.mobile.filter((i) => has('mobile', i)))
+    await jpg(
+      path.join(RAW, 'mobile', `${id}.png`),
+      path.join(docs, `${id}-phone.jpg`),
+      390,
+      700,
+      2,
+      75,
+    );
+  fs.copyFileSync(path.join(FEATURED, 'autodeploy-featured.jpg'), path.join(docs, 'featured.jpg'));
+}
+
 // ---------- main ---------------------------------------------------------------------------
 
 browser = await chromium.launch();
@@ -388,6 +439,8 @@ try {
     height: 640,
   });
   console.log('✓ featured');
+  await readmeAssets();
+  console.log('✓ README images (docs/screenshots)');
 } finally {
   await browser.close();
 }

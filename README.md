@@ -1,5 +1,7 @@
 # AutoDeploy
 
+![AutoDeploy: a real deploy of the owner's portfolio, building on the desktop and live on the phone](docs/screenshots/featured.jpg)
+
 **Deploys that fix themselves.** Connect a repository; AutoDeploy works out
 how to build it, builds it in a sandbox, repairs the failures it understands,
 validates the result in a real browser, and serves it from the edge — showing
@@ -7,6 +9,13 @@ every decision it made along the way.
 
 A portfolio project focused on backend reliability: job orchestration,
 failure recovery, multi-tenant security and observability, on a ₹0 budget.
+
+**Try it:** sign in at [app.autodeploy.fyi](https://app.autodeploy.fyi) with
+GitHub, Google or email and you open in a read-only demo with real deploys:
+a Vite site, a server-rendered Next.js app, a type error the AI repaired and a
+person approved, and a build that failed until it was given an environment
+variable. Deploying your own repositories is by approval
+([ADR 0012](docs/adr/0012-portfolio-mode.md)).
 
 ```
 GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKIP LOCKED, leases)
@@ -42,6 +51,12 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
   own: no `Domain=` sharing, sessions stored as `__Host-` cookies another site
   can't plant, and a sibling site's forms treated as cross-site
   ([ADR 0011](docs/adr/0011-cookies-on-the-shared-sites-domain.md)).
+  A site's server that dies (killed for going over its memory, say) is
+  noticed and started again on the next visit, which the gateway retries for
+  it, instead of failing every visitor until a redeploy.
+- **Builds on GitHub Actions** instead, if a project chooses: the repository's
+  own workflow builds it and hands the output back over OIDC, so nothing but
+  the build's result reaches the VM ([ADR 0010](docs/adr/0010-builds-on-github-actions.md)).
 - **Streams** build logs and status over SSE (resumable), via Kafka.
 - **Signs people in** with GitHub, Google, or email and a password (scrypt hashes,
   confirmed addresses, single-use reset links, no account enumeration). One
@@ -49,6 +64,43 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
   proven by a link or by Google, never one only typed in. Session
   cookies are host-only with the `__Host-` prefix, so the sites users deploy
   under the same domain never receive them.
+
+## Screens
+
+Real production data: one deploy of the owner's portfolio, from analysis to live.
+
+| | |
+|---|---|
+| ![Import: the analysis and the evidence for each inference](docs/screenshots/10-import-analysis.jpg) | ![Building, with the log streaming live](docs/screenshots/15-deploy-building.jpg) |
+| **Import** — what it detected, and why | **Build** — logs stream as it builds |
+| ![Live, with the render headless Chromium validated](docs/screenshots/17-deploy-live.jpg) | ![Rollback: one pointer flip, nothing rebuilt](docs/screenshots/18-rollback-dialog.jpg) |
+| **Live** — validated in a real browser first | **Rollback** — a pointer flip, nothing rebuilt |
+
+<p>
+  <img src="docs/screenshots/15-deploy-building-phone.jpg" width="200" alt="The build on a phone">
+  <img src="docs/screenshots/17-deploy-live-phone.jpg" width="200" alt="The deploy live on a phone">
+</p>
+
+Every screen, the covers and a hover video come from
+[`tools/screenshots`](tools/screenshots), which captures the real product and
+re-runs after UI changes.
+
+## Measured
+
+| | |
+|---|---|
+| Duplicate job claims, 500 jobs and 8 workers competing | **0** |
+| 100 concurrent redeliveries of one GitHub webhook | **1** deployment |
+| Cross-tenant access, every role × every route | **0** leaks |
+| Failure corpus (38 repos): recovered by rules + AI | **82%**, **0** false fixes |
+| Real-AI repair (NVIDIA, 11 cases × 3 runs) | **21/24** fixed, **9/9** unfixable escalated, **0** false fixes |
+| Sandbox escape attempts in production | **10/10** contained |
+| Rollback through the API | **11.7 ms**, nothing rebuilt |
+| Server-rendered sites awake at once on the free VM | **20** in ~1.1 GiB; ~15,000 requests, all 200 |
+| The owner's Next.js portfolio, build start to live in production | **133 s** |
+
+Every number, with the command that produced it and the bugs the tests found:
+[`docs/measurements.md`](docs/measurements.md).
 
 ## Backend concepts, and where they live
 
@@ -66,6 +118,7 @@ GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKI
 | Leader-elected maintenance (advisory lock) | `apps/worker/src/cron.ts` |
 | Scale-to-zero containers: on-demand start, idle reaping, LRU cap, cold-start tracking, SSRF-guarded egress | `apps/worker/src/gateway*`, `infra/sandbox/egress` |
 | Zero-downtime deploys, encrypted backups, restore drill, IaC | `infra/` |
+| Portfolio mode: a read-only demo for everyone, deploys by approval | `apps/api/src/services/portfolio.ts`, `apps/api/src/routes/admin.ts` |
 
 Decisions and trade-offs are in [`docs/adr`](docs/adr); numbers in
 [`docs/measurements.md`](docs/measurements.md).
@@ -90,10 +143,11 @@ API docs: http://localhost:4000/docs.
 ## Tests
 
 ```bash
-pnpm test               # 151 unit tests (pure domain code)
-pnpm test:integration   # 25 tests on real Postgres / Valkey / Kafka (Testcontainers)
+pnpm test               # 348 unit tests (pure domain code, the gateway, real Chromium for cookies)
+pnpm test:integration   # 124 tests on real Postgres / Valkey / Kafka (Testcontainers),
+                        #   including an authorization matrix generated from every route
 pnpm test:e2e           # 8 Playwright tests against the running stack
-pnpm test:smoke         # 16 end-to-end checks of what a user does (see below)
+pnpm test:smoke         # 18 end-to-end checks of what a user does (see below)
 pnpm corpus --mode ai   # 38 labelled repos deployed for real (also --mode rules)
 pnpm tsx tests/ai-eval/repair.ts   # real-AI repair on the corpus's AI cases, no containers
 pnpm chaos              # kill the worker, Kafka, DB connections, storage mid-deploy
@@ -121,24 +175,29 @@ Results and the bugs they caught: [`docs/measurements.md`](docs/measurements.md)
 apps/      api · worker · web (landing + dashboard) · edge (Cloudflare Worker) · cli
 packages/  core (pure domain) · contracts · db · queue · events · ai · github · storage · crypto · resilience · telemetry
 infra/     compose (local) · deploy (prod) · sandbox · terraform · backup · observability
-docs/      adr · runbooks · measurements
-tests/     fixtures (failure corpus)
+docs/      adr · runbooks · measurements · screenshots
+tests/     unit · integration · e2e · fixtures (failure corpus) · chaos · load
+tools/     screenshots (captures the real product; its flows run read-only against production)
 ```
 
 ## Status
 
-**Live** at [app.autodeploy.fyi](https://app.autodeploy.fyi)
-(free for everyone, with per-account limits; sites are served at
-`<name>.autodeploy.dpdns.org`):
+**Live** at [app.autodeploy.fyi](https://app.autodeploy.fyi), in portfolio
+mode ([ADR 0012](docs/adr/0012-portfolio-mode.md)): anyone can sign in and look
+around a read-only demo of real deploys; deploying your own repositories is by
+approval (asked for from the dashboard, decided by an admin, answered by
+email), with per-account limits after that. Sites are served at
+`<name>.autodeploy.dpdns.org`:
 
 - API, worker, SSR gateway, Postgres, Valkey and Kafka on one Oracle Cloud
-  Always Free VM (Ampere A1), reached only through a Cloudflare Tunnel.
-- Sites served by a Cloudflare Worker from Backblaze B2; the dashboard on Vercel,
-  served on the app hostname through the tunnel (Caddy joins it with the API
-  as one site), so it never shares the Worker's daily request quota.
-- GitHub App sign-in and private repositories.
-- The production smoke suite passes 16/16, including a real AI repair approved
-  in the dashboard.
+  Always Free VM (Ampere A1), reached only through a Cloudflare Tunnel. Sites
+  and builds share at most 90% of its CPUs, so the platform always keeps 10%.
+- Sites served by a Cloudflare Worker from Backblaze B2, which keeps serving
+  when Workers KV fails; the dashboard on Vercel, calling the API directly and
+  saying so when it's down.
+- Sign-in with GitHub, Google or email; private repositories through the GitHub App.
+- The production smoke suite covers every deploy path, including a real AI
+  repair approved in the dashboard.
 
 Connected: AI repair (NVIDIA, OpenRouter fallback, Workers AI classifier),
 email (Resend), telemetry (Grafana Cloud over OTLP) and error tracking

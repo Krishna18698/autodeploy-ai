@@ -1,14 +1,14 @@
 # Issues to fix
 
-What's left and what's done, kept current. Last updated 2026-10-29.
+What's left and what's done, kept current. Last updated 2026-10-30.
 
 ## Not done, needed before launch
 
 The owner's order: finish the product first; the last three steps below come
 last, each only on the owner's yes.
 
-- [ ] **Google Search Console on `autodeploy.dpdns.org`**, before opening sign-ups: one phishing site can get every user site flagged, and Search Console tells the owner the same day (owner's Google account and one DNS record).
-- [ ] **Open sign-ups:** remove `ALLOWED_GITHUB_LOGINS` from `.env.prod` and ship. Ready: per-account limits, email sign-in with verification and reset, two-step sign-in, legal pages.
+- [ ] **Fill the demo org** with real deploys of the e2e fixtures (a static site, a server-rendered app, the TypeScript error the AI fixes, the one that needs a variable): about 4 deploys. Needs an API token made in the demo org (scopes deploy + admin), since tokens are made from a browser session.
+- [ ] **Google Search Console on `autodeploy.dpdns.org`**: one phishing site can get every user site flagged, and Search Console tells the owner the same day (owner's Google account and one DNS record). Less urgent with deploys by approval.
 - [ ] **Make the GitHub App public** (app settings → Advanced) so other people can install it on their own accounts.
 - [ ] **Make the repository public.**
 
@@ -22,7 +22,7 @@ last, each only on the owner's yes.
 - [ ] **Variables from the command line:** an `autodeploy env` command in the CLI.
 
 **To watch**
-- [ ] **The validation time-limit test failed once** in a full parallel unit run on 2026-10-28 (passed 3 full runs, 3 alone and 6 under heavy CPU load right after). Its checks now print the stand-in Docker's calls and the timing, so the next failure explains itself. Failed again once on 2026-10-29 in a full run (the new real-browser tests run alongside it), passed on the rerun; that run's output wasn't kept, so keep the whole log next time.
+- [ ] **The validation time-limit test failed once** in a full parallel unit run on 2026-10-28 (passed 3 full runs, 3 alone and 6 under heavy CPU load right after). Its checks now print the stand-in Docker's calls and the timing, so the next failure explains itself. Failed again once on 2026-10-29 in a full run (the new real-browser tests run alongside it), passed on the rerun; that run's output wasn't kept, so keep the whole log next time. Failed a third time later on 2026-10-29 in a full run (passed 3 of 3 alone); its output was filtered to the summary again, so still unexplained.
 - [ ] **Slow site loads in the smoke suite:** each miss is now logged with its cause (see Done, 2026-10-28).
 
 **Clean-up with a date**
@@ -36,7 +36,17 @@ last, each only on the owner's yes.
 
 ## Done
 
+**2026-10-30**
+- [x] **Portfolio mode on in production** (ADR 0012): `DEPLOY_APPROVAL=approval`, `DEMO_ORG_NAME=AutoDeploy demo`, the sign-in allowlist emptied, shipped from the Mac. Both API containers have the settings; the demo org was made at start-up with the owner as its owner. Anyone can sign in with GitHub, Google or email; accounts that existed before keep deploying.
+- [x] **Measurements and README brought up to date:** the capacity test, the CPU split, the 2026-10-24 AI evaluation, the faster wakes and the owner's portfolio deploy (133 s, build start to live) added to `docs/measurements.md`, with eight bugs found since 2026-10-22; the README gets a Measured table and loses two stale lines (the dashboard no longer goes through the tunnel; sign-in isn't GitHub only).
+
 **2026-10-29**
+- [x] **Portfolio mode built** (ADR 0012, migration 0020; turned on 2026-10-30): a read-only demo org everyone joins as a viewer, deploying by approval, access requests emailed to the platform admins and decided in Admin. Integration tests cover the gate, the requests, approval and the demo's member list; the authorization matrix covers the new routes.
+- [x] **A site's server that died stayed broken until a redeploy:** the owner's portfolio was killed for going over its memory at 10:11 UTC; the gateway kept sending visitors to the gone container (and their visits kept it from ever going idle), so it answered errors for about 10 minutes until a deploy replaced it. The gateway now notices (the container exited, was killed for memory, or is gone), forgets it, starts it again on the next visit and retries a page load once; its 30-second pass also drops dead ones nobody is visiting. The reason ("ran out of memory (its limit is 256m)") is recorded on the server's panel.
+- [x] **The gateway's 502 page went out empty:** it asked "headers sent?" after sending them itself, so visitors saw Cloudflare's error page instead of ours.
+- [x] **Object storage calls could hang forever:** no timeout was set, so during Backblaze's US-East trouble (10:31-11:49 UTC: every address in the bucket's region unreachable from the VM) every log and screenshot request hung until Cloudflare gave up. They now give up after 20 s without activity (10 s to connect) and are retried. The SDK's own `requestTimeout` only warns; the socket timeout is the one that ends a request.
+- [x] **The deployment page stayed on "Ready" after a deploy went live:** it stopped listening at Ready, so the last step never reached it.
+- [x] **Portfolio screenshots** (`tools/screenshots`): every screen of a real deploy on desktop and phone, framed, a contact sheet, covers, the featured image and card, a 4 s hover video, and read-only flows against production (12/12).
 - [x] **Google sign-in on production:** the owner signed in with Google.
 - [x] **Builds on GitHub Actions, the first real build** (ADR 0010): a private test repository (`autodeploy-actions-test`), setup pull request merged, switched, deployed (#4): built on GitHub's runner (x86_64, 35 s, run linked in the log), the same files as AutoDeploy's own build (artifact reused), live and serving. Not checked: the VM-side clean-up (needs SSH).
 - [x] **The log panel flashed empty as a deploy went live:** the page threw its log away and fetched it again when the live stream closed; it now starts over only for another deployment. The smoke suite's static-site test fails if the panel blanks.
