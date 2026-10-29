@@ -15,8 +15,11 @@
 //      Lax outside a top-level link) are withheld here.
 //   4. Planted copies of the site's own cookie names are deleted from the
 //      browser, on every path a planted one could hide on.
-// What stays open (docs/issues-to-fix.md): a sibling can evict or flood
-// cookies, and plant the ones a site's scripts set for themselves.
+// The edge, for every site, cleans up a cookie flood and keeps one site's
+// Clear-Site-Data from clearing the others' cookies (cookieFlood,
+// ownClearSiteData below). What stays open (ADR 0011): a flood past
+// Cloudflare's 128 KB, eviction before the clean-up, and planting the
+// cookies a site's scripts set for themselves.
 
 export const OWN_COOKIE_PREFIX = '__Host-ad_';
 
@@ -267,4 +270,78 @@ export function deleteCookies(
     }
   }
   return out;
+}
+
+// At the edge, for every site (static ones too): what a sibling can still do
+// to the others through the shared domain, undone where it can be.
+
+/**
+ * More cookies than a site needs. Browsers keep about 180 per registrable
+ * domain, every site's together, so a sibling filling the jar evicts the
+ * others' cookies (signing visitors out).
+ */
+export const FLOOD_COOKIES = 50;
+/** The gateway (Node) refuses headers past 16 KB; this leaves room for the rest. */
+export const MAX_FORWARDED_COOKIE_BYTES = 12 * 1024;
+export const MAX_FLOOD_DELETIONS = 400;
+
+/**
+ * A flooded Cookie header (too many cookies, or too long for a server): the
+ * Set-Cookie headers deleting the shared domain's copy of every name in it,
+ * and the header to forward to a server-rendered site, cut to what the gateway
+ * takes, this host's __Host- cookies first (no sibling can set those). Null for
+ * a normal header. Cloudflare refuses requests whose headers pass 128 KB before
+ * the edge runs, so a flood past that can't be cleaned up from here.
+ */
+export function cookieFlood(
+  header: string | null | undefined,
+  pathname: string,
+  parent: string | null,
+): { deletions: string[]; header: string | null } | null {
+  if (!header) return null;
+  const pairs = header
+    .split(';')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (pairs.length <= FLOOD_COOKIES && header.length <= MAX_FORWARDED_COOKIE_BYTES) return null;
+  const names = new Set<string>();
+  for (const p of pairs) {
+    const name = p.slice(0, Math.max(p.indexOf('='), 0)).trim();
+    if (TOKEN.test(name) && !hostPrefixed(name)) names.add(name);
+  }
+  // Path=/ for every name first: that's where a flood reaches every page.
+  const deletions: string[] = [];
+  if (parent)
+    for (const path of cookiePaths(pathname))
+      for (const name of names)
+        if (deletions.length < MAX_FLOOD_DELETIONS)
+          deletions.push(`${name}=; Domain=${parent}; Path=${path}; Max-Age=0; Secure`);
+  const own = (p: string) => p.startsWith('__Host-');
+  const kept: string[] = [];
+  let bytes = 0;
+  for (const p of [...pairs.filter(own), ...pairs.filter((p) => !own(p))]) {
+    if (bytes + p.length + 2 > MAX_FORWARDED_COOKIE_BYTES) continue;
+    kept.push(p);
+    bytes += p.length + 2;
+  }
+  return { deletions, header: kept.length ? kept.join('; ') : null };
+}
+
+/**
+ * A site's Clear-Site-Data without "cookies": browsers clear cookies for the
+ * whole registrable domain, so one site could sign visitors out of every
+ * other. "*" keeps its other kinds, which are the site's own. Null when
+ * nothing is left.
+ */
+export function ownClearSiteData(value: string | null): string | null {
+  if (!value) return null;
+  const out = new Set<string>();
+  for (const raw of value.split(',')) {
+    const t = raw.trim();
+    const kind = t.toLowerCase();
+    if (!t || kind === '"cookies"') continue;
+    if (kind === '"*"') for (const k of ['"cache"', '"storage"', '"executionContexts"']) out.add(k);
+    else out.add(t);
+  }
+  return out.size ? [...out].join(', ') : null;
 }

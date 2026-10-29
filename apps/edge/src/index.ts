@@ -4,6 +4,7 @@ import {
   routeKey,
   type SiteRoute,
 } from '@autodeploy/core/hostnames';
+import { cookieFlood, ownClearSiteData } from '@autodeploy/core/site-cookies';
 import { AwsClient } from 'aws4fetch';
 
 // The edge router. Every request to <label>.<domain> lands here:
@@ -279,10 +280,15 @@ async function proxyRuntime(
   host: string,
   target: RouteValue,
   url: URL,
+  cookie: string | null | undefined,
 ): Promise<Response> {
   if (!env.RUNTIME_URL) return notFound('Server-rendered sites are not enabled here.', 502);
   const headers = new Headers(request.headers);
   headers.delete('host');
+  if (cookie !== undefined) {
+    if (cookie) headers.set('cookie', cookie);
+    else headers.delete('cookie');
+  }
   headers.set('x-forwarded-host', host);
   headers.set('x-forwarded-proto', url.protocol.replace(':', ''));
   const client = request.headers.get('cf-connecting-ip');
@@ -314,6 +320,121 @@ function notFound(message: string, status = 404) {
       ...SECURITY_HEADERS,
     },
   });
+}
+
+/**
+ * Every site's answer, for the domain the sites share (ADR 0011): no
+ * Clear-Site-Data "cookies" (it clears every site's), a flood's clean-up, and
+ * Origin-Agent-Cluster, so a browser that still lets document.domain join
+ * pages of one site (Chrome no longer does by default) keeps siblings apart.
+ */
+export function forSite(res: Response, deletions: string[]): Response {
+  const out = new Response(res.body, res);
+  out.headers.set('origin-agent-cluster', '?1');
+  const clear = ownClearSiteData(out.headers.get('clear-site-data'));
+  if (clear) out.headers.set('clear-site-data', clear);
+  else out.headers.delete('clear-site-data');
+  for (const d of deletions) out.headers.append('set-cookie', d);
+  return out;
+}
+
+/** A request to a site: its deployment's files, or its server. */
+async function serveSite(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  reqHost: string,
+  route: SiteRoute,
+  /** The Cookie header for a server-rendered site, when a flood's was cut. */
+  cookie: string | null | undefined,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const isRead = request.method === 'GET' || request.method === 'HEAD';
+  const target = await resolveRoute(env, reqHost, route, ctx);
+  if (!target) return notFound('No deployment is live at this address.');
+  // 451: unavailable for legal reasons (an abuse report, or the terms of service).
+  if ('takenDown' in target)
+    return notFound('This site has been taken down for breaking the terms of service.', 451);
+  // Static sites are read-only; a server-rendered one takes any method (forms, API routes).
+  if (target.mode !== 'ssr' && !isRead) {
+    return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
+  }
+
+  const cache = caches.default;
+  const prefix = `sites/${target.artifactSha}`;
+  const fromStorage = storageReader(env, prefix);
+  // The manifest says which files exist, so misses (SPA routes, /about →
+  // about.html probing) never reach storage. Free B2 allows 2,500 reads a day.
+  // Storage not answering: probe the files themselves (and fail there).
+  const files = await loadManifest(target.artifactSha, cache, ctx, fromStorage).catch(() => null);
+
+  const tryKey = async (key: string): Promise<Response | null> => {
+    if (key === MANIFEST || (files && !files.has(key))) return null;
+    // Every path under sites/<sha>/ is immutable, so the edge keeps it for a
+    // year, even index.html; browsers still get the file's own cache policy.
+    const cacheKey = new Request(`https://edge-cache.internal/${prefix}/${key}`);
+    const hit = await cache.match(cacheKey);
+    if (hit) return forBrowser(hit);
+    const res = await fromStorage(key);
+    if (res.status === 404 || res.status === 403) return null;
+    if (!res.ok) throw new Error(`storage ${res.status}`);
+    const stored = new Response(res.body, {
+      status: 200,
+      headers: {
+        'content-type': res.headers.get('content-type') ?? 'application/octet-stream',
+        'cache-control': EDGE_CACHE,
+        [BROWSER_CC]: res.headers.get('cache-control') ?? 'public, max-age=0, must-revalidate',
+        etag: res.headers.get('etag') ?? `"${target.artifactSha.slice(0, 16)}"`,
+        ...SECURITY_HEADERS,
+      },
+    });
+    ctx.waitUntil(cache.put(cacheKey, stored.clone()));
+    return forBrowser(stored);
+  };
+
+  if (target.mode === 'ssr') {
+    // Build assets and public/ files come straight from storage (cached at
+    // the edge, no container woken); pages and API routes go to the server.
+    // An undecodable path is the app's to answer, not a storage key.
+    const key = decodePath(url.pathname);
+    if (isRead && key && files?.has(key)) {
+      const asset = await tryKey(key).catch(() => null);
+      if (asset) return withDeployment(asset, target, request.method);
+    }
+    return proxyRuntime(request, env, reqHost, target, url, cookie);
+  }
+
+  const staticPath = decodePath(url.pathname);
+  if (staticPath === null) return notFound('This address is not valid.', 400);
+  try {
+    let res: Response | null = null;
+    for (const key of candidates(staticPath)) {
+      res = await tryKey(key);
+      if (res) break;
+    }
+    // Single-page apps: unknown routes without a file extension get index.html.
+    if (!res && !/\.[a-z0-9]{1,8}$/i.test(url.pathname)) res = await tryKey('index.html');
+    if (!res) {
+      const custom = await tryKey('404.html');
+      return custom
+        ? new Response(custom.body, { status: 404, headers: custom.headers })
+        : notFound('This page does not exist.');
+    }
+    const headers = new Headers(res.headers);
+    headers.set('x-autodeploy-deployment', `${target.projectSlug}#${target.number}`);
+    if (
+      request.headers.get('if-none-match') &&
+      request.headers.get('if-none-match') === headers.get('etag')
+    ) {
+      return new Response(null, { status: 304, headers });
+    }
+    return new Response(request.method === 'HEAD' ? null : res.body, {
+      status: res.status,
+      headers,
+    });
+  } catch {
+    return notFound('The site is temporarily unavailable.', 502);
+  }
 }
 
 export default {
@@ -352,90 +473,9 @@ export default {
       if (!label || RESERVED_LABELS.has(label)) return fetch(request);
       return notFound('No site lives at this address.');
     }
-    const target = await resolveRoute(env, reqHost, route, ctx);
-    if (!target) return notFound('No deployment is live at this address.');
-    // 451: unavailable for legal reasons (an abuse report, or the terms of service).
-    if ('takenDown' in target)
-      return notFound('This site has been taken down for breaking the terms of service.', 451);
-    // Static sites are read-only; a server-rendered one takes any method (forms, API routes).
-    if (target.mode !== 'ssr' && !isRead) {
-      return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
-    }
-
-    const cache = caches.default;
-    const prefix = `sites/${target.artifactSha}`;
-    const fromStorage = storageReader(env, prefix);
-    // The manifest says which files exist, so misses (SPA routes, /about →
-    // about.html probing) never reach storage. Free B2 allows 2,500 reads a day.
-    // Storage not answering: probe the files themselves (and fail there).
-    const files = await loadManifest(target.artifactSha, cache, ctx, fromStorage).catch(() => null);
-
-    const tryKey = async (key: string): Promise<Response | null> => {
-      if (key === MANIFEST || (files && !files.has(key))) return null;
-      // Every path under sites/<sha>/ is immutable, so the edge keeps it for a
-      // year, even index.html; browsers still get the file's own cache policy.
-      const cacheKey = new Request(`https://edge-cache.internal/${prefix}/${key}`);
-      const hit = await cache.match(cacheKey);
-      if (hit) return forBrowser(hit);
-      const res = await fromStorage(key);
-      if (res.status === 404 || res.status === 403) return null;
-      if (!res.ok) throw new Error(`storage ${res.status}`);
-      const stored = new Response(res.body, {
-        status: 200,
-        headers: {
-          'content-type': res.headers.get('content-type') ?? 'application/octet-stream',
-          'cache-control': EDGE_CACHE,
-          [BROWSER_CC]: res.headers.get('cache-control') ?? 'public, max-age=0, must-revalidate',
-          etag: res.headers.get('etag') ?? `"${target.artifactSha.slice(0, 16)}"`,
-          ...SECURITY_HEADERS,
-        },
-      });
-      ctx.waitUntil(cache.put(cacheKey, stored.clone()));
-      return forBrowser(stored);
-    };
-
-    if (target.mode === 'ssr') {
-      // Build assets and public/ files come straight from storage (cached at
-      // the edge, no container woken); pages and API routes go to the server.
-      // An undecodable path is the app's to answer, not a storage key.
-      const key = decodePath(url.pathname);
-      if (isRead && key && files?.has(key)) {
-        const asset = await tryKey(key).catch(() => null);
-        if (asset) return withDeployment(asset, target, request.method);
-      }
-      return proxyRuntime(request, env, reqHost, target, url);
-    }
-
-    const staticPath = decodePath(url.pathname);
-    if (staticPath === null) return notFound('This address is not valid.', 400);
-    try {
-      let res: Response | null = null;
-      for (const key of candidates(staticPath)) {
-        res = await tryKey(key);
-        if (res) break;
-      }
-      // Single-page apps: unknown routes without a file extension get index.html.
-      if (!res && !/\.[a-z0-9]{1,8}$/i.test(url.pathname)) res = await tryKey('index.html');
-      if (!res) {
-        const custom = await tryKey('404.html');
-        return custom
-          ? new Response(custom.body, { status: 404, headers: custom.headers })
-          : notFound('This page does not exist.');
-      }
-      const headers = new Headers(res.headers);
-      headers.set('x-autodeploy-deployment', `${target.projectSlug}#${target.number}`);
-      if (
-        request.headers.get('if-none-match') &&
-        request.headers.get('if-none-match') === headers.get('etag')
-      ) {
-        return new Response(null, { status: 304, headers });
-      }
-      return new Response(request.method === 'HEAD' ? null : res.body, {
-        status: res.status,
-        headers,
-      });
-    } catch {
-      return notFound('The site is temporarily unavailable.', 502);
-    }
+    // The shared domain's clean-up, on every site's answer (see forSite).
+    const flood = cookieFlood(request.headers.get('cookie'), url.pathname, sitesOf(env));
+    const res = await serveSite(request, env, ctx, reqHost, route, flood?.header);
+    return forSite(res, flood?.deletions ?? []);
   },
 } satisfies ExportedHandler<Env>;

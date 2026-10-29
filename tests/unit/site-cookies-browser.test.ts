@@ -5,9 +5,11 @@ import { createServer as createHttps } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cookieFlood } from '@autodeploy/core';
 import type { Sql } from '@autodeploy/db';
 import { type Browser, type BrowserContext, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { forSite } from '../../apps/edge/src/index';
 import { SiteCookieMemory } from '../../apps/worker/src/gateway/cookies';
 import { proxyToApp } from '../../apps/worker/src/gateway/proxy';
 
@@ -15,13 +17,15 @@ import { proxyToApp } from '../../apps/worker/src/gateway/proxy';
 // evil.<domain> plays a hostile user's site, shop.<domain> a server-rendered
 // site behind the gateway's proxy (the code production runs), and
 // raw.<domain> the same app with nothing in between, to show each attack
-// works without the protections. Chromium resolves every *.<domain> to the
+// works without the protections. site.<domain> is any site behind the edge
+// Worker's own clean-up (forSite), which evil.<domain> goes without. Chromium resolves every *.<domain> to the
 // local servers, so nothing leaves this machine.
 
 const DOMAIN = 'autodeploy.example.com';
 const SHOP = `https://shop.${DOMAIN}`;
 const EVIL = `https://evil.${DOMAIN}`;
 const RAW = `https://raw.${DOMAIN}`;
+const SITE = `https://site.${DOMAIN}`;
 
 const page = (body: string) => `<!doctype html><meta charset="utf-8"><body>${body}</body>`;
 const esc = (s: string) => s.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -62,8 +66,37 @@ const evil = (path: string) => {
     return page(
       `<form id="f" method="post" action="${SHOP}/echo"></form><script>document.getElementById('f').submit()</script>`,
     );
-  return page(`<a id="go" href="${SHOP}/echo">shop</a>`);
+  if (path === '/flood')
+    return page(
+      `<pre id="seen"></pre><script>for(let i=0;i<60;i++)document.cookie='f'+i+'=1; domain=${DOMAIN}; path=/; secure';</script>`,
+    );
+  return page(`<pre id="seen"></pre><a id="go" href="${SHOP}/echo">shop</a>`);
 };
+// What a hostile server-rendered site answers to sign visitors out everywhere.
+const CLEAR = { 'clear-site-data': '"cookies", "cache"' };
+const site = () => page('<pre id="seen">ok</pre>');
+
+/** Sends `body` the way the edge Worker sends a site's answer. */
+async function viaEdge(
+  req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse,
+  body: string,
+  extra: Record<string, string> = {},
+) {
+  const path = (req.url ?? '/').split('?')[0] ?? '/';
+  const flood = cookieFlood(req.headers.cookie, path, DOMAIN);
+  const out = forSite(
+    new Response(body, { headers: { 'content-type': 'text/html; charset=utf-8', ...extra } }),
+    flood?.deletions ?? [],
+  );
+  const headers: Record<string, string | string[]> = {};
+  out.headers.forEach((v, k) => {
+    if (k !== 'set-cookie') headers[k] = v;
+  });
+  headers['set-cookie'] = out.headers.getSetCookie();
+  res.writeHead(out.status, headers);
+  res.end(await out.text());
+}
 
 let front: Server;
 let browser: Browser;
@@ -90,9 +123,17 @@ beforeAll(async () => {
   const target = { host: '127.0.0.1', port: (app.address() as AddressInfo).port };
   front = createHttps({ key, cert }, async (req, res) => {
     const host = (req.headers.host ?? '').replace(/:\d+$/, '');
+    const path = (req.url ?? '/').split('?')[0] ?? '/';
     if (host === `evil.${DOMAIN}`) {
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(evil((req.url ?? '/').split('?')[0] ?? '/'));
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        ...(path === '/clear' ? CLEAR : {}),
+      });
+      res.end(evil(path));
+      return;
+    }
+    if (host === `site.${DOMAIN}`) {
+      await viaEdge(req, res, site(), path === '/clear' ? CLEAR : {});
       return;
     }
     if (host === `raw.${DOMAIN}`) {
@@ -230,6 +271,34 @@ describe('cookies between users’ sites on a shared domain, in a real browser',
     await seen(ctx, `${SHOP}/logout`);
     expect((await ctx.cookies()).map((c) => c.name)).not.toContain('__Host-ad_sid');
     expect(await seen(ctx, `${SHOP}/echo`)).not.toContain('sid=');
+    await ctx.close();
+  });
+
+  it('without the edge, a sibling’s Clear-Site-Data signs visitors out of every site (the attack)', async () => {
+    const ctx = await visitor();
+    await seen(ctx, `${SHOP}/login`);
+    await seen(ctx, `${EVIL}/clear`);
+    expect((await ctx.cookies()).map((c) => c.name)).not.toContain('__Host-ad_sid');
+    await ctx.close();
+  });
+
+  it('behind the edge, a site’s Clear-Site-Data clears nobody’s cookies', async () => {
+    const ctx = await visitor();
+    await seen(ctx, `${SHOP}/login`);
+    await seen(ctx, `${SITE}/clear`);
+    expect((await ctx.cookies()).map((c) => c.name)).toContain('__Host-ad_sid');
+    await ctx.close();
+  });
+
+  it('a sibling’s cookie flood is cleaned up by the next visit to any site', async () => {
+    const ctx = await visitor();
+    await seen(ctx, `${SHOP}/login`);
+    await seen(ctx, `${EVIL}/flood`);
+    expect((await parentCookies(ctx)).length).toBeGreaterThanOrEqual(60);
+    await seen(ctx, `${SITE}/`);
+    expect(await parentCookies(ctx)).toEqual([]);
+    // The sites' own cookies stay.
+    expect((await ctx.cookies()).map((c) => c.name)).toContain('__Host-ad_sid');
     await ctx.close();
   });
 });

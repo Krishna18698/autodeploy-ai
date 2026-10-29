@@ -100,7 +100,12 @@ async function site(
   url: string,
   path = '/',
   init: { method?: string; body?: string; headers?: Record<string, string> } = {},
-): Promise<{ status: number; body: string; setCookie: string[] }> {
+): Promise<{
+  status: number;
+  body: string;
+  setCookie: string[];
+  headers: Record<string, string>;
+}> {
   const target = new URL(path, url);
   if (REMOTE) {
     // 2026-10-23: a just-deployed site once took over 60 s to answer this
@@ -117,7 +122,12 @@ async function site(
           redirect: 'manual',
           signal: AbortSignal.timeout(read ? 20_000 : 60_000),
         });
-        return { status: r.status, body: await r.text(), setCookie: r.headers.getSetCookie() };
+        return {
+          status: r.status,
+          body: await r.text(),
+          setCookie: r.headers.getSetCookie(),
+          headers: Object.fromEntries(r.headers),
+        };
       } catch (err) {
         const e = err as Error & { cause?: { code?: string } };
         console.warn(`site ${target.href}: attempt ${attempt} failed (${e.cause?.code ?? e.name})`);
@@ -148,6 +158,9 @@ async function site(
             status: res.statusCode ?? 0,
             body,
             setCookie: res.headers['set-cookie'] ?? [],
+            headers: Object.fromEntries(
+              Object.entries(res.headers).map(([k, v]) => [k, String(v)]),
+            ),
           }),
         );
       },
@@ -376,6 +389,18 @@ for (const app of SERVER_APPS) {
           },
         });
         expect(JSON.parse(forged.body)).toEqual({ cookie: null });
+        // The edge's part, for every site: a flood is cleaned up (and cut to
+        // what the gateway takes), a site can't clear every site's cookies.
+        const flood = Array.from({ length: 60 }, (_, i) => `f${i}=1`).join('; ');
+        const flooded = await site(url, '/cookies', {
+          headers: { cookie: `${flood}; __Host-ad_sid=e2e; pad=${'x'.repeat(14_000)}` },
+        });
+        expect(JSON.parse(flooded.body).cookie).toMatch(/^sid=e2e; f0=1; /);
+        expect(flooded.setCookie).toContain(`f0=; Domain=${parent}; Path=/; Max-Age=0; Secure`);
+        const cleared = await site(url, '/clear');
+        expect(cleared.status).toBe(200);
+        expect(cleared.headers['clear-site-data']).toBe('"cache"');
+        expect(cleared.headers['origin-agent-cluster']).toBe('?1');
       }
     } finally {
       const dep = await api<Deployment>(page.request, A(`/api/v1/deployments/${id}`));

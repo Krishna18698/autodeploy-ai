@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./dotenv": "./src/dotenv.ts",
     "./hostnames": "./src/hostnames.ts",
+    "./site-cookies": "./src/site-cookies.ts",
     "./state-machine": "./src/state-machine.ts"
   },
   "scripts": {

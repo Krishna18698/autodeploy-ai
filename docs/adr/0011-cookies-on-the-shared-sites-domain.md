@@ -45,6 +45,21 @@ The SSR gateway applies four rules to every server-rendered site's traffic
    one too): always when one was dropped, and on page loads for its other
    names, before the page's scripts run.
 
+The edge Worker, which answers for every site (static ones too), adds three
+more (`forSite` in `apps/edge/src/index.ts`):
+
+5. A site's `Clear-Site-Data` loses `"cookies"` (and `"*"` keeps only its
+   other kinds): browsers clear cookies for the whole registrable domain, so
+   one site's header signed visitors out of every site (shown in Chromium).
+6. A flooded Cookie header (more than 50 cookies, or past 12 KB) gets the
+   shared domain's copy of every name in it deleted, Path=/ first, at most 400
+   deletions; a server-rendered site is sent this host's `__Host-` cookies
+   first, then the rest up to 12 KB, because the gateway (Node) refuses headers
+   past 16 KB.
+7. `Origin-Agent-Cluster: ?1`, so a browser that still lets `document.domain`
+   join pages of one site keeps siblings apart. Chrome already does by default
+   (the browser test showed no difference), so this is for the others.
+
 The gateway remembers per project which names the app keeps from scripts and
 their SameSite (`site_cookies`, at most 32 names), so rules 2 and 3 hold for a
 visitor who hasn't got the real cookie yet: the attacker can't slip them a
@@ -67,9 +82,15 @@ a database: KV's 1,000 writes and 100,000 reads a day are shared with routing
   and others put their cookies on the highest domain they can, which here is
   the shared one. Their own scripts' cookies stay plantable; `__Host-` names
   protect them.
-- Still open without the list: eviction and flooding (log out, or lock out
-  until cookies are cleared), password managers offering one site's saved
-  password on another, and blocklists judging the whole domain.
+- A site can't use `Clear-Site-Data` to sign its own visitors out; cookie
+  deletions do that.
+- Still open without the list: a flood still evicts the other sites' cookies
+  when it lands (visitors are signed out; rule 6 cleans the jar on their next
+  visit to any site, so signing in again sticks); a flood past Cloudflare's
+  128 KB request headers is refused before the edge runs, so every site fails
+  for that visitor until they clear their cookies; password managers offering
+  one site's saved password on another; and blocklists judging the whole
+  domain (Search Console warns the same day).
 - Tested in a real browser (`tests/unit/site-cookies-browser.test.ts`, which
-  also shows each attack working without the gateway) and through production
+  also shows each attack working without the gateway or the edge) and through production
   by the smoke suite's `ssr-node` checks.

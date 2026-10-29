@@ -22,6 +22,15 @@ createServer((req, res) => {
     res.end('{}');
     return;
   }
+  // What a hostile site would answer to sign visitors out of every site.
+  if (req.url === '/clear') {
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'clear-site-data': '"cookies", "cache"',
+    });
+    res.end('{}');
+    return;
+  }
   if (req.url === '/cookies') {
     req.resume();
     res.writeHead(200, { 'content-type': 'application/json' });

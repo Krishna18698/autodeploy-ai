@@ -1,15 +1,21 @@
 import {
   type CookieFacts,
+  cookieFlood,
   cookiePaths,
   deleteCookies,
+  FLOOD_COOKIES,
   forwardCookies,
   MAX_DELETED_NAMES,
+  MAX_FLOOD_DELETIONS,
+  MAX_FORWARDED_COOKIE_BYTES,
+  ownClearSiteData,
   parentDomain,
   rewriteSetCookies,
   siblingRequest,
 } from '@autodeploy/core';
 import type { Sql } from '@autodeploy/db';
 import { describe, expect, it } from 'vitest';
+import { forSite } from '../../apps/edge/src/index';
 import { MAX_COOKIE_NAMES, SiteCookieMemory } from '../../apps/worker/src/gateway/cookies';
 
 // The rules for cookies on the sites' shared domain, case by case. The same
@@ -271,5 +277,62 @@ describe('the memory of each project’s cookie names', () => {
     const m = new SiteCookieMemory(sql, log);
     expect((await m.get('p')).size).toBe(0);
     await expect(m.learn('p', 'o', new Map([['sid', facts(true)]]))).resolves.toBeUndefined();
+  });
+});
+
+describe('at the edge, for every site', () => {
+  const parent = 'autodeploy.dpdns.org';
+  const jar = (n: number, value = '1') => Array.from({ length: n }, (_, i) => `f${i}=${value}`);
+
+  it('leaves a normal Cookie header alone', () => {
+    expect(cookieFlood(jar(FLOOD_COOKIES).join('; '), '/', parent)).toBeNull();
+    expect(cookieFlood(undefined, '/', parent)).toBeNull();
+  });
+
+  it('a flood of names: deletes the shared domain’s copy of each, never a __Host- one', () => {
+    const header = ['__Host-ad_sid=real', '__host-x=1', 'bad name=1', ...jar(FLOOD_COOKIES)].join(
+      '; ',
+    );
+    const r = cookieFlood(header, '/a', parent);
+    expect(r?.deletions).toContain(`f0=; Domain=${parent}; Path=/; Max-Age=0; Secure`);
+    expect(r?.deletions).toContain(`f0=; Domain=${parent}; Path=/a; Max-Age=0; Secure`);
+    expect(r?.deletions.join('\n')).not.toMatch(/__host-|__Host-|bad name/i);
+    // Path=/ for every name before any deeper path.
+    expect(r?.deletions.slice(0, FLOOD_COOKIES).every((d) => d.includes('Path=/;'))).toBe(true);
+    // Under the size limit, everything still reaches the app.
+    expect(r?.header).toBe(header);
+  });
+
+  it('an oversized header: the app gets this host’s __Host- cookies first, within what the gateway takes', () => {
+    const big = jar(40, 'x'.repeat(400));
+    const r = cookieFlood([...big, '__Host-ad_sid=real'].join('; '), '/', parent);
+    expect(r?.header?.startsWith('__Host-ad_sid=real; f0=')).toBe(true);
+    expect(r?.header?.length).toBeLessThanOrEqual(MAX_FORWARDED_COOKIE_BYTES);
+  });
+
+  it('bounds the deletions', () => {
+    const r = cookieFlood(jar(300).join('; '), '/a/b/c', parent);
+    expect(r?.deletions).toHaveLength(MAX_FLOOD_DELETIONS);
+    expect(cookieFlood(jar(300).join('; '), '/', null)?.deletions).toEqual([]);
+  });
+
+  it('a site’s Clear-Site-Data never clears cookies (it would clear every site’s)', () => {
+    expect(ownClearSiteData('"cookies"')).toBeNull();
+    expect(ownClearSiteData('"cache", "Cookies", "storage"')).toBe('"cache", "storage"');
+    expect(ownClearSiteData('"*"')).toBe('"cache", "storage", "executionContexts"');
+    expect(ownClearSiteData(null)).toBeNull();
+  });
+
+  it('every answer gets its own agent cluster, the filtered Clear-Site-Data and the clean-up', async () => {
+    const app = new Response('ok', {
+      headers: { 'clear-site-data': '"cookies", "cache"', 'set-cookie': 'a=1' },
+    });
+    const out = forSite(app, ['f0=; Domain=d; Path=/; Max-Age=0; Secure']);
+    expect(out.headers.get('origin-agent-cluster')).toBe('?1');
+    expect(out.headers.get('clear-site-data')).toBe('"cache"');
+    expect(out.headers.getSetCookie()).toEqual(['a=1', 'f0=; Domain=d; Path=/; Max-Age=0; Secure']);
+    expect(await out.text()).toBe('ok');
+    const only = forSite(new Response('x', { headers: { 'clear-site-data': '"cookies"' } }), []);
+    expect(only.headers.has('clear-site-data')).toBe(false);
   });
 });
