@@ -1,13 +1,18 @@
 import { timingSafeEqual } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
-import { createServer, type IncomingHttpHeaders } from 'node:http';
+import {
+  createServer,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 import { parseKeyring } from '@autodeploy/crypto';
 import { createSql } from '@autodeploy/db';
 import { Storage } from '@autodeploy/storage';
 import { createLogger, initErrorReporting, reportError } from '@autodeploy/telemetry';
 import { loadEnv } from './env.js';
 import { SiteCookieMemory } from './gateway/cookies.js';
-import { page, proxyToApp } from './gateway/proxy.js';
+import { page, proxyToApp, stopped } from './gateway/proxy.js';
 import { RuntimeManager, RuntimeUnavailable } from './gateway/runtimes.js';
 
 // The SSR runtime gateway (ADR 0008). The edge Worker sends every request for a
@@ -63,6 +68,20 @@ const server = createServer(async (req, res) => {
     res.writeHead(403).end();
     return;
   }
+  await serve(req, res, id);
+});
+
+/** Errors that mean the server couldn't be reached at all: it may have died. */
+const UNREACHABLE = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ECONNRESET',
+  'ETIMEDOUT',
+]);
+
+async function serve(req: IncomingMessage, res: ServerResponse, id: string, retried = false) {
   let inst: Awaited<ReturnType<typeof runtimes.ensure>>;
   try {
     inst = await runtimes.ensure(id);
@@ -101,9 +120,15 @@ const server = createServer(async (req, res) => {
     (err) => {
       log.warn({ err, deploymentId: id }, 'upstream error');
       done();
+      if (!UNREACHABLE.has((err as NodeJS.ErrnoException).code ?? '')) return;
+      const dead = runtimes.dropIfDead(inst).catch(() => false);
+      // A page load can go again, once, to a fresh start of a server that died.
+      if (retried || res.headersSent || (req.method !== 'GET' && req.method !== 'HEAD')) return;
+      void dead.then((gone) => (gone ? serve(req, res, id, true) : stopped(res)));
+      return 'retry';
     },
   );
-});
+}
 
 await mkdir(env.RUNTIME_BUNDLES_DIR, { recursive: true });
 // The API applies migrations; wait for runtime_instances rather than racing it.

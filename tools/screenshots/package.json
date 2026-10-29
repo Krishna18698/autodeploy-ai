@@ -1,0 +1,12 @@
+{
+  "name": "autodeploy-screenshots",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "shots": "node capture.mjs",
+    "shots:deploy": "node capture.mjs --deploy",
+    "frames": "node compose.mjs",
+    "video": "node video.mjs",
+    "test": "playwright test"
+  }
+}

@@ -36,7 +36,10 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
   const [tab, setTab] = useState<'logs' | 'recovery' | 'timeline'>('logs');
   const d = dep.data;
   const live = d ? Boolean(STATUS[d.status].live) : false;
-  const { lines, connected } = useLiveLogs(id, d, live);
+  // A production build that passed is Ready only until it's activated a moment later. Keep
+  // listening until then, or the page stays on Ready after the site has gone live.
+  const activating = d?.status === 'READY' && d.kind === 'production';
+  const { lines, connected } = useLiveLogs(id, d, live || activating);
   const qc = useQueryClient();
   const toast = useToast();
   const [cancel, setCancel] = useState(false);

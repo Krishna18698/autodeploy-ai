@@ -35,13 +35,17 @@ export type SiteCookies = {
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-/** Proxies the request to the app at `app`; `onError` hears when it couldn't be reached. */
+/**
+ * Proxies the request to the app at `app`; `onError` hears when it couldn't be
+ * reached, and answering 'retry' (only before anything was sent back) leaves
+ * the response to it.
+ */
 export function proxyToApp(
   req: IncomingMessage,
   res: ServerResponse,
   app: { host: string; port: number },
   cookies: SiteCookies,
-  onError: (err: Error) => void,
+  onError: (err: Error) => 'retry' | undefined,
 ): void {
   // The site's own address, as the edge Worker saw it.
   const host = (one(req.headers['x-forwarded-host']) ?? '').toLowerCase();
@@ -91,9 +95,21 @@ export function proxyToApp(
     },
   );
   up.on('error', (err) => {
-    onError(err);
-    if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(res.headersSent ? undefined : page(502, 'This site stopped responding.'));
+    if (onError(err) === 'retry' && !res.headersSent) return;
+    stopped(res);
   });
-  req.pipe(up);
+  // A page load has no body to send: ending it here, instead of piping, lets
+  // the same request be sent again if this server turns out to be dead.
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    req.resume();
+    up.end();
+  } else req.pipe(up);
+}
+
+/** The answer when the app stopped responding, or a cut-off end to one already begun. */
+export function stopped(res: ServerResponse) {
+  // Asked once: writeHead itself counts as sent, and the page would go out empty.
+  if (res.headersSent) return void res.end();
+  res.writeHead(502, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(page(502, 'This site stopped responding.'));
 }

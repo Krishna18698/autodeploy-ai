@@ -13,6 +13,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 
 // S3-compatible object storage: SeaweedFS locally, Backblaze B2 in production.
 
@@ -22,7 +23,18 @@ export type StorageConfig = {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /** Tests shorten these; see TIMEOUTS. */
+  timeouts?: { connectMs: number; idleMs: number };
 };
+
+/**
+ * Without these the SDK waits forever: a read on a connection the store has
+ * quietly dropped never ends, and a page waiting on it (a deployment's log)
+ * hangs until Cloudflare gives up. Idle means no bytes either way for that
+ * long, so a large upload or download that keeps moving isn't cut off. A
+ * timed-out request is retried by the SDK on a new connection.
+ */
+const TIMEOUTS = { connectMs: 10_000, idleMs: 20_000 };
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -72,11 +84,18 @@ export class Storage {
 
   constructor(cfg: StorageConfig) {
     this.bucket = cfg.bucket;
+    const t = cfg.timeouts ?? TIMEOUTS;
     this.client = new S3Client({
       endpoint: cfg.endpoint,
       region: cfg.region,
       forcePathStyle: true,
       credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+      // socketTimeout is the idle one; requestTimeout caps the whole request
+      // (a large upload included) and, here, only warns.
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: t.connectMs,
+        socketTimeout: t.idleMs,
+      }),
     });
   }
 

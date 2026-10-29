@@ -10,6 +10,7 @@ import type { Storage } from '@autodeploy/storage';
 import type { Logger } from '@autodeploy/telemetry';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Env } from '../../apps/worker/src/env';
+import { proxyToApp } from '../../apps/worker/src/gateway/proxy';
 import {
   availableMemoryMb,
   type Instance,
@@ -34,7 +35,10 @@ case "$*" in *--cgroup-parent*) [ -f "${bin}/refuse-cgroup" ] && { echo "cgroup 
 case "$1" in
   run) echo container-id ;;
   port) echo "0.0.0.0:${port}" ;;
-  inspect) echo true ;;
+  inspect) for n; do :; done
+    [ -f "${bin}/gone-$n" ] && { echo "Error: No such object: $n" >&2; exit 1; }
+    [ -f "${bin}/dead-$n" ] && { echo "false true 137"; exit 0; }
+    echo true ;;
 esac
 exit 0
 `,
@@ -64,12 +68,14 @@ function fakeSql(db: {
   liveShas: string[];
   forks: Set<string>;
   secretReads: string[];
+  records: Record<string, unknown>[];
 }) {
   return ((first: unknown, ...values: unknown[]) => {
     if (!Array.isArray(first)) return first; // the sql(row) helper
     const text = (first as string[]).join('?');
     if (text.includes('insert into runtime_instances')) {
       const row = values[0] as { deployment_id: string };
+      db.records.push(row);
       return db.deleted.has(row.deployment_id)
         ? Promise.reject(Object.assign(new Error('foreign key violation'), { code: '23503' }))
         : Promise.resolve([]);
@@ -118,6 +124,7 @@ function setup(o: {
     liveShas: o.liveShas ?? [],
     forks: new Set<string>(),
     secretReads: [] as string[],
+    records: [] as Record<string, unknown>[],
   };
   const sql = fakeSql(db);
   const stopped: { id: string; reason: string }[] = [];
@@ -330,5 +337,89 @@ describe('reading memory', () => {
     expect(mib('3g')).toBe(3072);
     expect(mib('512k')).toBe(0.5);
     expect(() => mib('lots')).toThrow();
+  });
+});
+
+describe('a server that dies', () => {
+  const lastError = (db: { records: Record<string, unknown>[] }) =>
+    db.records.filter((r) => r.error !== undefined).at(-1)?.error;
+
+  it('killed for going over its memory: forgotten, the reason recorded, and the next visit starts it again', async () => {
+    const { mgr, wake, db, warnings } = setup({ free: null });
+    const [a] = await wake('a');
+    await writeFile(join(bin, `dead-${a!.container}`), '');
+    expect(await mgr.dropIfDead(a!)).toBe(true);
+    expect(mgr.awake).toBe(0);
+    expect(lastError(db)).toMatch(/ran out of memory \(its limit is 256m\)/);
+    expect(warnings).toContain('runtime died');
+    const again = await mgr.ensure('a');
+    expect(again).not.toBe(a);
+    expect(mgr.awake).toBe(1);
+  });
+
+  it('with its container gone entirely, the same', async () => {
+    const { mgr, wake, db } = setup({ free: null });
+    const [a] = await wake('a');
+    await writeFile(join(bin, `gone-${a!.container}`), '');
+    expect(await mgr.dropIfDead(a!)).toBe(true);
+    expect(lastError(db)).toMatch(/its container is gone/);
+    expect(mgr.awake).toBe(0);
+  });
+
+  it('a server still running is left alone', async () => {
+    const { mgr, wake } = setup({ free: null });
+    const [a] = await wake('a');
+    expect(await mgr.dropIfDead(a!)).toBe(false);
+    expect(mgr.awake).toBe(1);
+  });
+
+  it('one that died with nobody visiting is forgotten on the next regular pass', async () => {
+    const { mgr, wake } = setup({ free: null });
+    const [a, b] = await wake('a', 'b');
+    await writeFile(join(bin, `dead-${a!.container}`), '');
+    await mgr.reapIdle(2_000);
+    expect(mgr.awake).toBe(1);
+    expect(await mgr.ensure('b')).toBe(b);
+  });
+});
+
+describe('the proxy, when the server it was sent to is dead', () => {
+  /** A gateway in front of a closed port, answering what `onError` returns. */
+  async function front(onError: () => 'retry' | undefined, method: string) {
+    const closed = createServer();
+    await new Promise<void>((r) => closed.listen(0, '127.0.0.1', r));
+    const deadPort = (closed.address() as AddressInfo).port;
+    await new Promise<void>((r) => closed.close(() => r()));
+    const gw = createServer((req, res) =>
+      proxyToApp(
+        req,
+        res,
+        { host: '127.0.0.1', port: deadPort },
+        { memory: new Map(), learn() {} },
+        () => {
+          const answer = onError();
+          if (answer === 'retry') res.end('sent again'); // what the gateway does: a fresh start
+          return answer;
+        },
+      ),
+    );
+    await new Promise<void>((r) => gw.listen(0, '127.0.0.1', r));
+    const res = await fetch(`http://127.0.0.1:${(gw.address() as AddressInfo).port}/`, {
+      method,
+      ...(method === 'POST' && { body: 'x' }),
+    });
+    const out = { status: res.status, body: await res.text() };
+    gw.close();
+    return out;
+  }
+
+  it('leaves a page load to the gateway to send again', async () => {
+    expect(await front(() => 'retry', 'GET')).toEqual({ status: 200, body: 'sent again' });
+  });
+
+  it('answers 502 when the gateway does not send it again', async () => {
+    const r = await front(() => undefined, 'POST');
+    expect(r.status).toBe(502);
+    expect(r.body).toContain('This site stopped responding.');
   });
 });

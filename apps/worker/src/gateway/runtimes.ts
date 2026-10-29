@@ -315,6 +315,35 @@ export class RuntimeManager {
   }
 
   /**
+   * Whether an instance's server has died: its container exited, was killed for
+   * going over its memory, or is gone. A dead one is forgotten, so the next
+   * request starts it again; kept, every visit would fail on it (and, being
+   * visits, keep it from ever going idle) until the site was redeployed.
+   */
+  async dropIfDead(inst: Instance): Promise<boolean> {
+    if (this.running.get(inst.deploymentId) !== inst) return true;
+    const state = await containerState(inst.container);
+    if (state.running || this.running.get(inst.deploymentId) !== inst) return !state.running;
+    this.running.delete(inst.deploymentId);
+    await runProcess('docker', ['rm', '-f', inst.container], () => {});
+    const why = state.oomKilled
+      ? `it ran out of memory (its limit is ${this.d.env.RUNTIME_MEMORY})`
+      : state.exists
+        ? `it exited with code ${state.exitCode}`
+        : 'its container is gone';
+    await this.record(inst.deploymentId, inst.orgId, {
+      status: 'failed',
+      requests: inst.requests,
+      error: `The server stopped: ${why}. The next visit starts it again.`,
+    });
+    this.d.log.warn(
+      { deploymentId: inst.deploymentId, container: inst.container, ...state },
+      'runtime died',
+    );
+    return true;
+  }
+
+  /**
    * Lets a start in when there's a slot (RUNTIME_MAX_AWAKE) and memory for it:
    * the VM's available memory, less what starts already let in may still take,
    * must leave RUNTIME_MIN_FREE_MB spare. Otherwise the longest-idle instances
@@ -377,6 +406,11 @@ export class RuntimeManager {
    */
   async reapIdle(now = Date.now()) {
     await this.reconcile();
+    // Servers that died with nobody visiting: forgotten now, not at the next visit.
+    for (const i of [...this.running.values()])
+      await this.dropIfDead(i).catch((err) =>
+        this.d.log.warn({ err, deploymentId: i.deploymentId }, 'runtime check failed'),
+      );
     const limit = this.d.env.RUNTIME_IDLE_MIN * 60_000;
     for (const i of [...this.running.values()]) {
       if (i.active === 0 && now - i.lastRequest > limit)
@@ -491,6 +525,24 @@ export class RuntimeManager {
       if (err.code !== '23503') throw err;
     });
   }
+}
+
+/** What Docker says about a container; `exists: false` when it has none by that name. */
+async function containerState(name: string) {
+  const out: string[] = [];
+  const code = await runProcess(
+    'docker',
+    ['inspect', '-f', '{{.State.Running}} {{.State.OOMKilled}} {{.State.ExitCode}}', name],
+    (l) => out.push(l),
+  );
+  if (code !== 0) return { exists: false, running: false, oomKilled: false, exitCode: null };
+  const [running, oom, exit] = (out[0] ?? '').trim().split(/\s+/);
+  return {
+    exists: true,
+    running: running === 'true',
+    oomKilled: oom === 'true',
+    exitCode: exit ? Number(exit) : null,
+  };
 }
 
 /**

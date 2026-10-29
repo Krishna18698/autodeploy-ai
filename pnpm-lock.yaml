@@ -410,6 +410,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: 3.1145.0
         version: 3.1145.0
+      '@smithy/node-http-handler':
+        specifier: 4.12.1
+        version: 4.12.1
 
   packages/telemetry:
     dependencies:
