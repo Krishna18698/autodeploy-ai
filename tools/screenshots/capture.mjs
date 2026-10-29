@@ -367,7 +367,11 @@ async function liveShots(pages, url) {
     await logLoaded(p);
     await p.waitForTimeout(1500);
     fs.mkdirSync(path.join(VIDEO, '.frames'), { recursive: true });
-    await p.screenshot({ path: path.join(VIDEO, '.frames', 'live.jpg'), type: 'jpeg', quality: 95 });
+    await p.screenshot({
+      path: path.join(VIDEO, '.frames', 'live.jpg'),
+      type: 'jpeg',
+      quality: 95,
+    });
     await ctx.close();
   });
 }

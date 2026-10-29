@@ -26,7 +26,13 @@ if (frames.length < 2) throw new Error('no recording: run `node capture.mjs --de
 const t0 = frames[0].t;
 const at = (s) => marks.find((m) => m.status === s)?.t;
 /** The frame on screen at time t. */
-const shownAt = (t) => frames[Math.max(0, frames.findLastIndex((f) => f.t <= t))];
+const shownAt = (t) =>
+  frames[
+    Math.max(
+      0,
+      frames.findLastIndex((f) => f.t <= t),
+    )
+  ];
 
 const arg = process.argv.find((a) => a.startsWith('--start='));
 const picks = []; // one file per output frame
