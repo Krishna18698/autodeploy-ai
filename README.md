@@ -91,6 +91,8 @@ re-runs after UI changes.
 |---|---|
 | Duplicate job claims, 500 jobs and 8 workers competing | **0** |
 | 100 concurrent redeliveries of one GitHub webhook | **1** deployment |
+| Kafka killed mid-deploy | deploy still went live; the **11** queued events went out **6.5 s** after it returned |
+| Rebuilding analytics by replaying Kafka | **50** events in **225 ms** |
 | Cross-tenant access, every role × every route | **0** leaks |
 | Failure corpus (38 repos): recovered by rules + AI | **82%**, **0** false fixes |
 | Real-AI repair (NVIDIA, 11 cases × 3 runs) | **21/24** fixed, **9/9** unfixable escalated, **0** false fixes |
