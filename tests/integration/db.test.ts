@@ -138,6 +138,9 @@ describe('database guarantees', () => {
     };
     const d1 = await mk(1);
     const d2 = await mk(2);
+    const [before] = await sql<
+      { version: number }[]
+    >`select version from projects where id = ${p.id}`;
     await activate(sql, routes, d1, 'promote');
     // Two concurrent activations: the advisory lock makes them take turns.
     const d3 = await mk(3);
@@ -151,6 +154,9 @@ describe('database guarantees', () => {
     >`select active_deployment_id, version from projects where id = ${p.id}`;
     expect([d2, d3]).toContain(proj?.active_deployment_id);
     expect(routes.map.get(`route:${p.slug}`)?.deploymentId).toBe(proj?.active_deployment_id);
+    // `version` guards the settings form: going live mustn't make a page loaded
+    // before it fail to save ("Project changed since you loaded it").
+    expect(proj?.version).toBe(before?.version);
 
     const t0 = performance.now();
     await activate(sql, routes, d1, 'rollback');

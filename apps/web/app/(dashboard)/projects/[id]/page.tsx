@@ -339,11 +339,9 @@ function BuildOn({
   const use = async (executor: 'sandbox' | 'github_actions') => {
     setBusy('switch');
     try {
-      await patch(
-        `/api/v1/projects/${project.id}`,
-        { executor },
-        { 'if-match': `"v${project.version}"` },
-      );
+      // No If-Match: where builds run depends on no other setting, so there's
+      // nothing for a change made meanwhile to conflict with.
+      await patch(`/api/v1/projects/${project.id}`, { executor });
       toast(
         executor === 'github_actions'
           ? 'Builds now run on GitHub Actions'

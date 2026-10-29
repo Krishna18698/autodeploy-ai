@@ -1,6 +1,6 @@
 # Issues to fix
 
-What's left and what's done, kept current. Last updated 2026-10-28.
+What's left and what's done, kept current. Last updated 2026-10-29.
 
 ## Not done, needed before launch
 
@@ -14,9 +14,8 @@ last, each only on the owner's yes.
 
 ## Not done
 
-**Next: planned for 2026-10-25, with the owner**
+**Next, with the owner**
 - [ ] **Builds on GitHub Actions: the first real build.** Built and tested on 2026-10-28 (ADR 0010) with only GitHub stood in for. After deploying: open the setup pull request on a test project's repository, merge it, switch the project, deploy once, and check the log, the site and the cleanup.
-- [ ] **Google sign-in: the owner's first try on production** (live since 2026-10-28). Sign in with GitHub, Settings → Account → Connect Google (this also confirms the account email when it's the same address); then sign out and Continue with Google.
 
 **To build (nice to have, not blocking launch)**
 - [ ] **Different variable values for previews:** environment variables are per project today, so production and pull-request previews get the same values.
@@ -36,6 +35,11 @@ last, each only on the owner's yes.
 - [ ] **Renew the deploy's Access service token** before October 2027: `terraform apply -replace=cloudflare_zero_trust_access_service_token.deploy`, then update the two `CF_ACCESS_*` GitHub secrets.
 
 ## Done
+
+**2026-10-29**
+- [x] **Google sign-in on production:** the owner signed in with Google.
+- [x] **"Project changed since you loaded it" after a deploy went live:** going live bumped the project's `version`, which guards the settings form, so a page loaded before a push deploy finished couldn't save or switch where builds run (hit by the owner switching to GitHub Actions right after merging its setup pull request). Going live now leaves `version` alone (the row lock already covered it), and the Build on switch sends no version: it conflicts with no other setting.
+- [x] **Server-rendered sites' cookies on the shared domain** (ADR 0011): verified through the real edge, tunnel and gateway by the smoke suite's `ssr-node` checks.
 
 **2026-10-28**
 - [x] **Audit #21, the JSON trailing-comma case:** fixed without AI. R-009 runs before the AI: when a build fails reading JSON and exactly one JSON file in the repository is invalid only because of trailing commas (JSON-with-comments files like tsconfig.json are left alone), it removes them. It changes the user's code, so like an AI patch it is policy-checked, rebuilt, validated and waits for approval; it runs even when AI is off, and approving it counts as a rule recovery, not an AI one. Tested on the AI evaluation's real build log and on a package.json npm couldn't read.

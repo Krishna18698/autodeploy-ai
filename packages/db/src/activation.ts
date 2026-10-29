@@ -15,7 +15,9 @@ export type ActivationResult = { activatedId: string; previousId: string | null;
  *      rollback, ACTIVE→ROLLED_BACK and SUPERSEDED→ACTIVE;
  *   2. the edge route is written *before* commit; if the commit then fails,
  *      the previous route is restored. A reconcile job repairs any drift;
- *   3. projects.active_deployment_id flips, with an optimistic version bump.
+ *   3. projects.active_deployment_id flips. The row is locked from the read,
+ *      so nothing can change in between; `version` is left alone, as it
+ *      guards the project's settings, and going live changes none of them.
  * No rebuild happens: a rollback is a pointer flip.
  */
 export async function activate(
@@ -49,9 +51,9 @@ export async function activate(
       await tx`select pg_advisory_xact_lock(hashtext(${`activate:${dep.project_id}`}))`;
 
       const [project] = await tx<
-        { id: string; slug: string; active_deployment_id: string | null; version: number }[]
+        { id: string; slug: string; active_deployment_id: string | null }[]
       >`
-        select id, slug, active_deployment_id, version from projects where id = ${dep.project_id} for update`;
+        select id, slug, active_deployment_id from projects where id = ${dep.project_id} for update`;
       if (!project) throw new Error('project not found');
       // A taken-down site stays down whatever finishes building.
       if (await isTakenDown(tx, project.id)) throw new Error('site is taken down');
@@ -86,10 +88,8 @@ export async function activate(
         }),
       );
 
-      const updated =
-        await tx`update projects set active_deployment_id = ${dep.id}, version = version + 1, updated_at = now()
-        where id = ${project.id} and version = ${project.version} returning id`;
-      if (updated.length !== 1) throw new Error('project changed concurrently; retry');
+      await tx`update projects set active_deployment_id = ${dep.id}, updated_at = now()
+        where id = ${project.id}`;
 
       await appendOutbox(tx, {
         type: mode === 'rollback' ? 'deployment.rolled_back' : 'deployment.activated',
