@@ -275,8 +275,19 @@ test("every live site answers at its address as it does at its deployment's own 
 test('a static site builds, goes live and is served by the edge', async ({ page }) => {
   const problems = watch(page);
   const id = await importFixture(page, 'static-vite', `e2e-static-${RUN}`);
+  // Watching the deploy go live, the log panel never blanks (it did when the
+  // live stream closed, until 2026-10-29).
+  await page.evaluate(() => {
+    const w = window as unknown as { blanked?: boolean };
+    new MutationObserver(() => {
+      if (document.body.textContent?.includes('No log lines.')) w.blanked = true;
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
   const d = await waitSettled(page.request, id);
   expect(d.status).toBe('ACTIVE');
+  await expect(page.getByText('Live', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  const blanked = await page.evaluate(() => (window as unknown as { blanked?: boolean }).blanked);
+  expect(blanked, 'the log panel blanked as the deploy went live').toBeFalsy();
   await expectRendered(page, `/deployments/${id}`);
   await expect(page.getByText('Live', { exact: true }).first()).toBeVisible();
   const home = await site(d.url ?? '');

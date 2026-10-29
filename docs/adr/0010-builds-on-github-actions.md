@@ -1,6 +1,6 @@
 # ADR 0010: Builds in the user's own GitHub Actions
 
-Status: accepted (2026-10-28); end-to-end on GitHub pending the first real build
+Status: accepted (2026-10-28); first real build on GitHub 2026-10-29
 
 ## Context
 

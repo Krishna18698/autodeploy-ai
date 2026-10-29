@@ -275,10 +275,16 @@ function useLiveLogs(id: string, d: DeploymentT | undefined, live: boolean) {
   // A stream cut by an outage is given up by the browser; start again once it's back.
   const up = useApiStatus() === 'up';
 
+  // Only another deployment starts the log over. Clearing it whenever the
+  // stream stopped blanked the whole panel the moment a deploy went live.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resets on a new id
   useEffect(() => {
-    if (!known) return;
     seen.current = new Set();
     setLines([]);
+  }, [id]);
+
+  useEffect(() => {
+    if (!known) return;
     let es: EventSource | null = null;
     let cancelled = false;
     const add = (incoming: LogLine[]) => {
