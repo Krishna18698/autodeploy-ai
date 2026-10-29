@@ -12,6 +12,7 @@ import { Kbd } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, post } from '@/lib/api';
 import { useAllRepairs, useMe, useMyInvitations, useQuota } from '@/lib/queries';
+import { PortfolioBanner } from './access';
 import { CommandPalette } from './command-palette';
 import { OutageBanner, OutageNotice, PausedWhenDown } from './outage-banner';
 
@@ -195,7 +196,7 @@ export function Shell({ children }: { children: ReactNode }) {
               >
                 {me.data.orgs.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.name} · {o.role}
+                    {o.name} · {o.demo ? 'demo' : o.role}
                   </option>
                 ))}
               </select>
@@ -246,7 +247,7 @@ export function Shell({ children }: { children: ReactNode }) {
             >
               {me.data.orgs.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.name} · {o.role}
+                  {o.name} · {o.demo ? 'demo' : o.role}
                 </option>
               ))}
             </select>
@@ -276,6 +277,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <OutageBanner where="dashboard" />
             </div>
             <PausedWhenDown>
+              <PortfolioBanner />
               <Invitations />
               {children}
             </PausedWhenDown>

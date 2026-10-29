@@ -8,6 +8,7 @@
  *   node capture.mjs --deploy   also deploys DEPLOY_SLUG once, capturing each stage as it happens
  *                               and recording the hover video (it changes that live site)
  *   node capture.mjs --live     only DEPLOY_SLUG's live deployment page and timeline
+ *   node capture.mjs --only=11-project,08-overview   just those screens
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,6 +30,11 @@ import {
 
 const DEPLOY = process.argv.includes('--deploy');
 const LIVE_ONLY = process.argv.includes('--live');
+/** --only=11-project,08-overview: just those (and nothing that deploys). */
+const ONLY = process.argv
+  .find((a) => a.startsWith('--only='))
+  ?.slice(7)
+  .split(',');
 const TOKEN = token();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const failed = [];
@@ -78,7 +84,7 @@ async function settle(page, ms = 1200) {
           return i.complete || r.bottom < 0 || r.top > innerHeight;
         }),
       null,
-      { timeout: 15_000 },
+      { timeout: 30_000 },
     )
     .catch(() => {});
   await page.waitForTimeout(ms);
@@ -96,6 +102,7 @@ async function shot(page, vp, id, { full = false } = {}) {
 
 /** Runs one capture; a failure is reported at the end instead of stopping the run. */
 async function step(id, fn) {
+  if (ONLY && !ONLY.some((o) => id.endsWith(o))) return;
   try {
     await fn();
   } catch (e) {

@@ -369,7 +369,7 @@ export const deploymentRoutes =
             `Can only roll back to a previously live deployment (this one is ${target.status}).`,
           );
         }
-        await assertServable(deps.sql, req.params.id, deps.env.PLATFORM_DOMAIN);
+        await assertServable(deps.sql, req.params.id, deps.env);
         const result = await activate(deps.sql, routes, target.id, 'rollback', a.login);
         req.auditTarget = {
           type: 'deployment',

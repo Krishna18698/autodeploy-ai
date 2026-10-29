@@ -31,6 +31,19 @@ export const PageQuery = z.object({
 export const Role = z.enum(['owner', 'admin', 'member', 'viewer']);
 export type Role = z.infer<typeof Role>;
 
+/** An org the signed-in person belongs to. */
+const MyOrg = z.object({
+  id: Id,
+  slug: z.string(),
+  name: z.string(),
+  role: Role,
+  demo: z.boolean().describe('The read-only demo org everyone can look around'),
+  canDeploy: z
+    .boolean()
+    .describe('May create projects and deploy here: not a viewer, not suspended, approved'),
+  accessRequestedAt: Timestamp.nullable().describe('When it asked to be approved to deploy'),
+});
+
 export const Me = z.object({
   user: z.object({
     id: Id,
@@ -49,8 +62,8 @@ export const Me = z.object({
     googleConnected: z.boolean().describe('Signs in with Google too'),
     platformAdmin: z.boolean().describe('May take sites down and suspend accounts'),
   }),
-  org: z.object({ id: Id, slug: z.string(), name: z.string(), role: Role }),
-  orgs: z.array(z.object({ id: Id, slug: z.string(), name: z.string(), role: Role })),
+  org: MyOrg,
+  orgs: z.array(MyOrg),
   csrfToken: z.string().nullable(),
 });
 
@@ -520,6 +533,24 @@ export const AdminSite = z.object({
   }),
   owners: z.array(z.object({ login: z.string(), email: z.string().nullable() })),
 });
+/** Portfolio mode: an account asking to be approved to deploy (migration 0020). */
+export const AccessRequestBody = z.object({
+  note: z
+    .string()
+    .trim()
+    .max(500)
+    .default('')
+    .describe('What they would like to deploy; shown to the platform admins'),
+});
+export const AccessRequest = z.object({
+  orgId: Id,
+  orgName: z.string(),
+  orgSlug: z.string(),
+  owners: z.array(z.object({ login: z.string(), email: z.string().nullable() })),
+  note: z.string().nullable(),
+  requestedAt: Timestamp,
+});
+
 export const AdminReason = z.object({
   reason: z
     .string()

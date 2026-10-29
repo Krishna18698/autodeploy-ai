@@ -54,6 +54,13 @@ export const EnvSchema = z
     // GitHub account ids (numeric, they never change hands) allowed to take
     // sites down and suspend accounts: Admin in the dashboard.
     PLATFORM_ADMIN_GITHUB_IDS: list,
+    // "approval" (portfolio mode): an account creates projects and deploys
+    // only once a platform admin approves its request (migration 0020).
+    DEPLOY_APPROVAL: z.enum(['open', 'approval']).default('open'),
+    // The org every signed-in person can look around read-only (they're added
+    // as viewers), by this name; created at start-up, owned by the platform
+    // admins. Empty: none.
+    DEMO_ORG_NAME: z.string().max(80).default(''),
     // Account email (verify address, reset password). Unset: logged, not sent.
     RESEND_API_KEY: z.string().optional(),
     EMAIL_FROM: z.string().default('AutoDeploy <onboarding@resend.dev>'),

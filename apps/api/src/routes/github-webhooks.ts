@@ -93,7 +93,8 @@ async function projectsFor(deps: Deps, fullName: string) {
   return deps.sql<{ id: string; org_id: string; default_branch: string; slug: string }[]>`
     select p.id, p.org_id, p.default_branch, p.slug from projects p join orgs o on o.id = p.org_id
     where lower(p.repo_full_name) = lower(${fullName})
-      and p.taken_down_at is null and o.suspended_at is null`;
+      and p.taken_down_at is null and o.suspended_at is null
+      and (o.deploys_approved_at is not null or ${deps.env.DEPLOY_APPROVAL === 'open'})`;
 }
 
 async function onPush(deps: Deps, e: PushEvent): Promise<number> {

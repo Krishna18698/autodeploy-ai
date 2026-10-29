@@ -11,7 +11,7 @@ import { Empty, Panel, SkeletonRows } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, post } from '@/lib/api';
 import { ago } from '@/lib/format';
-import { useAdminSites, useMe } from '@/lib/queries';
+import { useAccessRequests, useAdminSites, useMe } from '@/lib/queries';
 
 type Site = z.infer<typeof AdminSite>;
 type Action =
@@ -83,8 +83,9 @@ export default function AdminPage() {
     <>
       <PageHeader
         title="Admin"
-        sub="Abuse reports: find a site, take it down or suspend its account. Owners are emailed the reason."
+        sub="Who may deploy, and abuse reports: find a site, take it down or suspend its account. Owners are emailed the reason."
       />
+      <AccessRequests />
       <form
         className="mb-4 flex flex-col gap-2 sm:flex-row"
         onSubmit={(e) => {
@@ -233,5 +234,70 @@ export default function AdminPage() {
         }
       />
     </>
+  );
+}
+
+/** Portfolio mode: accounts asking to deploy. Approving emails the owner. */
+function AccessRequests() {
+  const me = useMe();
+  const requests = useAccessRequests(Boolean(me.data?.user.platformAdmin));
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  const decide = async (orgId: string, what: 'approve' | 'dismiss-request') => {
+    setBusy(orgId);
+    try {
+      await post(`/api/v1/admin/orgs/${orgId}/${what}`);
+      toast(what === 'approve' ? 'Approved. They’ve been emailed.' : 'Dismissed.', 'ok');
+      await qc.invalidateQueries({ queryKey: ['access-requests'] });
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Failed', 'fail');
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Panel title="Asking to deploy" pad={false} className="mb-6">
+      {!requests.data ? (
+        <SkeletonRows rows={2} />
+      ) : requests.data.length === 0 ? (
+        <p className="px-4 py-3 text-[13px] text-muted">Nobody is waiting.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {requests.data.map((r) => (
+            <li key={r.orgId} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1 text-[13px]">
+                <div className="truncate font-medium">
+                  {r.owners.map((o) => o.login).join(', ') || r.orgName}
+                  <span className="font-normal text-muted">
+                    {' '}
+                    · {r.owners.find((o) => o.email)?.email ?? 'no email'} · {ago(r.requestedAt)}
+                  </span>
+                </div>
+                {r.note && <p className="mt-0.5 break-words text-muted">“{r.note}”</p>}
+              </div>
+              <span className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy === r.orgId}
+                  onClick={() => decide(r.orgId, 'dismiss-request')}
+                >
+                  Dismiss
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  loading={busy === r.orgId}
+                  onClick={() => decide(r.orgId, 'approve')}
+                >
+                  Approve
+                </Button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   );
 }

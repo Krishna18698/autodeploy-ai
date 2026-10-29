@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  AccessRequest,
   AdminSite,
   AnalyticsSummary,
   ApiToken,
@@ -127,6 +128,13 @@ export const useAdminSites = (q: string, down: boolean) =>
         `/api/v1/admin/sites?${down ? 'state=down' : `q=${encodeURIComponent(q)}`}`,
       ),
     enabled: down || q.length > 0,
+  });
+/** Platform admins: accounts asking to deploy (portfolio mode), oldest first. */
+export const useAccessRequests = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['access-requests'],
+    queryFn: () => api<Array<T<typeof AccessRequest>>>('/api/v1/admin/access-requests'),
+    enabled,
   });
 /** Admins: invitations this org has sent that nobody has answered yet. */
 export const usePendingInvites = (enabled: boolean) =>

@@ -28,7 +28,7 @@ import { enforceProjectLimit } from '../services/limits.js';
 import { decodeCursor, encodeCursor, type ProjectRow, toProject } from '../services/mappers.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
 import { analyzeSource, resolveSource, suggestSlug } from '../services/sources.js';
-import { assertNotSuspended } from '../services/takedown.js';
+import { assertMayDeploy } from '../services/takedown.js';
 
 export const projectRoutes =
   (deps: Deps): FastifyPluginAsyncZod =>
@@ -156,7 +156,7 @@ export const projectRoutes =
       },
       async (req, reply) => {
         const a = authOf(req);
-        await assertNotSuspended(deps.sql, a.orgId, deps.env.PLATFORM_DOMAIN);
+        await assertMayDeploy(deps.sql, a.orgId, deps.env);
         const env = req.body.env ?? [];
         // The same rule as the Environment tab: only admins set variables.
         if (env.length > 0 && a.role !== 'owner' && a.role !== 'admin')

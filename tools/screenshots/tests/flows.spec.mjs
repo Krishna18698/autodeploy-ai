@@ -31,7 +31,7 @@ test('a visitor reads the landing page and reaches sign-in', async ({ page }) =>
   for (const id of ['features', 'how', 'recovery', 'numbers', 'architecture'])
     await expect(page.locator(`#${id}`)).toBeAttached();
   await page.goto('/login');
-  await expect(page.getByRole('button', { name: /GitHub/ }).first()).toBeVisible();
+  await expect(page.getByText('Continue with GitHub')).toBeVisible();
 });
 
 test('signed in: overview → project → its live deployment, logs and timeline', async ({
@@ -83,9 +83,14 @@ test('signed in: importing a repository shows the analysis and its evidence', as
 
 test('signed in: deployments, recovery and analytics load', async ({ signedIn: page }) => {
   await page.goto('/overview');
-  for (const name of ['Deployments', 'Recovery', 'Analytics']) {
-    await nav(page, name);
-    await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  for (const [link, heading] of [
+    ['Deployments', 'Deployments'],
+    ['Recovery', 'Recovery center'],
+    ['Analytics', 'Analytics'],
+  ]) {
+    await nav(page, link);
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
 });
 

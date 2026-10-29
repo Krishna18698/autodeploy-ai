@@ -13,7 +13,7 @@
       "!tests/corpus/repos",
       "!tests/corpus/report-*.json",
       "!.dev",
-      "!test-results",
+      "!**/test-results",
       "!project",
       "!playwright-report",
       "!tests/e2e/results.json",

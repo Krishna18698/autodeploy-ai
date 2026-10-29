@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { z } from 'zod';
+import { RequestAccess } from '@/components/app/access';
 import { badRows, EnvEditor, type EnvRow, envToSend, rowsFor } from '@/components/app/env-editor';
 import { RepoPicker } from '@/components/app/repo-picker';
 import { PageHeader } from '@/components/app/shell';
@@ -127,6 +128,15 @@ export default function NewProjectPage() {
         ['Mode', a.mode.value, a.mode.evidence],
       ] as const)
     : [];
+
+  // An API without portfolio mode doesn't say: then it's open, as before.
+  if (me.data?.org.canDeploy === false)
+    return (
+      <>
+        <PageHeader title="Import a repository" sub="Deploy your own repositories on AutoDeploy." />
+        <RequestAccess />
+      </>
+    );
 
   return (
     <>

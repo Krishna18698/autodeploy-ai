@@ -162,6 +162,11 @@ const POLICY: Record<string, Rule> = {
   'POST /api/v1/admin/sites/{id}/restore': { need: 'staff' },
   'POST /api/v1/admin/orgs/{id}/suspend': { need: 'staff', body: () => ({ reason: 'abuse' }) },
   'POST /api/v1/admin/orgs/{id}/unsuspend': { need: 'staff' },
+  'GET /api/v1/admin/access-requests': { need: 'staff' },
+  'POST /api/v1/admin/orgs/{id}/approve': { need: 'staff' },
+  'POST /api/v1/admin/orgs/{id}/dismiss-request': { need: 'staff' },
+  // For the caller's own account, whichever org they're in.
+  'POST /api/v1/access-requests': { need: 'viewer', global: true, body: () => ({ note: '' }) },
   'GET /api/v1/quota': { need: 'viewer' },
   'GET /api/v1/analytics': { need: 'viewer' },
 };

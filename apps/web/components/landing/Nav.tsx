@@ -35,7 +35,7 @@ export function Nav() {
             href="/login"
             className="inline-flex h-9 items-center rounded-lg bg-fg px-3.5 text-[13px] font-medium text-bg transition-colors hover:bg-fg/90"
           >
-            Get started
+            Try the demo
           </Link>
         </div>
       </nav>

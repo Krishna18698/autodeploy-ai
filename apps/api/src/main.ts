@@ -3,6 +3,7 @@ import { initErrorReporting } from '@autodeploy/telemetry';
 import { buildApp } from './app.js';
 import { createDeps } from './deps.js';
 import { loadEnv } from './env.js';
+import { ensureDemoOrg } from './services/portfolio.js';
 
 const env = loadEnv();
 initErrorReporting('api', env.SENTRY_DSN);
@@ -14,6 +15,10 @@ if (process.env.MIGRATE_ON_START !== 'false') {
   const r = await migrate(deps.sql);
   if (r.applied.length) console.log(`applied migrations: ${r.applied.join(', ')}`);
 }
+// Portfolio mode's demo org (DEMO_ORG_NAME): created once, admins as owners.
+await ensureDemoOrg(deps.sql, env).catch((err) =>
+  console.warn('demo org not set up:', (err as Error).message),
+);
 await deps.storage
   .ensureBucket()
   .catch((err) => console.warn('object storage not reachable yet:', (err as Error).message));

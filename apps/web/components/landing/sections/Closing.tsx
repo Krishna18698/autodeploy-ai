@@ -22,7 +22,7 @@ export function Closing() {
               href="/login"
               className="inline-flex h-11 items-center rounded-lg bg-fg px-5 text-[14px] font-medium text-bg shadow-[0_1px_0_rgb(255_255_255/0.3)_inset] transition-colors hover:bg-fg/90"
             >
-              Start deploying
+              Try the live demo
             </Link>
             <a
               href="#how"

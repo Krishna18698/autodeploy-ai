@@ -37,6 +37,7 @@ export const orgRoutes =
       '/api/v1/members',
       { preHandler: requireRole(), schema: { tags: ['org'], response: { 200: z.array(Member) } } },
       async (req) => {
+        const a = authOf(req);
         const rows = await deps.sql<
           {
             user_id: string;
@@ -48,7 +49,12 @@ export const orgRoutes =
           }[]
         >`
         select m.user_id, u.login, u.name, u.avatar_url, m.role, m.created_at
-        from memberships m join users u on u.id = m.user_id where m.org_id = ${authOf(req).orgId} order by m.created_at`;
+        from memberships m join users u on u.id = m.user_id where m.org_id = ${a.orgId}
+          -- In the demo org everyone who signed in is a viewer: they see who
+          -- runs it and themselves, never each other.
+          and (m.role in ('owner', 'admin') or m.user_id = ${a.userId} or ${rankOf(a.role) >= rankOf('admin')}
+               or not (select is_demo from orgs where id = ${a.orgId}))
+        order by m.created_at`;
         return rows.map((r) => ({
           userId: r.user_id,
           login: r.login,

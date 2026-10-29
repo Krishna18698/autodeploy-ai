@@ -88,6 +88,9 @@ services:
       WORK_DIR: /tmp/autodeploy
       ALLOWED_GITHUB_LOGINS: ${ALLOWED_GITHUB_LOGINS}
       PLATFORM_ADMIN_GITHUB_IDS: ${PLATFORM_ADMIN_GITHUB_IDS:-}
+      # Portfolio mode (ADR 0012): unset keeps deploying open and no demo org.
+      DEPLOY_APPROVAL: ${DEPLOY_APPROVAL:-open}
+      DEMO_ORG_NAME: ${DEMO_ORG_NAME:-}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
@@ -110,6 +113,9 @@ services:
       MIGRATE_ON_START: "false"
       ALLOWED_GITHUB_LOGINS: ${ALLOWED_GITHUB_LOGINS}
       PLATFORM_ADMIN_GITHUB_IDS: ${PLATFORM_ADMIN_GITHUB_IDS:-}
+      # Portfolio mode (ADR 0012): unset keeps deploying open and no demo org.
+      DEPLOY_APPROVAL: ${DEPLOY_APPROVAL:-open}
+      DEMO_ORG_NAME: ${DEMO_ORG_NAME:-}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}

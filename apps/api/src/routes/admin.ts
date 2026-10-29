@@ -1,4 +1,4 @@
-import { AdminReason, AdminSite } from '@autodeploy/contracts';
+import { AccessRequest, AccessRequestBody, AdminReason, AdminSite } from '@autodeploy/contracts';
 import { IN_PROGRESS } from '@autodeploy/core';
 import { type Tx, transition } from '@autodeploy/db';
 import { enqueue, requestCancel } from '@autodeploy/queue';
@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import { type Env, sitesDomain } from '../env.js';
 import { conflict, forbidden, notFound, unauthorized } from '../lib/errors.js';
-import { type Auth, authOf, requireRecentMfa } from '../plugins/auth.js';
+import { type Auth, authOf, requireRecentMfa, requireRole } from '../plugins/auth.js';
 
 // Abuse handling for platform admins (PLATFORM_ADMIN_GITHUB_IDS): find a site
 // by its address, owner or account, take it down or suspend its account, and
@@ -253,6 +253,150 @@ export const adminRoutes =
             await enqueue(tx, 'routes.refresh', { projectId: p.id }, { orgId: req.params.id });
         });
         return reply.code(202).send({ queued: true as const });
+      },
+    );
+
+    // ---- portfolio mode: asking to deploy, and approving it ----
+
+    async function emailAdmins(subject: string, text: string) {
+      const ids = deps.env.PLATFORM_ADMIN_GITHUB_IDS.filter((id) => /^\d+$/.test(id));
+      if (!ids.length) return;
+      const admins = await deps.sql<{ email: string }[]>`
+        select email from users where github_id = any(${ids}::bigint[]) and email is not null`;
+      for (const u of admins) await deps.sendEmail({ to: u.email, subject, text }).catch(() => {});
+    }
+
+    app.post(
+      '/api/v1/access-requests',
+      {
+        // For the person's own account, whichever org they're looking at (the
+        // demo, often); from a browser session, not a token.
+        preHandler: requireRole(),
+        schema: {
+          tags: ['org'],
+          body: AccessRequestBody,
+          response: { 200: z.object({ requestedAt: z.string() }) },
+        },
+      },
+      async (req) => {
+        const a = authOf(req);
+        if (a.via !== 'session') throw forbidden('Ask from the dashboard');
+        const [own] = await deps.sql<{ id: string; name: string; approved: boolean }[]>`
+          select o.id, o.name, o.deploys_approved_at is not null as approved
+          from memberships m join orgs o on o.id = m.org_id
+          where m.user_id = ${a.userId} and m.role = 'owner' and not o.is_demo
+          order by m.created_at limit 1`;
+        if (!own) throw notFound('Account');
+        if (own.approved) throw conflict('already_approved', 'Your account can deploy already.');
+        // The admins hear about it once a day at most, however often someone asks.
+        const [o] = await deps.sql<{ fresh: boolean; requested_at: Date }[]>`
+          update orgs set access_request_note = ${req.body.note || null},
+            access_requested_at = case when access_requested_at > now() - interval '1 day'
+              then access_requested_at else now() end
+          where id = ${own.id}
+          returning access_requested_at = now() as fresh,
+            access_requested_at as requested_at`;
+        if (!o) throw notFound('Account');
+        await deps.sql`insert into audit_events (org_id, actor_user_id, action, target_type, target_id, metadata)
+          values (${own.id}, ${a.userId}, 'org.access_request', 'org', ${own.id}, ${deps.sql.json({ note: req.body.note })})`;
+        if (o.fresh) {
+          const [u] = await deps.sql<{ login: string; email: string | null }[]>`
+            select login, email from users where id = ${a.userId}`;
+          await emailAdmins(
+            `AutoDeploy access request: ${u?.login ?? own.name}`,
+            `${u?.login ?? 'Someone'}${u?.email ? ` (${u.email})` : ''} asks to deploy on AutoDeploy, as ${own.name}.\n\n` +
+              `${req.body.note ? `"${req.body.note}"\n\n` : ''}Approve or dismiss it in Admin: https://app.${deps.env.PLATFORM_DOMAIN}/admin`,
+          );
+        }
+        return { requestedAt: o.requested_at.toISOString() };
+      },
+    );
+
+    app.get(
+      '/api/v1/admin/access-requests',
+      {
+        preHandler: requireAdmin,
+        schema: { tags: ['admin'], response: { 200: z.array(AccessRequest) } },
+      },
+      async () => {
+        const rows = await deps.sql<
+          {
+            id: string;
+            name: string;
+            slug: string;
+            note: string | null;
+            requested_at: Date;
+            owners: { login: string; email: string | null }[];
+          }[]
+        >`
+          select o.id, o.name, o.slug, o.access_request_note as note, o.access_requested_at as requested_at,
+            coalesce((select json_agg(json_build_object('login', u.login, 'email', u.email) order by u.login)
+              from memberships m join users u on u.id = m.user_id
+              where m.org_id = o.id and m.role = 'owner'), '[]') as owners
+          from orgs o
+          where o.access_requested_at is not null and o.deploys_approved_at is null
+          order by o.access_requested_at`;
+        return rows.map((r) => ({
+          orgId: r.id,
+          orgName: r.name,
+          orgSlug: r.slug,
+          owners: r.owners,
+          note: r.note,
+          requestedAt: r.requested_at.toISOString(),
+        }));
+      },
+    );
+
+    app.post(
+      '/api/v1/admin/orgs/:id/approve',
+      {
+        preHandler: [requireAdmin, requireRecentMfa],
+        schema: {
+          tags: ['admin'],
+          params: Params,
+          response: { 200: z.object({ approved: z.literal(true) }) },
+        },
+      },
+      async (req) => {
+        const a = authOf(req);
+        const name = await deps.sql.begin(async (tx) => {
+          const [o] = await tx<{ name: string }[]>`
+            update orgs set deploys_approved_at = coalesce(deploys_approved_at, now()),
+              access_requested_at = null, access_request_note = null
+            where id = ${req.params.id} returning name`;
+          if (!o) throw notFound('Account');
+          await audit(tx, req.params.id, a, 'admin.org_approve', req.params.id, {});
+          return o.name;
+        });
+        await emailOwners(
+          req.params.id,
+          'You can deploy on AutoDeploy now',
+          `Your AutoDeploy account ${name} can now import repositories and deploy them: https://app.${deps.env.PLATFORM_DOMAIN}/projects/new`,
+        );
+        return { approved: true as const };
+      },
+    );
+
+    app.post(
+      '/api/v1/admin/orgs/:id/dismiss-request',
+      {
+        preHandler: [requireAdmin, requireRecentMfa],
+        schema: {
+          tags: ['admin'],
+          params: Params,
+          response: { 200: z.object({ dismissed: z.literal(true) }) },
+        },
+      },
+      async (req) => {
+        const a = authOf(req);
+        await deps.sql.begin(async (tx) => {
+          const [o] = await tx<{ id: string }[]>`
+            update orgs set access_requested_at = null, access_request_note = null
+            where id = ${req.params.id} returning id`;
+          if (!o) throw notFound('Account');
+          await audit(tx, req.params.id, a, 'admin.org_request_dismiss', req.params.id, {});
+        });
+        return { dismissed: true as const };
       },
     );
   };

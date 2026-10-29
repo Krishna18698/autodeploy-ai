@@ -43,6 +43,7 @@
     "./app": "./src/app.ts",
     "./deps": "./src/deps.ts",
     "./env": "./src/env.ts",
-    "./routes/auth": "./src/routes/auth.ts"
+    "./routes/auth": "./src/routes/auth.ts",
+    "./services/portfolio": "./src/services/portfolio.ts"
   }
 }

@@ -33,7 +33,7 @@ export async function createDeployment(
 ): Promise<{ id: string; number: number }> {
   const traceparent = currentTraceparent();
   return withOrg(deps.sql, input.orgId, async (tx) => {
-    await assertServable(tx, input.projectId, deps.env.PLATFORM_DOMAIN);
+    await assertServable(tx, input.projectId, deps.env);
     await enforceDeployLimits(tx, input.orgId, deps.env);
 
     // A newer production build makes older not-yet-started ones pointless.

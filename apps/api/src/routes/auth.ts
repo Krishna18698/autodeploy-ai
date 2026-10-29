@@ -17,6 +17,7 @@ import {
 import { clientIp } from '../lib/client-ip.js';
 import { AppError, badRequest, conflict, forbidden, unavailable } from '../lib/errors.js';
 import { authOf, requireRecentMfa, requireRole, sessionCookie } from '../plugins/auth.js';
+import { joinDemo } from '../services/portfolio.js';
 import { queueSiteRemoval } from '../services/site-removal.js';
 import { isPlatformAdmin } from './admin.js';
 
@@ -175,13 +176,15 @@ export async function startSession(
 ): Promise<{ csrfToken: string; twoFactor: boolean }> {
   const token = randomToken(32);
   const csrf = randomToken(24);
+  // Everyone can look around the demo; someone who can't deploy yet starts there.
+  const opensIn = await joinDemo(deps.sql, deps.env, userId, orgId);
   const [mfa] = await deps.sql<{ on: boolean }[]>`
     select true as on from user_totp where user_id = ${userId} and confirmed_at is not null`;
   const twoFactor =
     Boolean(mfa) && (opts.risky === true || !(await trustedBrowser(deps, req, userId)));
   await deps.sql`
     insert into sessions (token_hash, user_id, org_id, csrf_token, ip, user_agent, expires_at, mfa_pending)
-    values (${sha256Hex(token)}, ${userId}, ${orgId}, ${csrf}, ${clientIp(req)}, ${req.headers['user-agent']?.slice(0, 300) ?? null},
+    values (${sha256Hex(token)}, ${userId}, ${opensIn}, ${csrf}, ${clientIp(req)}, ${req.headers['user-agent']?.slice(0, 300) ?? null},
             now() + ${`${SESSION_DAYS} days`}::interval, ${twoFactor})`;
   setSessionCookie(deps, reply, token);
   return { csrfToken: csrf, twoFactor };
@@ -428,16 +431,36 @@ export const authRoutes =
         select id, login, name, avatar_url, email, email_verified_at is not null as email_confirmed,
           google_sub is not null as google
         from users where id = ${a.userId}`;
-        const orgs = await deps.sql<
-          {
-            id: string;
-            slug: string;
-            name: string;
-            role: 'owner' | 'admin' | 'member' | 'viewer';
-          }[]
-        >`
-        select o.id, o.slug, o.name, m.role from memberships m join orgs o on o.id = m.org_id
-        where m.user_id = ${a.userId} order by o.name`;
+        const orgs = (
+          await deps.sql<
+            {
+              id: string;
+              slug: string;
+              name: string;
+              role: 'owner' | 'admin' | 'member' | 'viewer';
+              demo: boolean;
+              approved: boolean;
+              suspended: boolean;
+              access_requested_at: Date | null;
+            }[]
+          >`
+          select o.id, o.slug, o.name, m.role, o.is_demo as demo,
+            o.deploys_approved_at is not null as approved, o.suspended_at is not null as suspended,
+            o.access_requested_at
+          from memberships m join orgs o on o.id = m.org_id
+          where m.user_id = ${a.userId} order by o.is_demo, o.name`
+        ).map((o) => ({
+          id: o.id,
+          slug: o.slug,
+          name: o.name,
+          role: o.role,
+          demo: o.demo,
+          canDeploy:
+            !o.suspended &&
+            (o.approved || deps.env.DEPLOY_APPROVAL === 'open') &&
+            o.role !== 'viewer',
+          accessRequestedAt: o.access_requested_at?.toISOString() ?? null,
+        }));
         const org = orgs.find((o) => o.id === a.orgId) ?? orgs[0];
         if (!user || !org) throw forbidden();
         return {
