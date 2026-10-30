@@ -12,10 +12,12 @@ failure recovery, multi-tenant security and observability, on a ₹0 budget.
 
 **Try it:** sign in at [app.autodeploy.fyi](https://app.autodeploy.fyi) with
 GitHub, Google or email and you open in a read-only demo with real deploys:
-a Vite site, a server-rendered Next.js app, a type error the AI repaired and a
-person approved, and a build that failed until it was given an environment
-variable. Deploying your own repositories is by approval
-([ADR 0012](docs/adr/0012-portfolio-mode.md)).
+a [Vite site](https://demo-vite.autodeploy.dpdns.org), a server-rendered
+[Next.js app](https://demo-next.autodeploy.dpdns.org), a
+[type error the AI repaired](https://demo-ai-fix.autodeploy.dpdns.org) and a
+person approved, and a [build that failed](https://demo-env.autodeploy.dpdns.org)
+until it was given an environment variable. Deploying your own repositories is
+by approval ([ADR 0012](docs/adr/0012-portfolio-mode.md)).
 
 ```
 GitHub ─webhook─▶ API (Fastify, 2×) ─tx─▶ Postgres ── jobs (SKIP LOCKED, leases)
@@ -96,6 +98,7 @@ re-runs after UI changes.
 | Cross-tenant access, every role × every route | **0** leaks |
 | Failure corpus (38 repos): recovered by rules + AI | **82%**, **0** false fixes |
 | Real-AI repair (NVIDIA, 11 cases × 3 runs) | **21/24** fixed, **9/9** unfixable escalated, **0** false fixes |
+| A real type error in production: failed build → AI fix rebuilt, validated, waiting for a person | **43–46 s** |
 | Sandbox escape attempts in production | **10/10** contained |
 | Rollback through the API | **11.7 ms**, nothing rebuilt |
 | Server-rendered sites awake at once on the free VM | **20** in ~1.1 GiB; ~15,000 requests, all 200 |

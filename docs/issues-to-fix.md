@@ -7,7 +7,6 @@ What's left and what's done, kept current. Last updated 2026-10-30.
 The owner's order: finish the product first; the last three steps below come
 last, each only on the owner's yes.
 
-- [ ] **Fill the demo org** with real deploys of the e2e fixtures (a static site, a server-rendered app, the TypeScript error the AI fixes, the one that needs a variable): about 4 deploys. Needs an API token made in the demo org (scopes deploy + admin), since tokens are made from a browser session.
 - [ ] **Google Search Console on `autodeploy.dpdns.org`**: one phishing site can get every user site flagged, and Search Console tells the owner the same day (owner's Google account and one DNS record). Less urgent with deploys by approval.
 - [ ] **Make the GitHub App public** (app settings → Advanced) so other people can install it on their own accounts.
 - [ ] **Make the repository public.**
@@ -37,6 +36,7 @@ last, each only on the owner's yes.
 ## Done
 
 **2026-10-30**
+- [x] **Demo org filled** with real deploys of the e2e fixtures, all live: `demo-vite` (static), `demo-next` (server-rendered Next.js), `demo-ai-fix` (a type error: the build failed, the production AI's fix was rebuilt and validated in 46 s, the owner approved it) and `demo-env` (failed needing `E2E_GREETING`, the variable set, deployed again). Made with an API token from the demo org; the API analyses one repository per account at a time, so imports wait their turn.
 - [x] **Portfolio mode on in production** (ADR 0012): `DEPLOY_APPROVAL=approval`, `DEMO_ORG_NAME=AutoDeploy demo`, the sign-in allowlist emptied, shipped from the Mac. Both API containers have the settings; the demo org was made at start-up with the owner as its owner. Anyone can sign in with GitHub, Google or email; accounts that existed before keep deploying.
 - [x] **Measurements and README brought up to date:** the capacity test, the CPU split, the 2026-10-24 AI evaluation, the faster wakes and the owner's portfolio deploy (133 s, build start to live) added to `docs/measurements.md`, with eight bugs found since 2026-10-22; the README gets a Measured table and loses two stale lines (the dashboard no longer goes through the tunnel; sign-in isn't GitHub only).
 
