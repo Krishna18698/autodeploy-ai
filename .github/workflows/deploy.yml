@@ -33,12 +33,14 @@ concurrency:
 
 jobs:
   deploy:
-    # Only pushes to main (never a pull request's CI run), and only when CI passed.
+    # Only pushes to main in this repository (never a pull request's CI run, and
+    # never a fork's), and only when CI passed.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (vars.AUTO_DEPLOY == 'true' &&
        github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production

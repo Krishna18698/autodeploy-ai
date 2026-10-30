@@ -36,7 +36,8 @@ export const VIEWPORTS = {
     isMobile: true,
     hasTouch: true,
   },
-  // The hover video: 1024×576 is a 1280-wide window at 125%, recorded at 2x.
+  // The hover video: 1024×576 is a 1280-wide window at 125%. (The screencast records it at
+  // 1024×576 whatever the scale; video.mjs scales it up.)
   video: { viewport: { width: 1024, height: 576 }, deviceScaleFactor: 2 },
 };
 
