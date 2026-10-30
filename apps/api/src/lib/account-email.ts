@@ -1,7 +1,7 @@
 import { randomToken, sha256Hex } from '@autodeploy/crypto';
 import type { Sql, Tx } from '@autodeploy/db';
 import type { Deps } from '../deps.js';
-import { badRequest } from './errors.js';
+import { AppError, badRequest } from './errors.js';
 
 // Emailed one-time links, and the confirmed account email: the address a
 // sign-in with Google (or a new GitHub account) is matched on. An address
@@ -43,6 +43,32 @@ export async function useToken(tx: Tx, token: string, kind: LinkKind) {
  */
 export const mayEmail = async (deps: Pick<Deps, 'valkey'>, to: string) =>
   (await deps.valkey.set(`account-mail:${sha256Hex(to)}`, '1', 'EX', 60, 'NX')) === 'OK';
+
+/**
+ * Emails to addresses nobody has proven yet (sign-up, password reset) a day: from one
+ * visitor, and from everyone. Resend's free plan sends 100 a day, and a script signing up
+ * made-up addresses would otherwise use them all, leaving nothing for confirmations,
+ * approvals and invitations. The rest of the day's 100 stays for those.
+ */
+export const UNPROVEN_MAIL_PER_IP_PER_DAY = 5;
+export const UNPROVEN_MAIL_PER_DAY = 60;
+export async function assertUnprovenMailBudget(deps: Pick<Deps, 'valkey'>, ip: string) {
+  const day = new Date().toISOString().slice(0, 10);
+  const count = async (key: string) => {
+    const n = await deps.valkey.incr(key);
+    if (n === 1) await deps.valkey.expire(key, 26 * 3600);
+    return n;
+  };
+  const busy = (message: string) => new AppError(429, 'email_busy', message);
+  if ((await count(`unproven-mail:${day}:${sha256Hex(ip)}`)) > UNPROVEN_MAIL_PER_IP_PER_DAY)
+    throw busy(
+      'Too many emails asked for from here today. Try again tomorrow, or continue with GitHub or Google.',
+    );
+  if ((await count(`unproven-mail:${day}`)) > UNPROVEN_MAIL_PER_DAY)
+    throw busy(
+      'AutoDeploy has sent all the sign-up emails it can today. Try again tomorrow, or continue with GitHub or Google.',
+    );
+}
 
 /** The accounts that hold `email` (lower-cased) confirmed: a sign-in address or an account email. */
 export async function confirmedOwners(sql: Sql | Tx, email: string): Promise<string[]> {

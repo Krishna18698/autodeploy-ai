@@ -104,6 +104,8 @@ export const projectRoutes =
       },
       async (req) => {
         const a = authOf(req);
+        // Analysis downloads the repository: only for accounts that may deploy it.
+        await assertMayDeploy(deps.sql, a.orgId, deps.env);
         const src = await resolveSource(deps, req.body.repoUrl, req.body.ref, a);
         const analysis = await analyzeSource(deps, src, req.body.rootDir, a.orgId);
         return {

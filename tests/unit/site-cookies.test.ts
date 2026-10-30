@@ -335,4 +335,16 @@ describe('at the edge, for every site', () => {
     const only = forSite(new Response('x', { headers: { 'clear-site-data': '"cookies"' } }), []);
     expect(only.headers.has('clear-site-data')).toBe(false);
   });
+
+  it('a server-rendered answer gets the security headers static files get, unless it set its own', () => {
+    const out = forSite(
+      new Response('ok', { headers: { 'x-powered-by': 'Next.js', 'x-frame-options': 'DENY' } }),
+      [],
+    );
+    expect(out.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(out.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
+    expect(out.headers.get('permissions-policy')).toContain('camera=()');
+    expect(out.headers.get('x-frame-options')).toBe('DENY');
+    expect(out.headers.has('x-powered-by')).toBe(false);
+  });
 });

@@ -32,6 +32,15 @@ export type DeploymentSummaryT = T<typeof DeploymentSummary>;
 export type RepairT = T<typeof Repair> & { projectSlug?: string; deploymentNumber?: number };
 export type Page<X> = { items: X[]; nextCursor: string | null };
 
+const RANK = { viewer: 0, member: 1, admin: 2, owner: 3 } as const;
+/** Whether the signed-in role may take an action that needs `need` (the API checks again). */
+export function useCan(need: 'member' | 'admin') {
+  const role = useMe().data?.org.role;
+  return role !== undefined && RANK[role] >= RANK[need];
+}
+/** Shown on an action the signed-in role can't take, such as a visitor's in the demo. */
+export const READ_ONLY = 'Read-only: you can look around, not change things here';
+
 export function useMe() {
   return useQuery({
     queryKey: ['me'],

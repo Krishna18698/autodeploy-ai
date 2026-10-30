@@ -132,6 +132,15 @@ describe('portfolio mode', () => {
     });
     expect(create.statusCode).toBe(403);
     expect(create.json().code).toBe('approval_required');
+    // Nor have the server download a repository to analyze it.
+    const analyze = await app.inject({
+      method: 'POST',
+      url: '/api/v1/analyze',
+      headers: as(v),
+      payload: { repoUrl: 'https://github.com/someone/site' },
+    });
+    expect(analyze.statusCode).toBe(403);
+    expect(analyze.json().code).toBe('approval_required');
   });
 
   it('asking emails the admins once a day; approving lets the account deploy and tells its owner', async () => {

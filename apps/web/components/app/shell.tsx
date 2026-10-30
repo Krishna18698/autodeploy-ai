@@ -91,7 +91,9 @@ export function Shell({ children }: { children: ReactNode }) {
       );
     return (
       <>
-        {null}
+        {/* The page mounts out of sight meanwhile, so its own requests start now instead of
+            after this one (a round trip to the VM each); it then shows from the cache. */}
+        {me.isPending && <div hidden>{children}</div>}
         {opening}
       </>
     );

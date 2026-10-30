@@ -148,8 +148,8 @@ API docs: http://localhost:4000/docs.
 ## Tests
 
 ```bash
-pnpm test               # 348 unit tests (pure domain code, the gateway, real Chromium for cookies)
-pnpm test:integration   # 124 tests on real Postgres / Valkey / Kafka (Testcontainers),
+pnpm test               # 349 unit tests (pure domain code, the gateway, real Chromium for cookies)
+pnpm test:integration   # 125 tests on real Postgres / Valkey / Kafka (Testcontainers),
                         #   including an authorization matrix generated from every route
 pnpm test:e2e           # 8 Playwright tests against the running stack
 pnpm test:smoke         # 18 end-to-end checks of what a user does (see below)

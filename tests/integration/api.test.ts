@@ -7,7 +7,7 @@ import { upsertUserWithOrg } from '@autodeploy/api/routes/auth';
 import { sha256Hex } from '@autodeploy/crypto';
 import { ciWorkflowYaml } from '@autodeploy/github';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 import { makeDeployment, makeOrg, makeProject } from './helpers';
 
 const WEBHOOK_SECRET = 'whsec-test-secret';
@@ -886,6 +886,11 @@ describe('Email sign-in', () => {
   afterAll(() => {
     deps.sendEmail = restore;
   });
+  // The day's email budget for unproven addresses (per visitor and in all): each test starts afresh.
+  beforeEach(async () => {
+    const keys = await deps.valkey.keys('unproven-mail:*');
+    if (keys.length) await deps.valkey.del(...keys);
+  });
   const post = (url: string, payload: object, headers: Record<string, string> = {}) =>
     app.inject({ method: 'POST', url, payload, headers });
   const linkToken = (text: string) => /token=([A-Za-z0-9_-]+)/.exec(text)?.[1] ?? '';
@@ -894,6 +899,23 @@ describe('Email sign-in', () => {
   const unthrottle = (email: string) => deps.valkey.del(`account-mail:${sha256Hex(email)}`);
   const cookieOf = (r: { headers: Record<string, unknown> }) =>
     String(r.headers['set-cookie']).split(';')[0] ?? '';
+
+  it('sends at most 5 sign-up or reset emails a day for one visitor', async () => {
+    const visitor = { 'cf-connecting-ip': '203.0.113.77' };
+    for (let i = 0; i < 5; i++) {
+      const email = `budget-${i}-${randomBytes(3).toString('hex')}@example.com`;
+      const r = await post('/auth/email/signup', { email, password: 'a long password 1' }, visitor);
+      expect(r.statusCode).toBe(202);
+    }
+    const sixth = await post('/auth/email/forgot', { email: 'budget-x@example.com' }, visitor);
+    expect(sixth.statusCode).toBe(429);
+    expect(sixth.json().code).toBe('email_busy');
+    // Someone else still can.
+    const other = { 'cf-connecting-ip': '203.0.113.78' };
+    expect(
+      (await post('/auth/email/forgot', { email: 'budget-y@example.com' }, other)).statusCode,
+    ).toBe(202);
+  });
 
   it('signs up, confirms the address from the emailed link, then signs in', async () => {
     const email = `new-${randomBytes(3).toString('hex')}@example.com`;

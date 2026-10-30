@@ -18,7 +18,9 @@ import { ago, shortSha } from '@/lib/format';
 import {
   type ActionsSetupT,
   type DeploymentSummaryT,
+  READ_ONLY,
   useActionsSetup,
+  useCan,
   useDeployments,
   useEnv,
   useProject,
@@ -31,6 +33,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const qc = useQueryClient();
   const toast = useToast();
   const [deploying, setDeploying] = useState(false);
+  const canDeploy = useCan('member');
 
   if (project.isLoading) return <SkeletonPage panels={['h-10', 'h-72']} />;
   if (!project.data) return <Empty title="Project not found" />;
@@ -75,9 +78,17 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           </span>
         }
         actions={
-          <Button variant="primary" loading={deploying} loader="dots" onClick={redeploy}>
-            Deploy latest
-          </Button>
+          <span title={canDeploy ? undefined : READ_ONLY}>
+            <Button
+              variant="primary"
+              loading={deploying}
+              loader="dots"
+              onClick={redeploy}
+              disabled={!canDeploy}
+            >
+              Deploy latest
+            </Button>
+          </span>
         }
       />
       <Tabs
@@ -110,6 +121,7 @@ function History({ projectId }: { projectId: string }) {
   const toast = useToast();
   const [target, setTarget] = useState<DeploymentSummaryT | null>(null);
   const [busy, setBusy] = useState(false);
+  const canDeploy = useCan('member');
 
   const rollback = async () => {
     if (!target) return;
@@ -191,9 +203,11 @@ function History({ projectId }: { projectId: string }) {
               <StatusPill status={d.status} />
               {(d.status === 'SUPERSEDED' || d.status === 'ROLLED_BACK') &&
                 d.kind === 'production' && (
-                  <Button size="sm" onClick={() => setTarget(d)}>
-                    Roll back
-                  </Button>
+                  <span title={canDeploy ? undefined : READ_ONLY}>
+                    <Button size="sm" onClick={() => setTarget(d)} disabled={!canDeploy}>
+                      Roll back
+                    </Button>
+                  </span>
                 )}
             </div>
           </li>
@@ -230,6 +244,7 @@ function Settings({
   });
   const [aiRepair, setAiRepair] = useState(project.settings.aiRepair);
   const [saving, setSaving] = useState(false);
+  const canEdit = useCan('admin');
   const detected = project.analysis;
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -297,9 +312,11 @@ function Settings({
           </span>
         </label>
         <div className="sm:col-span-2">
-          <Button type="submit" variant="primary" loading={saving}>
-            Save
-          </Button>
+          <span title={canEdit ? undefined : READ_ONLY}>
+            <Button type="submit" variant="primary" loading={saving} disabled={!canEdit}>
+              Save
+            </Button>
+          </span>
           <span className="ml-3 font-mono text-[11px] text-muted">
             v{project.version} · saved with optimistic locking
           </span>
@@ -447,6 +464,21 @@ function BuildOn({
 }
 
 function EnvVars({ projectId }: { projectId: string }) {
+  const canRead = useCan('member');
+  if (!canRead)
+    return (
+      <Panel title="Environment variables · write-only, envelope-encrypted">
+        <p className="text-[13px] text-muted">
+          Viewers don’t see a project’s environment variables: only its members do, and nobody sees
+          their values once saved.
+        </p>
+      </Panel>
+    );
+  return <EnvVarsEditor projectId={projectId} />;
+}
+
+function EnvVarsEditor({ projectId }: { projectId: string }) {
+  const canEdit = useCan('admin');
   const env = useEnv(projectId);
   const toast = useToast();
   const [key, setKey] = useState('');
@@ -479,11 +511,13 @@ function EnvVars({ projectId }: { projectId: string }) {
   return (
     <Panel title="Environment variables · write-only, envelope-encrypted">
       {changed && <RedeployNotice projectId={projectId} onClose={() => setChanged(false)} />}
-      <div className="mb-3 flex justify-end">
-        <Button size="sm" onClick={() => setImporting((v) => !v)} aria-expanded={importing}>
-          {importing ? 'Close import' : 'Import .env'}
-        </Button>
-      </div>
+      {canEdit && (
+        <div className="mb-3 flex justify-end">
+          <Button size="sm" onClick={() => setImporting((v) => !v)} aria-expanded={importing}>
+            {importing ? 'Close import' : 'Import .env'}
+          </Button>
+        </div>
+      )}
       {importing && (
         <ImportEnv
           projectId={projectId}
@@ -495,28 +529,30 @@ function EnvVars({ projectId }: { projectId: string }) {
           }}
         />
       )}
-      <form onSubmit={add} className="mb-4 flex flex-col gap-2 sm:flex-row">
-        <input
-          required
-          value={key}
-          onChange={(e) => setKey(e.target.value.toUpperCase())}
-          placeholder="VITE_API_URL"
-          aria-label="Name"
-          className="h-9 rounded-md border border-line bg-bg px-3 font-mono text-[13px] outline-none focus:border-run/60 sm:w-56"
-        />
-        <input
-          required
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="value"
-          type="password"
-          aria-label="Value"
-          className="h-9 rounded-md border border-line bg-bg px-3 font-mono text-[13px] outline-none focus:border-run/60 sm:flex-1"
-        />
-        <Button type="submit" variant="primary">
-          Add
-        </Button>
-      </form>
+      {canEdit && (
+        <form onSubmit={add} className="mb-4 flex flex-col gap-2 sm:flex-row">
+          <input
+            required
+            value={key}
+            onChange={(e) => setKey(e.target.value.toUpperCase())}
+            placeholder="VITE_API_URL"
+            aria-label="Name"
+            className="h-9 rounded-md border border-line bg-bg px-3 font-mono text-[13px] outline-none focus:border-run/60 sm:w-56"
+          />
+          <input
+            required
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="value"
+            type="password"
+            aria-label="Value"
+            className="h-9 rounded-md border border-line bg-bg px-3 font-mono text-[13px] outline-none focus:border-run/60 sm:flex-1"
+          />
+          <Button type="submit" variant="primary">
+            Add
+          </Button>
+        </form>
+      )}
       {!env.data ? (
         <SkeletonRows rows={3} className="h-8" pad={false} />
       ) : env.data.length ? (
@@ -528,14 +564,16 @@ function EnvVars({ projectId }: { projectId: string }) {
               <span className="ml-auto whitespace-nowrap text-[11px] text-muted">
                 {ago(v.updatedAt)}
               </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => remove(v.key)}
-                aria-label={`Delete ${v.key}`}
-              >
-                Delete
-              </Button>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => remove(v.key)}
+                  aria-label={`Delete ${v.key}`}
+                >
+                  Delete
+                </Button>
+              )}
             </li>
           ))}
         </ul>

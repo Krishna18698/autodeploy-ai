@@ -47,7 +47,7 @@ export default function OverviewPage() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
-          label="Deploys today"
+          label="Deploys · 24h"
           loading={!today.data}
           value={today.data ? today.data.totals.deployments : '—'}
           sub={month.data ? `${month.data.totals.deployments} in 30 days` : ' '}

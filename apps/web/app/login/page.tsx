@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { AuthCard, Field, Notice } from '@/components/app/auth-card';
 import { Providers } from '@/components/app/providers';
 import { Button } from '@/components/ui/button';
@@ -34,19 +34,23 @@ const SIGN_IN_ERRORS: Record<string, string> = {
 
 function LoginInner() {
   const router = useRouter();
-  const params = useSearchParams();
-  const [mode, setMode] = useState<'signin' | 'signup'>(
-    params.get('mode') === 'signup' ? 'signup' : 'signin',
-  );
+  // The query string, read after the first paint: with useSearchParams the whole card
+  // would only appear once the page's JavaScript ran (4 s on a slow phone).
+  const [params, setParams] = useState<URLSearchParams | null>(null);
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  // Set by the GitHub sign-in when it sends someone back: fixed messages only.
-  const [error, setError] = useState<string | null>(
-    () => SIGN_IN_ERRORS[params.get('error') ?? ''] ?? null,
-  );
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setParams(q);
+    if (q.get('mode') === 'signup') setMode('signup');
+    // Set by the GitHub sign-in when it sends someone back: fixed messages only.
+    setError(SIGN_IN_ERRORS[q.get('error') ?? ''] ?? null);
+  }, []);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [loading, setLoading] = useState<'email' | 'dev' | null>(null);
-  const next = safeNext(params.get('next'));
+  const next = safeNext(params?.get('next') ?? null);
   // Shown at once (no jump when the answer comes); hidden only where the
   // server says Google isn't set up (local development).
   const google = useProviders().data?.google !== false;
@@ -57,10 +61,11 @@ function LoginInner() {
   // Already signed in (on this browser, or through the dashboard's old
   // address, which this moves over): straight in, no form.
   useEffect(() => {
+    if (!params) return;
     api('/api/v1/me')
       .then(() => router.replace(next))
       .catch(() => {});
-  }, [router, next]);
+  }, [router, next, params]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,9 +225,7 @@ function LoginInner() {
 export default function LoginPage() {
   return (
     <Providers>
-      <Suspense>
-        <LoginInner />
-      </Suspense>
+      <LoginInner />
     </Providers>
   );
 }

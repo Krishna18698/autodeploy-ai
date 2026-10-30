@@ -12,12 +12,14 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps.js';
 import {
+  assertUnprovenMailBudget,
   confirmAccountEmail,
   confirmedOwners,
   issueToken,
   mayEmail as mayEmailTo,
   useToken,
 } from '../lib/account-email.js';
+import { clientIp } from '../lib/client-ip.js';
 import { AppError, conflict, forbidden } from '../lib/errors.js';
 import { ensurePersonalOrg, startSession } from './auth.js';
 
@@ -108,6 +110,7 @@ export const emailAuthRoutes =
           throw forbidden('Sign-ups are not open yet.');
         const { email, password } = req.body;
         if (!(await mayEmail(email))) return reply.code(202).send(accepted);
+        await assertUnprovenMailBudget(deps, clientIp(req));
         const hash = await hashPassword(password);
         const outcome = await deps.sql
           .begin(async (tx) => {
@@ -294,6 +297,7 @@ export const emailAuthRoutes =
       async (req, reply) => {
         const { email } = req.body;
         if (!(await mayEmail(email))) return reply.code(202).send(accepted);
+        await assertUnprovenMailBudget(deps, clientIp(req));
         const token = await deps.sql.begin(async (tx) => {
           const [row] = await tx<
             { user_id: string }[]

@@ -331,6 +331,10 @@ function notFound(message: string, status = 404) {
 export function forSite(res: Response, deletions: string[]): Response {
   const out = new Response(res.body, res);
   out.headers.set('origin-agent-cluster', '?1');
+  // Server-rendered answers get the same defaults as static files; a site's own value wins.
+  for (const [k, v] of Object.entries(SECURITY_HEADERS))
+    if (!out.headers.has(k)) out.headers.set(k, v);
+  out.headers.delete('x-powered-by');
   const clear = ownClearSiteData(out.headers.get('clear-site-data'));
   if (clear) out.headers.set('clear-site-data', clear);
   else out.headers.delete('clear-site-data');

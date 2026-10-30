@@ -22,7 +22,9 @@ import { useApiStatus } from '@/lib/api-status';
 import { ago, duration, shortSha } from '@/lib/format';
 import {
   type DeploymentT,
+  READ_ONLY,
   type RepairT,
+  useCan,
   useDeployment,
   useEvents,
   useRepairs,
@@ -43,6 +45,7 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
   const qc = useQueryClient();
   const toast = useToast();
   const [cancel, setCancel] = useState(false);
+  const canDeploy = useCan('member');
   const router = useRouter();
   const [redeploying, setRedeploying] = useState(false);
 
@@ -123,20 +126,30 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
               </a>
             )}
             {(live || d.status === 'AWAITING_APPROVAL') && (
-              <Button variant="danger" size="sm" onClick={() => setCancel(true)}>
-                Cancel
-              </Button>
+              <span title={canDeploy ? undefined : READ_ONLY}>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => setCancel(true)}
+                  disabled={!canDeploy}
+                >
+                  Cancel
+                </Button>
+              </span>
             )}
             {(d.status === 'FAILED' || d.status === 'CANCELED' || d.status === 'NEEDS_INPUT') && (
-              <Button
-                variant="primary"
-                size="sm"
-                loading={redeploying}
-                loader="dots"
-                onClick={redeploy}
-              >
-                Deploy again
-              </Button>
+              <span title={canDeploy ? undefined : READ_ONLY}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={redeploying}
+                  loader="dots"
+                  onClick={redeploy}
+                  disabled={!canDeploy}
+                >
+                  Deploy again
+                </Button>
+              </span>
             )}
           </>
         }
@@ -367,6 +380,8 @@ function RecoveryPanel({
 function RepairCard({ repair: r, onChange }: { repair: RepairT; onChange: () => void }) {
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const canApprove = useCan('admin');
+  const canAct = useCan('member');
   const act = async (what: 'approve' | 'reject' | 'pull-request') => {
     setBusy(what);
     try {
@@ -404,16 +419,16 @@ function RepairCard({ repair: r, onChange }: { repair: RepairT; onChange: () => 
         >
           {r.strategy === 'ai' ? 'AI' : r.ruleId}
         </span>
-        <h3 className="min-w-0 flex-1 truncate text-[14px] font-medium">{r.title}</h3>
+        <h3 className="min-w-[12rem] flex-1 truncate text-[14px] font-medium">{r.title}</h3>
         <span className="font-mono text-[11px] text-muted">
           after attempt {r.attemptNo} · {r.errorCode} · {r.status.replace('_', ' ')}
         </span>
       </header>
-      <div className="grid gap-4 p-4 lg:grid-cols-[1fr_1.3fr]">
-        <div className="flex flex-col gap-3 text-[13px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+        <div className="flex min-w-0 flex-col gap-3 text-[13px]">
           {r.diagnosis ? (
             <div>
-              <div className="mb-1 font-mono text-[11px] uppercase tracking-wider text-muted">
+              <div className="mb-1 break-words font-mono text-[11px] uppercase tracking-wider text-muted">
                 Diagnosis{' '}
                 {r.diagnosis.provider &&
                   `· ${r.diagnosis.provider}${r.diagnosis.model ? ` / ${r.diagnosis.model}` : ''}`}
@@ -469,19 +484,29 @@ function RepairCard({ repair: r, onChange }: { repair: RepairT; onChange: () => 
             </a>
           )}
           {r.status === 'awaiting_approval' && (
-            <div className="flex flex-wrap gap-2 pt-1">
+            <div className="flex flex-wrap gap-2 pt-1" title={canApprove ? undefined : READ_ONLY}>
               <Button
                 variant="ai"
                 loading={busy === 'approve'}
                 loader="dots"
                 onClick={() => act('approve')}
+                disabled={!canApprove}
               >
                 Approve & deploy
               </Button>
-              <Button loading={busy === 'pull-request'} onClick={() => act('pull-request')}>
+              <Button
+                loading={busy === 'pull-request'}
+                onClick={() => act('pull-request')}
+                disabled={!canAct}
+              >
                 Open PR
               </Button>
-              <Button variant="ghost" loading={busy === 'reject'} onClick={() => act('reject')}>
+              <Button
+                variant="ghost"
+                loading={busy === 'reject'}
+                onClick={() => act('reject')}
+                disabled={!canAct}
+              >
                 Reject
               </Button>
             </div>
