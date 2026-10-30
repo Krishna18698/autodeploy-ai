@@ -1,6 +1,6 @@
 'use client';
 
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -27,6 +27,7 @@ import {
   useCan,
   useDeployment,
   useEvents,
+  useMe,
   useRepairs,
 } from '@/lib/queries';
 import { STATUS } from '@/lib/status';
@@ -59,8 +60,8 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
     }
   }, [pendingRepair]);
 
-  if (dep.isLoading) return <SkeletonPage panels={['h-14', 'h-80']} />;
-  if (!d) return <Empty title="Deployment not found" />;
+  if (dep.isLoading || (!d && dep.isFetching)) return <SkeletonPage panels={['h-14', 'h-80']} />;
+  if (!d) return <InAnotherOrg id={id} />;
   const attempt = d.attempts.at(-1);
 
   // A failed build is never a dead end: build the project's latest commit again.
@@ -580,4 +581,30 @@ function Timeline({ id }: { id: string }) {
       })}
     </ol>
   );
+}
+
+/**
+ * Not in the org the person is in: a link (an approval email, a shared address)
+ * may point into another of theirs, such as the demo. Switch to it and show it.
+ */
+function InAnotherOrg({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const current = useMe().data?.org.id;
+  const where = useQuery({
+    queryKey: ['deployment-org', id],
+    queryFn: () => api<{ orgId: string; name: string }>(`/api/v1/deployments/${id}/org`),
+    retry: false,
+  });
+  const [failed, setFailed] = useState(false);
+  const target = where.data;
+  const elsewhere = target !== undefined && target.orgId !== current;
+  useEffect(() => {
+    if (!elsewhere || !target) return;
+    post('/api/v1/session/org', { orgId: target.orgId })
+      .then(() => qc.invalidateQueries())
+      .catch(() => setFailed(true));
+  }, [elsewhere, target, qc]);
+  if (where.isPending) return <SkeletonPage panels={['h-14', 'h-80']} />;
+  if (elsewhere && !failed) return <Empty title={`Opening it in ${target.name}…`} />;
+  return <Empty title="Deployment not found" />;
 }

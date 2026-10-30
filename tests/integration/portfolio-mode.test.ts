@@ -6,6 +6,7 @@ import { type Env, loadEnv } from '@autodeploy/api/env';
 import { ensureDemoOrg } from '@autodeploy/api/services/portfolio';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+import { makeDeployment, makeProject } from './helpers';
 
 // Portfolio mode (migration 0020): anyone signs in and looks around the demo
 // org, read-only; their own account deploys once a platform admin approves it.
@@ -237,5 +238,27 @@ describe('portfolio mode', () => {
     expect(logins).toContain(admin.login);
     expect(logins).toContain(a.login);
     expect(logins).not.toContain(b.login);
+  });
+
+  it('a link to a deployment in another of your orgs says which, so the dashboard can switch', async () => {
+    const v = await visitor();
+    const p = await makeProject(deps.sql, demoId);
+    const d = await makeDeployment(deps.sql, demoId, p.id);
+    // In their own account (as after "Go to your account"), the demo's deployment isn't there...
+    const own = (await me(v)).orgs.find((o: { demo: boolean }) => !o.demo);
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/session/org',
+      headers: as(v),
+      payload: { orgId: own.id },
+    });
+    const get = (url: string) => app.inject({ method: 'GET', url, headers: as(v) });
+    expect((await get(`/api/v1/deployments/${d}`)).statusCode).toBe(404);
+    // ...but the demo, which they're in, has it.
+    const where = await get(`/api/v1/deployments/${d}/org`);
+    expect(where.statusCode).toBe(200);
+    expect(where.json()).toEqual({ orgId: demoId, name: 'AutoDeploy demo' });
+    // An id that's nowhere they belong: the same 404 as one that doesn't exist.
+    expect((await get(`/api/v1/deployments/${randomUUID()}/org`)).statusCode).toBe(404);
   });
 });

@@ -117,6 +117,7 @@ const POLICY: Record<string, Rule> = {
 
   'GET /api/v1/deployments': { need: 'viewer' },
   'GET /api/v1/deployments/{id}': { need: 'viewer' },
+  'GET /api/v1/deployments/{id}/org': { need: 'viewer' },
   'POST /api/v1/deployments/{id}/cancel': { need: 'member' },
   'GET /api/v1/deployments/{id}/events': { need: 'viewer' },
   'GET /api/v1/deployments/{id}/logs': { need: 'viewer' },

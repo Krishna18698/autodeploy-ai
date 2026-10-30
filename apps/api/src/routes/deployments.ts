@@ -168,6 +168,30 @@ export const deploymentRoutes =
       async (req) => load(authOf(req).orgId, req.params.id),
     );
 
+    // A link (an approval email, a shared address) to a deployment in another of
+    // the person's orgs: which one, so the dashboard can switch to it. Anyone else
+    // gets the same 404 as for an id that doesn't exist.
+    app.get(
+      '/api/v1/deployments/:id/org',
+      {
+        preHandler: requireRole(),
+        schema: {
+          tags: ['deployments'],
+          params: Params,
+          response: { 200: z.object({ orgId: z.uuid(), name: z.string() }) },
+        },
+      },
+      async (req) => {
+        const [o] = await deps.sql<{ id: string; name: string }[]>`
+          select o.id, o.name from deployments d
+          join orgs o on o.id = d.org_id
+          join memberships m on m.org_id = o.id and m.user_id = ${authOf(req).userId}
+          where d.id = ${req.params.id}`;
+        if (!o) throw notFound('Deployment');
+        return { orgId: o.id, name: o.name };
+      },
+    );
+
     app.post(
       '/api/v1/deployments/:id/cancel',
       {
