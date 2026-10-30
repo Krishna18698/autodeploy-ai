@@ -208,3 +208,7 @@ Connected: AI repair (NVIDIA, OpenRouter fallback, Workers AI classifier),
 email (Resend), telemetry (Grafana Cloud over OTLP) and error tracking
 (Sentry). `pnpm keys:check` verifies every key against its provider; see
 `infra/deploy/.env.prod.example` and [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Krishna Shravan
