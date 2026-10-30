@@ -26,6 +26,8 @@ type PullRequestEvent = {
   pull_request: {
     // head.repo is null when the fork has since been deleted.
     head: { sha: string; ref: string; repo?: { full_name: string } | null };
+    /** The branch it would merge into. */
+    base?: { ref: string };
     title: string;
     merged?: boolean;
   };
@@ -143,12 +145,17 @@ async function onPullRequest(deps: Deps, e: PullRequestEvent): Promise<number> {
     return 0;
   }
   if (!['opened', 'synchronize', 'reopened'].includes(e.action)) return 0;
-  // From a fork: someone else's code, so it builds and runs without the
-  // project's variables (it could print them into the public preview).
+  // From a fork: anyone's code, which would be built here and published on the
+  // shared sites domain without anyone approving it. No automatic preview (as on
+  // Vercel); the project's people can still deploy the pull request's commit.
   const fromFork =
     e.pull_request.head.repo?.full_name.toLowerCase() !== e.repository.full_name.toLowerCase();
+  if (fromFork) return 0;
   let n = 0;
   for (const p of projects) {
+    // A preview shows what merging would put live: only for the production branch.
+    const base = e.pull_request.base?.ref;
+    if (base && base !== p.default_branch) continue;
     await createDeployment(deps, {
       orgId: p.org_id,
       projectId: p.id,

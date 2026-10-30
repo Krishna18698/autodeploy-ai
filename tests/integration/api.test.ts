@@ -282,15 +282,16 @@ describe('GitHub webhooks', () => {
     console.info('[measure] 100 concurrent redeliveries of one webhook → 1 deployment');
   });
 
-  it("marks a pull request from a fork, so its preview gets none of the project's variables", async () => {
+  it("previews its own branches' pull requests into the production branch, never a fork's", async () => {
     const org = await makeOrg(deps.sql);
     const p = await makeProject(deps.sql, org, { repo: 'acme/fork-target' });
-    const pr = async (n: number, head: { full_name: string } | null) => {
+    const pr = async (n: number, head: { full_name: string } | null, base = 'main') => {
       const body = JSON.stringify({
         action: 'opened',
         number: n,
         pull_request: {
           head: { sha: `${n}`.repeat(40).slice(0, 40), ref: `feature-${n}`, repo: head },
+          base: { ref: base },
           title: `pr ${n}`,
         },
         repository: { full_name: 'acme/fork-target' },
@@ -309,11 +310,14 @@ describe('GitHub webhooks', () => {
       expect(r.statusCode).toBe(202);
       const [d] = await deps.sql<{ from_fork: boolean }[]>`
         select from_fork from deployments where project_id = ${p.id} and pr_number = ${n}`;
-      return d?.from_fork;
+      return d ? 'preview' : 'none';
     };
-    expect(await pr(1, { full_name: 'Acme/Fork-Target' })).toBe(false); // a branch of the same repository
-    expect(await pr(2, { full_name: 'stranger/fork-target' })).toBe(true); // someone's fork
-    expect(await pr(3, null)).toBe(true); // a fork deleted since
+    expect(await pr(1, { full_name: 'Acme/Fork-Target' })).toBe('preview'); // a branch of the same repository
+    // Someone's fork (or one deleted since): their code would be published unapproved.
+    expect(await pr(2, { full_name: 'stranger/fork-target' })).toBe('none');
+    expect(await pr(3, null)).toBe('none');
+    // Into another branch: not what would go live.
+    expect(await pr(4, { full_name: 'acme/fork-target' }, 'release')).toBe('none');
   });
 
   it('records who installed the App, so an organisation install is theirs to use until claimed', async () => {
