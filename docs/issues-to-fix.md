@@ -1,6 +1,6 @@
 # Issues to fix
 
-What's left and what's done, kept current. Last updated 2026-10-30.
+What's left and what's done, kept current. Last updated 2026-10-31.
 
 ## Not done, needed before launch
 
@@ -37,6 +37,9 @@ last, each only on the owner's yes.
 - [ ] **Renew the deploy's Access service token** before October 2027: `terraform apply -replace=cloudflare_zero_trust_access_service_token.deploy`, then update the two `CF_ACCESS_*` GitHub secrets.
 
 ## Done
+
+**2026-10-31**
+- [x] **The route reconcile spent most of Workers KV's free writes:** every 10 minutes it rewrote every live site's route, changed or not: 144 writes a day per site against KV's 1,000, so 864 a day once the demo's four apps went live (2026-10-30), and over the limit from the seventh site, after which every KV write fails for the rest of the day. It now writes only routes that differ from what it last wrote (a failed write is retried next time), and all of them once a day in case one was edited by hand.
 
 **2026-10-30**
 - [x] **Demo apps pinned and restyled:** their production branch is `demo-pinned` (never pushed), so pushes to this repository no longer redeploy them; each is a small card page saying what it shows, redeployed on purpose by commit. The Next.js one is on 16.4.2.

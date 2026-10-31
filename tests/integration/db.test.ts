@@ -120,6 +120,22 @@ describe('database guarantees', () => {
     routes.map.clear();
     expect(await reconcileRoutes(sql, routes)).toBeGreaterThan(0);
     expect(routes.map.get(`route:${p.slug}`)).toMatchObject({ deploymentId: d, mode: 'ssr' });
+    // Workers KV allows 1,000 writes a day: nothing changed, nothing written...
+    const writes: string[] = [];
+    const counting = Object.assign(Object.create(routes), {
+      put: async (k: string, v: never) => {
+        writes.push(k);
+        await routes.put(k, v);
+      },
+    });
+    const t0 = Date.now();
+    await reconcileRoutes(sql, counting, t0);
+    writes.length = 0;
+    await reconcileRoutes(sql, counting, t0 + 10 * 60_000);
+    expect(writes).toEqual([]);
+    // ...and every route again once a day, in case one was changed by hand.
+    await reconcileRoutes(sql, counting, t0 + 24 * 60 * 60_000);
+    expect(writes).toContain(`route:${p.slug}`);
   });
 
   it('activation and rollback flip one pointer; concurrent activations serialize', async () => {

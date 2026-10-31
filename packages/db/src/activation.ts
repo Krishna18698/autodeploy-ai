@@ -107,13 +107,28 @@ export async function activate(
   }
 }
 
+/** What reconcileRoutes last wrote through each store, and when it last wrote them all. */
+const reconciled = new WeakMap<RouteStore, { since: number; values: Map<string, string> }>();
+const REWRITE_ALL_EVERY_MS = 24 * 60 * 60_000;
+
 /**
- * Rewrites every project's production route from the database, the source of
- * truth (a KV write can fail after a commit, or be edited by hand). Taken-down
- * sites are left alone (their addresses hold the notice). Returns how many
- * routes were written.
+ * Brings every project's production route in line with the database, the source
+ * of truth (a KV write can fail after a commit, or be edited by hand). A route is
+ * written only when it differs from what this last wrote, and all of them once a
+ * day: Workers KV allows 1,000 writes a day, and rewriting every route every 10
+ * minutes spent 144 a day per live site. Taken-down sites are left alone (their
+ * addresses hold the notice). Returns how many routes were written.
  */
-export async function reconcileRoutes(sql: Sql, routes: RouteStore): Promise<number> {
+export async function reconcileRoutes(
+  sql: Sql,
+  routes: RouteStore,
+  now = Date.now(),
+): Promise<number> {
+  let memo = reconciled.get(routes);
+  if (!memo || now - memo.since >= REWRITE_ALL_EVERY_MS) {
+    memo = { since: now, values: new Map() };
+    reconciled.set(routes, memo);
+  }
   const rows = await sql<
     { slug: string; id: string; number: number; sha256: string; mode: 'static' | 'ssr' }[]
   >`
@@ -121,18 +136,24 @@ export async function reconcileRoutes(sql: Sql, routes: RouteStore): Promise<num
     join orgs o on o.id = p.org_id
     join deployments d on d.id = p.active_deployment_id join artifacts a on a.id = d.artifact_id
     where p.taken_down_at is null and o.suspended_at is null`;
-  for (const r of rows)
-    await routes.put(
-      routeKey({ kind: 'production', slug: r.slug }),
-      routeValue({
-        deploymentId: r.id,
-        number: r.number,
-        artifactSha: r.sha256,
-        projectSlug: r.slug,
-        mode: r.mode,
-      }),
-    );
-  return rows.length;
+  let written = 0;
+  for (const r of rows) {
+    const key = routeKey({ kind: 'production', slug: r.slug });
+    const value = routeValue({
+      deploymentId: r.id,
+      number: r.number,
+      artifactSha: r.sha256,
+      projectSlug: r.slug,
+      mode: r.mode,
+    });
+    const json = JSON.stringify(value);
+    if (memo.values.get(key) === json) continue;
+    // Remembered only once written: a failed write is tried again next time.
+    await routes.put(key, value);
+    memo.values.set(key, json);
+    written++;
+  }
+  return written;
 }
 
 async function currentRoute(
