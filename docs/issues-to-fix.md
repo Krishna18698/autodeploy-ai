@@ -1,6 +1,6 @@
 # Issues to fix
 
-What's left and what's done, kept current. Last updated 2026-10-31.
+What's left and what's done, kept current. Last updated 2026-11-04.
 
 ## Not done, needed before launch
 
@@ -37,6 +37,19 @@ last, each only on the owner's yes.
 - [ ] **Renew the deploy's Access service token** before October 2027: `terraform apply -replace=cloudflare_zero_trust_access_service_token.deploy`, then update the two `CF_ACCESS_*` GitHub secrets.
 
 ## Done
+
+**2026-11-04** (from the project review of revision 680d4ba)
+- [x] **Long logs complete:** a finished deployment loads every page of its stored log (it stopped after about 2,000 lines, hiding the end, where failures usually are), and says so with a Retry if that fails. Lines are appended in order instead of re-sorting the whole log on every batch.
+- [x] **Older deployments and projects reachable:** the Deployments screen, a project's history and the Projects screen load a page at a time with "Load more" and say how many are shown (they stopped at 100, 50 and 100); the command palette searches the server once there's more than one page of projects (`GET /api/v1/projects?q=`, matched literally).
+- [x] **Failures aren't shown as empty:** a list that can't load says so with Retry instead of "No projects yet" or endless placeholders; a failed refresh keeps the rows with a notice.
+- [x] **Switching org drops the old org's data:** requests still answering for the old org are cancelled first and the cache is reset after, so its rows can't appear under the new org's name; requests can be aborted, and an aborted one isn't taken for an outage.
+- [x] **The live log catches up after a reconnect:** the snapshot the stream sends on every connection updates the deployment, so a final status missed while disconnected still shows.
+- [x] **Idle lists poll every 30 s** instead of every 4-5 s, and every 4 s again while something in them is in flight (an idle Deployments tab: 120 requests an hour instead of 900).
+- [x] **Slow stream readers can't pile up output:** the stream waits for a reader to catch up before reading more, and lets go of one that falls 1 MB behind or stalls for 30 s (it reconnects and resumes).
+- [x] **Dialogs have an accessible name and description**; destructive ones open on Cancel, the others on their action (the old `autoFocus` ran while the dialog was hidden, so focus always landed on Cancel); the cancel dialog names the deployment, the rollback one the project.
+- [x] **Log following works with touch, keys and the scrollbar:** it follows the scroll position, with "Jump to latest" when paused; a search with no match says so.
+- [x] **Projects on phones:** cards with status, the latest deployment and a live link that opens the site, instead of a 720 px table scrolled sideways.
+- [x] **Rollback wording:** the pointer moves at once, but visitors can see the old version for up to about a minute while each edge location's cached route expires; the dialog and toast now say that.
 
 **2026-10-31**
 - [x] **The route reconcile spent most of Workers KV's free writes:** every 10 minutes it rewrote every live site's route, changed or not: 144 writes a day per site against KV's 1,000, so 864 a day once the demo's four apps went live (2026-10-30), and over the limit from the seventh site, after which every KV write fails for the rest of the day. It now writes only routes that differ from what it last wrote (a failed write is retried next time), and all of them once a day in case one was edited by hand.

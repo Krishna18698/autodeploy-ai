@@ -15,7 +15,7 @@ import { STATUS } from '@/lib/status';
 
 export default function OverviewPage() {
   const projects = useProjects();
-  const recent = useDeployments({ limit: 30 }, 4_000);
+  const recent = useDeployments({ limit: 30 }, true);
   const today = useAnalytics(1);
   const month = useAnalytics(30);
   const awaiting = useAllRepairs('awaiting_approval');

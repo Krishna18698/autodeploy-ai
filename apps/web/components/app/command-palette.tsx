@@ -3,12 +3,22 @@
 import { Command } from 'cmdk';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useProjects } from '@/lib/queries';
+import { useProjectSearch, useProjects } from '@/lib/queries';
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const projects = useProjects();
+  const [search, setSearch] = useState('');
+  const [term, setTerm] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setTerm(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+  // More projects than the first page: the server searches them all.
+  const paged = Boolean(projects.data?.nextCursor);
+  const found = useProjectSearch(term, paged);
+  const shown = paged && term ? (found.data?.items ?? []) : (projects.data?.items ?? []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -35,6 +45,8 @@ export function CommandPalette() {
       contentClassName="fixed left-1/2 top-[18vh] z-50 w-[min(92vw,560px)] -translate-x-1/2 overflow-hidden rounded-[10px] border border-line bg-panel shadow-2xl"
     >
       <Command.Input
+        value={search}
+        onValueChange={setSearch}
         placeholder="Jump to a project, page or action…"
         className="h-12 w-full border-b border-line bg-transparent px-4 text-[14px] text-fg outline-none placeholder:text-muted/70"
       />
@@ -62,12 +74,12 @@ export function CommandPalette() {
             </Command.Item>
           ))}
         </Command.Group>
-        {projects.data?.items.length ? (
+        {shown.length ? (
           <Command.Group
             heading="Projects"
             className="px-1 py-1 font-mono text-[10px] uppercase tracking-wider text-muted [&_[cmdk-group-items]]:mt-1"
           >
-            {projects.data.items.map((p) => (
+            {shown.map((p) => (
               <Command.Item
                 key={p.id}
                 value={`project ${p.slug} ${p.repoFullName}`}

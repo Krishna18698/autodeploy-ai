@@ -108,6 +108,31 @@ describe('API security', () => {
     expect(list.json().items.some((x: { id: string }) => x.id === p.id)).toBe(false);
   });
 
+  it('searches its own projects by name, address or repository, with % and _ taken literally', async () => {
+    const s = await login(`searcher-${randomUUID().slice(0, 6)}`);
+    const org = (await app.inject({ url: '/api/v1/me', headers: { cookie: s.cookie } })).json().org
+      .id;
+    const tag = randomUUID().slice(0, 6);
+    await makeProject(deps.sql, org, { slug: `alpha-${tag}`, repo: `acme/alpha-${tag}` });
+    await makeProject(deps.sql, org, { slug: `beta_1-${tag}`, repo: `acme/b-${tag}` });
+    await makeProject(deps.sql, org, { slug: `betax1-${tag}`, repo: `acme/c-${tag}` });
+    // Someone else's project with the same name never shows.
+    await makeProject(deps.sql, await makeOrg(deps.sql), { slug: `alpha-other-${tag}` });
+    const find = async (q: string) =>
+      (
+        await app.inject({
+          url: `/api/v1/projects?q=${encodeURIComponent(q)}`,
+          headers: { cookie: s.cookie },
+        })
+      )
+        .json()
+        .items.map((x: { slug: string }) => x.slug);
+    expect(await find(`alpha`)).toEqual([`alpha-${tag}`]);
+    expect(await find(`b-${tag}`)).toEqual([`beta_1-${tag}`]); // by repository
+    expect(await find(`beta_1`)).toEqual([`beta_1-${tag}`]); // _ isn't "any character"
+    expect(await find('%')).toEqual([]);
+  });
+
   it('scopes API tokens: read tokens cannot deploy; revoked tokens stop working', async () => {
     const s = await login('token-user');
     const mk = await app.inject({

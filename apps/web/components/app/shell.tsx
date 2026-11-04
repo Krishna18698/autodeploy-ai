@@ -11,7 +11,7 @@ import { Logo } from '@/components/ui/logo';
 import { Kbd } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, post } from '@/lib/api';
-import { useAllRepairs, useMe, useMyInvitations, useQuota } from '@/lib/queries';
+import { switchOrg, useAllRepairs, useMe, useMyInvitations, useQuota } from '@/lib/queries';
 import { PortfolioBanner } from './access';
 import { CommandPalette } from './command-palette';
 import { OutageBanner, OutageNotice, PausedWhenDown } from './outage-banner';
@@ -99,10 +99,7 @@ export function Shell({ children }: { children: ReactNode }) {
     );
   }
 
-  const switchOrg = async (orgId: string) => {
-    await post('/api/v1/session/org', { orgId });
-    await qc.invalidateQueries();
-  };
+  const changeOrg = (orgId: string) => switchOrg(qc, orgId);
   // Signed out on purpose: back to the home page, not a sign-in form.
   const logout = async () => {
     await post('/auth/logout');
@@ -193,7 +190,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <select
                 id="org-mobile"
                 value={me.data.org.id}
-                onChange={(e) => switchOrg(e.target.value)}
+                onChange={(e) => changeOrg(e.target.value)}
                 className="h-10 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
               >
                 {me.data.orgs.map((o) => (
@@ -244,7 +241,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <select
               id="org"
               value={me.data.org.id}
-              onChange={(e) => switchOrg(e.target.value)}
+              onChange={(e) => changeOrg(e.target.value)}
               className="h-8 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
             >
               {me.data.orgs.map((o) => (

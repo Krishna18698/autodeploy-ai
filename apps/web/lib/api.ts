@@ -54,7 +54,9 @@ export async function api<T>(
   let res: Response;
   try {
     res = await fetch(apiUrl(path), { ...init, method, headers, credentials });
-  } catch {
+  } catch (err) {
+    // Called off (an org switch, a page left): not an outage.
+    if (init.signal?.aborted) throw err;
     // No answer at all: the API (or this connection) is down.
     reportUnreachable();
     throw new ApiError(0, { title: 'Unreachable', detail: OUTAGE });

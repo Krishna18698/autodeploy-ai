@@ -1,7 +1,7 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Dot } from './status';
 
 export type LogLine = { seq: number; attemptNo: number; text: string };
@@ -53,7 +53,19 @@ function lineTone(text: string): string {
   return 'text-fg/85';
 }
 
-export function LogViewer({ lines, live }: { lines: LogLine[]; live: boolean }) {
+/** Within this many pixels of the end counts as at the end (following). */
+const AT_END_PX = 24;
+
+export function LogViewer({
+  lines,
+  live,
+  notice,
+}: {
+  lines: LogLine[];
+  live: boolean;
+  /** A line under the toolbar, such as the stored log failing to load. */
+  notice?: ReactNode;
+}) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState('');
   const [follow, setFollow] = useState(true);
@@ -63,10 +75,10 @@ export function LogViewer({ lines, live }: { lines: LogLine[]; live: boolean }) 
     if (window.matchMedia('(max-width: 639px)').matches) setWrap(true);
   }, []);
 
-  const filtered = useMemo(
-    () => (query ? lines.filter((l) => l.text.toLowerCase().includes(query.toLowerCase())) : lines),
-    [lines, query],
-  );
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase();
+    return q ? lines.filter((l) => l.text.toLowerCase().includes(q)) : lines;
+  }, [lines, query]);
   // Line numbers restart with each attempt, so each attempt gets a divider
   // once a deployment has more than one.
   const rows = useMemo(() => {
@@ -91,6 +103,18 @@ export function LogViewer({ lines, live }: { lines: LogLine[]; live: boolean }) 
   useEffect(() => {
     if (follow && rows.length) v.scrollToIndex(rows.length - 1, { align: 'end' });
   }, [rows.length, follow, v]);
+  // Following is wherever the reader is, however they scrolled (wheel, touch,
+  // keys, the scrollbar): away from the end pauses it, back at the end resumes.
+  const onScroll = () => {
+    const el = parentRef.current;
+    if (!el) return;
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight <= AT_END_PX;
+    if (atEnd !== follow) setFollow(atEnd);
+  };
+  const jumpToEnd = () => {
+    setFollow(true);
+    if (rows.length) v.scrollToIndex(rows.length - 1, { align: 'end' });
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -125,60 +149,85 @@ export function LogViewer({ lines, live }: { lines: LogLine[]; live: boolean }) 
           {filtered.length.toLocaleString()} {query ? 'matches' : 'lines'}
         </span>
       </div>
-      <div
-        ref={parentRef}
-        onWheel={(e) => e.deltaY < 0 && setFollow(false)}
-        className="min-h-0 flex-1 overflow-auto bg-bg py-1 font-mono text-[12px] leading-5"
-        role="log"
-        aria-live="off"
-      >
-        {filtered.length === 0 ? (
-          <p className="px-4 py-6 text-muted">{live ? 'Waiting for output…' : 'No log lines.'}</p>
-        ) : (
-          <div style={{ height: v.getTotalSize(), position: 'relative' }}>
-            {v.getVirtualItems().map((item) => {
-              const row = rows[item.index];
-              if (!row) return null;
-              if (row.kind === 'attempt')
+      {notice && (
+        <div
+          role="status"
+          className="border-b border-line bg-raised/50 px-3 py-1.5 text-[12px] text-muted"
+        >
+          {notice}
+        </div>
+      )}
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={parentRef}
+          onScroll={onScroll}
+          className="h-full overflow-auto bg-bg py-1 font-mono text-[12px] leading-5"
+          role="log"
+          aria-live="off"
+        >
+          {filtered.length === 0 ? (
+            <p className="px-4 py-6 text-muted">
+              {lines.length && query
+                ? `No lines match “${query}”.`
+                : live
+                  ? 'Waiting for output…'
+                  : 'No log lines.'}
+            </p>
+          ) : (
+            <div style={{ height: v.getTotalSize(), position: 'relative' }}>
+              {v.getVirtualItems().map((item) => {
+                const row = rows[item.index];
+                if (!row) return null;
+                if (row.kind === 'attempt')
+                  return (
+                    <div
+                      key={item.key}
+                      data-index={item.index}
+                      ref={v.measureElement}
+                      className="absolute inset-x-0 flex items-center gap-3 px-3 pb-1 pt-2 text-[11px] uppercase tracking-[0.1em] text-muted"
+                      style={{ transform: `translateY(${item.start}px)` }}
+                    >
+                      <span className="w-10 shrink-0" />
+                      <span>attempt {row.attemptNo}</span>
+                      <span className="h-px flex-1 bg-line" />
+                    </div>
+                  );
+                const l = row.line;
                 return (
                   <div
                     key={item.key}
                     data-index={item.index}
                     ref={v.measureElement}
-                    className="absolute inset-x-0 flex items-center gap-3 px-3 pb-1 pt-2 text-[11px] uppercase tracking-[0.1em] text-muted"
+                    className="absolute inset-x-0 flex gap-3 px-3 hover:bg-raised/60"
                     style={{ transform: `translateY(${item.start}px)` }}
                   >
-                    <span className="w-10 shrink-0" />
-                    <span>attempt {row.attemptNo}</span>
-                    <span className="h-px flex-1 bg-line" />
+                    <span className="w-10 shrink-0 select-none text-right text-muted/50">
+                      {l.seq + 1}
+                    </span>
+                    <span
+                      className={`${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'} ${lineTone(l.text)}`}
+                    >
+                      {renderAnsi(l.text).map((p, i) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
+                        <span key={i} className={p.cls}>
+                          {p.text}
+                        </span>
+                      ))}
+                    </span>
                   </div>
                 );
-              const l = row.line;
-              return (
-                <div
-                  key={item.key}
-                  data-index={item.index}
-                  ref={v.measureElement}
-                  className="absolute inset-x-0 flex gap-3 px-3 hover:bg-raised/60"
-                  style={{ transform: `translateY(${item.start}px)` }}
-                >
-                  <span className="w-10 shrink-0 select-none text-right text-muted/50">
-                    {l.seq + 1}
-                  </span>
-                  <span
-                    className={`${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'} ${lineTone(l.text)}`}
-                  >
-                    {renderAnsi(l.text).map((p, i) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
-                      <span key={i} className={p.cls}>
-                        {p.text}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+              })}
+            </div>
+          )}
+        </div>
+        {!follow && rows.length > 0 && (
+          <button
+            type="button"
+            onClick={jumpToEnd}
+            className="absolute bottom-3 right-4 rounded-full border border-line bg-panel px-3 py-1.5 font-mono text-[11px] text-fg shadow-lg hover:bg-raised pointer-coarse:py-2"
+          >
+            ↓ {live ? 'Jump to latest' : 'Jump to end'}
+          </button>
         )}
       </div>
     </div>

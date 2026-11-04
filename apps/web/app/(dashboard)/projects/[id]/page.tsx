@@ -9,6 +9,7 @@ import { Screenshot } from '@/components/app/screenshot';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
+import { LoadError, MorePages, StaleNotice } from '@/components/ui/load-error';
 import { Empty, Panel, SkeletonPage, SkeletonRows } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { Tabs } from '@/components/ui/tabs';
@@ -21,7 +22,7 @@ import {
   READ_ONLY,
   useActionsSetup,
   useCan,
-  useDeployments,
+  useDeploymentPages,
   useEnv,
   useProject,
 } from '@/lib/queries';
@@ -102,7 +103,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         ]}
       />
       <div className="mt-5">
-        {tab === 'deployments' && <History projectId={id} />}
+        {tab === 'deployments' && <History projectId={id} slug={p.slug} />}
         {tab === 'settings' && (
           <div className="flex flex-col gap-5">
             <Settings project={p} onSaved={() => project.refetch()} />
@@ -115,8 +116,9 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   );
 }
 
-function History({ projectId }: { projectId: string }) {
-  const deps = useDeployments({ projectId, limit: 50 }, 5_000);
+function History({ projectId, slug }: { projectId: string; slug: string }) {
+  const deps = useDeploymentPages({ projectId, limit: 50 });
+  const items = deps.data?.pages.flatMap((p) => p.items);
   const qc = useQueryClient();
   const toast = useToast();
   const [target, setTarget] = useState<DeploymentSummaryT | null>(null);
@@ -130,7 +132,11 @@ function History({ projectId }: { projectId: string }) {
       const r = await post<{ ms: number }>(`/api/v1/projects/${projectId}/rollback`, {
         deploymentId: target.id,
       });
-      toast(`Rolled back to #${target.number} in ${r.ms.toFixed(0)} ms — no rebuild`, 'ok');
+      // The pointer moves at once; each edge location keeps the old answer for up to a minute.
+      toast(
+        `Rolled back to #${target.number}: visitors see it within about a minute (switched in ${r.ms.toFixed(0)} ms, nothing rebuilt)`,
+        'ok',
+      );
       await qc.invalidateQueries();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Rollback failed', 'fail');
@@ -140,17 +146,28 @@ function History({ projectId }: { projectId: string }) {
     }
   };
 
-  if (!deps.data)
+  if (deps.isError && !items)
+    return (
+      <Panel pad={false}>
+        <LoadError
+          what="this project's deployments"
+          error={deps.error}
+          onRetry={() => deps.refetch()}
+        />
+      </Panel>
+    );
+  if (!items)
     return (
       <Panel pad={false}>
         <SkeletonRows rows={5} className="h-12" />
       </Panel>
     );
-  if (deps.data.items.length === 0) return <Empty title="No deployments yet" />;
+  if (items.length === 0) return <Empty title="No deployments yet" />;
   return (
     <Panel pad={false}>
+      {deps.isError && <StaleNotice error={deps.error} onRetry={() => deps.refetch()} />}
       <ul className="divide-y divide-line">
-        {deps.data.items.map((d) => (
+        {items.map((d) => (
           <li
             key={d.id}
             // Phones: status and actions on a second line under the details.
@@ -213,10 +230,16 @@ function History({ projectId }: { projectId: string }) {
           </li>
         ))}
       </ul>
+      <MorePages
+        shown={items.length}
+        hasMore={deps.hasNextPage}
+        loading={deps.isFetchingNextPage}
+        onMore={() => deps.fetchNextPage()}
+      />
       <Confirm
         open={target !== null}
-        title={`Roll back to #${target?.number}?`}
-        body="The site will serve that deployment's files again immediately. Nothing is rebuilt: the live pointer moves back."
+        title={`Roll back ${slug} to #${target?.number}?`}
+        body="Nothing is rebuilt: the live pointer moves back to that deployment's files at once, and visitors everywhere see it within about a minute as the edge refreshes."
         confirmLabel="Roll back"
         loading={busy}
         onConfirm={rollback}

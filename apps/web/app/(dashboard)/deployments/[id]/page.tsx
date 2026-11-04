@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { use, useEffect, useMemo, useRef, useState } from 'react';
+import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RuntimePanel } from '@/components/app/runtime-panel';
 import { Screenshot } from '@/components/app/screenshot';
 import { PageHeader } from '@/components/app/shell';
@@ -20,10 +20,12 @@ import { useToast } from '@/components/ui/toast';
 import { API_ORIGIN, ApiError, api, apiUrl, newIdempotencyKey, post } from '@/lib/api';
 import { useApiStatus } from '@/lib/api-status';
 import { ago, duration, shortSha } from '@/lib/format';
+import { mergeLogLines } from '@/lib/logs';
 import {
   type DeploymentT,
   READ_ONLY,
   type RepairT,
+  switchOrg,
   useCan,
   useDeployment,
   useEvents,
@@ -42,7 +44,7 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
   // A production build that passed is Ready only until it's activated a moment later. Keep
   // listening until then, or the page stays on Ready after the site has gone live.
   const activating = d?.status === 'READY' && d.kind === 'production';
-  const { lines, connected } = useLiveLogs(id, d, live || activating);
+  const { lines, connected, history, retryHistory } = useLiveLogs(id, d, live || activating);
   const qc = useQueryClient();
   const toast = useToast();
   const [cancel, setCancel] = useState(false);
@@ -188,7 +190,26 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
         {tab === 'logs' && (
           <div className="grid gap-4 lg:grid-cols-[1fr_260px] [&>*]:min-w-0">
             <div className="h-[60vh] min-h-[360px] overflow-hidden rounded-[8px] border border-line bg-panel">
-              <LogViewer lines={lines} live={live && connected} />
+              <LogViewer
+                lines={lines}
+                live={live && connected}
+                notice={
+                  history === 'failed' ? (
+                    <span>
+                      Couldn’t load the stored log; what’s shown may be incomplete.{' '}
+                      <button
+                        type="button"
+                        onClick={retryHistory}
+                        className="font-medium text-fg hover:underline"
+                      >
+                        Retry
+                      </button>
+                    </span>
+                  ) : history === 'loading' && lines.length > 0 ? (
+                    'Loading the rest of the log…'
+                  ) : null
+                }
+              />
             </div>
             <aside className="flex flex-col gap-3">
               <RuntimePanel d={d} />
@@ -267,7 +288,7 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
       </div>
       <Confirm
         open={cancel}
-        title="Cancel this deployment?"
+        title={`Cancel ${d.projectSlug} #${d.number}?`}
         body="Queued work stops now; a running build is stopped at its next heartbeat."
         confirmLabel="Cancel deployment"
         variant="danger"
@@ -286,11 +307,17 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
 function useLiveLogs(id: string, d: DeploymentT | undefined, live: boolean) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [connected, setConnected] = useState(false);
+  const [history, setHistory] = useState<'loading' | 'done' | 'failed'>('loading');
+  const [historyTry, setHistoryTry] = useState(0);
   const qc = useQueryClient();
   const seen = useRef(new Set<string>());
   const known = Boolean(d);
   // A stream cut by an outage is given up by the browser; start again once it's back.
   const up = useApiStatus() === 'up';
+  const add = useCallback(
+    (incoming: LogLine[]) => setLines((prev) => mergeLogLines(prev, incoming, seen.current)),
+    [],
+  );
 
   // Only another deployment starts the log over. Clearing it whenever the
   // stream stopped blanked the whole panel the moment a deploy went live.
@@ -300,52 +327,65 @@ function useLiveLogs(id: string, d: DeploymentT | undefined, live: boolean) {
     setLines([]);
   }, [id]);
 
+  // The stored log, every page of it (a long build has thousands of lines, and
+  // its failure is usually at the end). Lines already shown are skipped.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: historyTry is the Retry button
   useEffect(() => {
     if (!known) return;
-    let es: EventSource | null = null;
-    let cancelled = false;
-    const add = (incoming: LogLine[]) => {
-      const fresh = incoming.filter((l) => {
-        const k = `${l.attemptNo}:${l.seq}`;
-        if (seen.current.has(k)) return false;
-        seen.current.add(k);
-        return true;
-      });
-      if (fresh.length)
-        setLines((prev) =>
-          [...prev, ...fresh].sort((a, b) => a.attemptNo - b.attemptNo || a.seq - b.seq),
+    const ctl = new AbortController();
+    setHistory('loading');
+    (async () => {
+      let cursor: string | null = '0';
+      while (cursor !== null) {
+        const page: { lines: LogLine[]; nextCursor: string | null } = await api(
+          `/api/v1/deployments/${id}/logs?cursor=${cursor}`,
+          { signal: ctl.signal },
         );
-    };
-    // History first (covers finished attempts and anything older than the live buffer).
-    api<{ lines: LogLine[] }>(`/api/v1/deployments/${id}/logs`)
-      .then((r) => !cancelled && add(r.lines))
-      .catch(() => {});
-    if (live && up) {
-      es = new EventSource(apiUrl(`/api/v1/deployments/${id}/stream`), {
-        withCredentials: Boolean(API_ORIGIN),
-      });
-      es.onopen = () => setConnected(true);
-      es.onerror = () => setConnected(false);
-      es.addEventListener('log', (e) => {
-        const data = JSON.parse((e as MessageEvent).data) as {
-          attemptNo: number;
-          lines: Array<{ seq: number; text: string }>;
-        };
-        add(data.lines.map((l) => ({ ...l, attemptNo: data.attemptNo })));
-      });
-      es.addEventListener('status', () => {
-        void qc.invalidateQueries({ queryKey: ['deployment', id] });
-        void qc.invalidateQueries({ queryKey: ['repairs', id] });
-        void qc.invalidateQueries({ queryKey: ['events', id] });
-      });
-    }
-    return () => {
-      cancelled = true;
-      es?.close();
-    };
-  }, [id, known, live, up, qc]);
+        add(page.lines);
+        cursor = page.nextCursor;
+      }
+      setHistory('done');
+    })().catch(() => {
+      if (!ctl.signal.aborted) setHistory('failed');
+    });
+    return () => ctl.abort();
+  }, [id, known, add, historyTry]);
 
-  return { lines, connected };
+  useEffect(() => {
+    if (!known || !live || !up) return;
+    const es = new EventSource(apiUrl(`/api/v1/deployments/${id}/stream`), {
+      withCredentials: Boolean(API_ORIGIN),
+    });
+    const refresh = () => {
+      void qc.invalidateQueries({ queryKey: ['repairs', id] });
+      void qc.invalidateQueries({ queryKey: ['events', id] });
+    };
+    es.onopen = () => setConnected(true);
+    es.onerror = () => setConnected(false);
+    // Sent on every (re)connection: the deployment as it is now, so a status
+    // change missed while disconnected (or trimmed from the stream) still shows.
+    es.addEventListener('snapshot', (e) => {
+      const now = JSON.parse((e as MessageEvent).data) as DeploymentT;
+      const before = qc.getQueryData<DeploymentT>(['deployment', id]);
+      qc.setQueryData(['deployment', id], now);
+      if (before?.status !== now.status) refresh();
+    });
+    es.addEventListener('log', (e) => {
+      const data = JSON.parse((e as MessageEvent).data) as {
+        attemptNo: number;
+        lines: Array<{ seq: number; text: string }>;
+      };
+      add(data.lines.map((l) => ({ ...l, attemptNo: data.attemptNo })));
+    });
+    es.addEventListener('status', () => {
+      void qc.invalidateQueries({ queryKey: ['deployment', id] });
+      refresh();
+    });
+    // A finished deployment flips `live` off, which closes the stream here.
+    return () => es.close();
+  }, [id, known, live, up, qc, add]);
+
+  return { lines, connected, history, retryHistory: () => setHistoryTry((n) => n + 1) };
 }
 
 function RecoveryPanel({
@@ -600,9 +640,7 @@ function InAnotherOrg({ id }: { id: string }) {
   const elsewhere = target !== undefined && target.orgId !== current;
   useEffect(() => {
     if (!elsewhere || !target) return;
-    post('/api/v1/session/org', { orgId: target.orgId })
-      .then(() => qc.invalidateQueries())
-      .catch(() => setFailed(true));
+    switchOrg(qc, target.orgId).catch(() => setFailed(true));
   }, [elsewhere, target, qc]);
   if (where.isPending) return <SkeletonPage panels={['h-14', 'h-80']} />;
   if (elsewhere && !failed) return <Empty title={`Opening it in ${target.name}…`} />;

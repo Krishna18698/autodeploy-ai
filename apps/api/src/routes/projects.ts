@@ -271,10 +271,23 @@ export const projectRoutes =
       '/api/v1/projects',
       {
         preHandler: requireRole(),
-        schema: { tags: ['projects'], querystring: PageQuery, response: { 200: Page(Project) } },
+        schema: {
+          tags: ['projects'],
+          querystring: PageQuery.extend({
+            q: z
+              .string()
+              .trim()
+              .max(80)
+              .optional()
+              .describe('Part of a name, address or repository'),
+          }),
+          response: { 200: Page(Project) },
+        },
       },
       async (req) => {
         const c = decodeCursor(req.query.cursor);
+        // Matched literally: % and _ are wildcards in LIKE.
+        const like = req.query.q ? `%${req.query.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
         const rows = await withOrg(
           deps.sql,
           authOf(req).orgId,
@@ -283,6 +296,7 @@ export const projectRoutes =
           from projects p
           left join lateral (select id, number, status, created_at from deployments d where d.project_id = p.id order by created_at desc limit 1) l on true
           where ${c ? tx`(p.created_at, p.id) < (${c.createdAt}, ${c.id})` : tx`true`}
+            and ${like ? tx`(p.slug ilike ${like} or p.name ilike ${like} or p.repo_full_name ilike ${like})` : tx`true`}
           order by p.created_at desc, p.id desc limit ${req.query.limit + 1}`,
         );
         const more = rows.length > req.query.limit;

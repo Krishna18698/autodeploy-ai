@@ -14,6 +14,36 @@ export const streamKey = (deploymentId: string) => `deploy:${deploymentId}`;
 const HEARTBEAT_MS = 15_000;
 const STREAM_ID = /^\d+-\d+$/;
 
+type Sink = Pick<NodeJS.WritableStream, 'once' | 'removeListener'> & {
+  writableLength: number;
+  writableNeedDrain: boolean;
+};
+/** A reader this far behind, or stalled this long, is let go; it reconnects and resumes. */
+export const SLOW_READER = { maxBufferedBytes: 1_000_000, stallMs: 30_000 };
+
+/**
+ * Whether the reader has caught up: at once if nothing is waiting, after its
+ * 'drain' if output is buffered. False for one too far behind, stalled, or gone,
+ * so the stream stops reading Valkey for it instead of buffering without limit.
+ */
+export function caughtUp(res: Sink, limits = SLOW_READER): Promise<boolean> {
+  if (!res.writableNeedDrain) return Promise.resolve(true);
+  if (res.writableLength > limits.maxBufferedBytes) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const done = (ok: boolean) => {
+      clearTimeout(timer);
+      res.removeListener('drain', onDrain);
+      res.removeListener('close', onClose);
+      resolve(ok);
+    };
+    const onDrain = () => done(true);
+    const onClose = () => done(false);
+    const timer = setTimeout(() => done(false), limits.stallMs);
+    res.once('drain', onDrain);
+    res.once('close', onClose);
+  });
+}
+
 export async function streamDeployment(
   deps: Deps,
   req: FastifyRequest,
@@ -76,6 +106,9 @@ export async function streamDeployment(
           res.write(`id: ${id}\nevent: ${kind}\ndata: ${data}\n\n`);
         }
       }
+      // A slow reader: wait for it before reading more, and let it go if it
+      // stalls or falls too far behind (it resumes from its Last-Event-ID).
+      if (!(await caughtUp(res))) break;
     }
   } catch (err) {
     if (!closed) req.log.warn({ err }, 'deployment stream ended with an error');

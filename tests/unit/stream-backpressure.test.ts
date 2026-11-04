@@ -1,0 +1,51 @@
+import { Writable } from 'node:stream';
+import { describe, expect, it } from 'vitest';
+import { caughtUp } from '../../apps/api/src/services/stream';
+
+/** A reader that takes each write at once, a moment later, or never. */
+const reader = (pace: 'now' | 'later' | 'never') =>
+  new Writable({
+    highWaterMark: 16,
+    write(_chunk, _enc, done) {
+      if (pace === 'now') done();
+      else if (pace === 'later') setTimeout(done, 20);
+    },
+  });
+const limits = { maxBufferedBytes: 1_000, stallMs: 1_000 };
+
+describe('the live stream and a slow reader', () => {
+  it('goes on at once when nothing is waiting', async () => {
+    const r = reader('now');
+    r.write('x');
+    expect(await caughtUp(r, limits)).toBe(true);
+  });
+
+  it('waits for a reader that catches up', async () => {
+    const r = reader('later');
+    r.write('x'.repeat(100));
+    expect(r.writableNeedDrain).toBe(true);
+    expect(await caughtUp(r, limits)).toBe(true);
+  });
+
+  it('lets go of a reader that stalls', async () => {
+    const r = reader('never');
+    r.write('x'.repeat(100));
+    const started = Date.now();
+    expect(await caughtUp(r, { ...limits, stallMs: 50 })).toBe(false);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it('lets go at once of a reader too far behind', async () => {
+    const r = reader('never');
+    r.write('x'.repeat(2_000));
+    expect(await caughtUp(r, limits)).toBe(false);
+  });
+
+  it('stops waiting when the reader goes away', async () => {
+    const r = reader('never');
+    r.write('x'.repeat(100));
+    const waiting = caughtUp(r, { ...limits, stallMs: 5_000 });
+    r.destroy();
+    expect(await waiting).toBe(false);
+  });
+});

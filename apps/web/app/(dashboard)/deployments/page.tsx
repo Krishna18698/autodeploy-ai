@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { PageHeader } from '@/components/app/shell';
+import { LoadError, MorePages, StaleNotice } from '@/components/ui/load-error';
 import { Empty, Panel, Shim } from '@/components/ui/panel';
 import { StatusPill } from '@/components/ui/status';
 import { ago, shortSha } from '@/lib/format';
 import { useLastCount } from '@/lib/last-count';
-import { useDeployments } from '@/lib/queries';
+import { useDeploymentPages } from '@/lib/queries';
 
 const FILTERS = [
   { id: '', label: 'All' },
@@ -19,9 +20,11 @@ const FILTERS = [
 
 export default function DeploymentsPage() {
   const [status, setStatus] = useState('');
-  const deps = useDeployments({ limit: 100, ...(status && { status }) }, 4_000);
+  // A new filter is a new list, from its first page.
+  const deps = useDeploymentPages({ limit: 50, ...(status && { status }) });
+  const items = deps.data?.pages.flatMap((p) => p.items);
   // Placeholders as many rows as last time (up to a screenful), so nothing jumps.
-  const rows = useLastCount('deployments', deps.data?.items.length, 6, 12);
+  const rows = useLastCount('deployments', items?.length, 6, 12);
   return (
     <>
       <PageHeader title="Deployments" />
@@ -40,7 +43,10 @@ export default function DeploymentsPage() {
         ))}
       </fieldset>
       <Panel pad={false}>
-        {!deps.data ? (
+        {deps.isError && items && <StaleNotice error={deps.error} onRetry={() => deps.refetch()} />}
+        {deps.isError && !items ? (
+          <LoadError what="deployments" error={deps.error} onRetry={() => deps.refetch()} />
+        ) : !items ? (
           <div role="status">
             <span className="sr-only">Loading</span>
             <ul className="divide-y divide-line">
@@ -65,11 +71,11 @@ export default function DeploymentsPage() {
               ))}
             </ul>
           </div>
-        ) : deps.data.items.length === 0 ? (
-          <Empty title="Nothing here" />
+        ) : items.length === 0 ? (
+          <Empty title={status ? 'No deployments match this filter' : 'No deployments yet'} />
         ) : (
           <ul className="divide-y divide-line">
-            {deps.data.items.map((d) => (
+            {items.map((d) => (
               <li key={d.id}>
                 <Link
                   href={`/deployments/${d.id}`}
@@ -91,6 +97,12 @@ export default function DeploymentsPage() {
             ))}
           </ul>
         )}
+        <MorePages
+          shown={items?.length ?? 0}
+          hasMore={deps.hasNextPage}
+          loading={deps.isFetchingNextPage}
+          onMore={() => deps.fetchNextPage()}
+        />
       </Panel>
     </>
   );

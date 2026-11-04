@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, post } from '@/lib/api';
-import { type MeT, useMe } from '@/lib/queries';
+import { type MeT, switchOrg, useMe } from '@/lib/queries';
 
 // Portfolio mode: anyone signs in and looks around the read-only demo org;
 // their own account deploys once a platform admin approves it.
@@ -28,10 +28,7 @@ export function PortfolioBanner() {
   const m = me.data;
   if (!m) return null;
   const own = ownOrg(m);
-  const switchTo = async (orgId: string) => {
-    await post('/api/v1/session/org', { orgId });
-    await qc.invalidateQueries();
-  };
+  const switchTo = (orgId: string) => switchOrg(qc, orgId);
   if (m.org.demo === true && m.org.role === 'viewer')
     return (
       <Note>
