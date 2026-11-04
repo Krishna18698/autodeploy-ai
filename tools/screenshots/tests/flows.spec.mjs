@@ -63,7 +63,7 @@ test('signed in: the rollback dialog opens and closes without rolling back', asy
     .click();
   await page.getByRole('button', { name: 'Roll back' }).first().click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog).toContainText(/Roll back to #\d+\?/);
+  await expect(dialog).toContainText(/Roll back \S+ to #\d+\?/);
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toBeHidden();
 });

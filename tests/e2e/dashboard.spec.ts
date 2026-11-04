@@ -80,7 +80,11 @@ test('roll back to a previous deployment from the history', async ({ page }) => 
   await expect(rollback).toBeVisible({ timeout: 180_000 });
   await rollback.click();
   await page.getByRole('dialog').getByRole('button', { name: 'Roll back' }).click();
-  await expect(page.getByText(/Rolled back to #\d+ in \d+ ms — no rebuild/)).toBeVisible();
+  await expect(
+    page.getByText(
+      /Rolled back to #\d+: visitors see it within about a minute \(switched in \d+ ms/,
+    ),
+  ).toBeVisible();
 });
 
 test('dashboard pages have no serious accessibility violations', async ({ page }) => {
