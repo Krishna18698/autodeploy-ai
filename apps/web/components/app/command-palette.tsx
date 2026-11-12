@@ -8,7 +8,8 @@ import { useProjectSearch, useProjects } from '@/lib/queries';
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const projects = useProjects();
+  // Asked for when the palette opens, not on every page that could open it.
+  const projects = useProjects(open);
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
   useEffect(() => {

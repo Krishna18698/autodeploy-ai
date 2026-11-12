@@ -27,9 +27,11 @@ export type ProjectRow = {
   latest_number?: number | null;
   latest_status?: string | null;
   latest_created_at?: Date | null;
+  /** Whether the live deployment has a screenshot (list and detail queries). */
+  live_screenshot?: boolean | null;
 };
 
-export function toProject(r: ProjectRow, domain: string): Project {
+export function toProject(r: ProjectRow, domain: string, apiUrl = ''): Project {
   return {
     id: r.id,
     slug: r.slug,
@@ -50,6 +52,10 @@ export function toProject(r: ProjectRow, domain: string): Project {
     executor: r.executor,
     analysis: r.analysis,
     activeDeploymentId: r.active_deployment_id,
+    screenshotUrl:
+      r.live_screenshot && r.active_deployment_id
+        ? `${apiUrl}/api/v1/deployments/${r.active_deployment_id}/screenshot`
+        : null,
     latestDeployment:
       r.latest_id && r.latest_number != null && r.latest_status && r.latest_created_at
         ? {

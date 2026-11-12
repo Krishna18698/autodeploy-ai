@@ -29,7 +29,7 @@ import {
   toRepair,
 } from '../services/mappers.js';
 import { resolveSource } from '../services/sources.js';
-import { streamDeployment } from '../services/stream.js';
+import { admitStream, streamDeployment } from '../services/stream.js';
 import { assertServable } from '../services/takedown.js';
 
 const Params = z.object({ id: z.uuid() });
@@ -331,12 +331,24 @@ export const deploymentRoutes =
         schema: { tags: ['deployments'], params: Params, hide: true },
       },
       async (req, reply) => {
-        const snapshot = await load(authOf(req).orgId, req.params.id);
+        const a = authOf(req);
+        const snapshot = await load(a.orgId, req.params.id);
+        const release = admitStream(a.userId);
+        if (!release)
+          throw new AppError(
+            429,
+            'too_many_streams',
+            'Too many live views are open. Close one and reload this page.',
+          );
         const lastId =
           typeof req.headers['last-event-id'] === 'string'
             ? req.headers['last-event-id']
             : undefined;
-        await streamDeployment(deps, req, reply, snapshot, lastId);
+        try {
+          await streamDeployment(deps, req, reply, snapshot, lastId, release);
+        } finally {
+          release(); // also when it failed before it could start
+        }
       },
     );
 

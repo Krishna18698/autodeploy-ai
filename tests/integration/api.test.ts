@@ -108,6 +108,24 @@ describe('API security', () => {
     expect(list.json().items.some((x: { id: string }) => x.id === p.id)).toBe(false);
   });
 
+  it("a project carries its live deployment's screenshot address, once there is one", async () => {
+    const s = await login(`shots-${randomUUID().slice(0, 6)}`);
+    const org = (await app.inject({ url: '/api/v1/me', headers: { cookie: s.cookie } })).json().org
+      .id;
+    const p = await makeProject(deps.sql, org);
+    const d = await makeDeployment(deps.sql, org, p.id);
+    const shot = async () =>
+      (await app.inject({ url: `/api/v1/projects/${p.id}`, headers: { cookie: s.cookie } })).json()
+        .screenshotUrl;
+    expect(await shot()).toBeNull(); // nothing live
+    await deps.sql`update projects set active_deployment_id = ${d} where id = ${p.id}`;
+    expect(await shot()).toBeNull(); // live, but the browser check kept no picture
+    await deps.sql`update deployments set screenshot_key = 'screenshots/x.png' where id = ${d}`;
+    expect(await shot()).toMatch(new RegExp(`/api/v1/deployments/${d}/screenshot$`));
+    const list = await app.inject({ url: '/api/v1/projects', headers: { cookie: s.cookie } });
+    expect(list.json().items[0].screenshotUrl).toBe(await shot());
+  });
+
   it('searches its own projects by name, address or repository, with % and _ taken literally', async () => {
     const s = await login(`searcher-${randomUUID().slice(0, 6)}`);
     const org = (await app.inject({ url: '/api/v1/me', headers: { cookie: s.cookie } })).json().org

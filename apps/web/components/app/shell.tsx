@@ -89,15 +89,16 @@ export function Shell({ children }: { children: ReactNode }) {
           </span>
         </div>
       );
-    return (
-      <>
-        {/* The page mounts out of sight meanwhile, so its own requests start now instead of
-            after this one (a round trip to the VM each); it then shows from the cache. */}
-        {me.isPending && <div hidden>{children}</div>}
-        {opening}
-      </>
-    );
+    // Signed out (on the way to the sign-in page): just the logo.
+    if (!me.isPending) return opening;
+    // Still loading: the dashboard below renders now, under the logo, so the page's own
+    // requests go out with the account's instead of after it. It must be this same tree
+    // that then shows: a page mounted elsewhere and moved would be unmounted, which
+    // cancels its requests in flight and sends them again.
   }
+  const user = me.data?.user;
+  const org = me.data?.org;
+  const orgs = me.data?.orgs ?? [];
 
   const changeOrg = (orgId: string) => switchOrg(qc, orgId);
   // Signed out on purpose: back to the home page, not a sign-in form.
@@ -143,7 +144,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
           <nav aria-label="Main" className={`${menu ? 'block' : 'hidden'} px-2 pb-3 lg:block`}>
             <ul className="flex flex-col gap-0.5">
-              {[...NAV, ...(me.data.user.platformAdmin ? [ADMIN_NAV] : [])].map((n) => {
+              {[...NAV, ...(user?.platformAdmin ? [ADMIN_NAV] : [])].map((n) => {
                 const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
                 return (
                   <li key={n.href}>
@@ -189,18 +190,18 @@ export function Shell({ children }: { children: ReactNode }) {
               </label>
               <select
                 id="org-mobile"
-                value={me.data.org.id}
+                value={org?.id ?? ''}
                 onChange={(e) => changeOrg(e.target.value)}
                 className="h-10 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
               >
-                {me.data.orgs.map((o) => (
+                {orgs.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name} · {o.demo ? 'demo' : o.role}
                   </option>
                 ))}
               </select>
               <div className="flex items-center justify-between py-1 text-[13px] text-muted">
-                <span>{me.data.user.login}</span>
+                <span>{user?.login}</span>
                 <button type="button" onClick={logout} className="py-2 hover:text-fg">
                   Sign out
                 </button>
@@ -240,11 +241,11 @@ export function Shell({ children }: { children: ReactNode }) {
             </label>
             <select
               id="org"
-              value={me.data.org.id}
+              value={org?.id ?? ''}
               onChange={(e) => changeOrg(e.target.value)}
               className="h-8 rounded-lg border border-white/8 bg-white/4 px-2 text-[13px] text-fg outline-none focus:border-run/60"
             >
-              {me.data.orgs.map((o) => (
+              {orgs.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name} · {o.demo ? 'demo' : o.role}
                 </option>
@@ -255,9 +256,9 @@ export function Shell({ children }: { children: ReactNode }) {
                 aria-hidden
                 className="grid size-7 place-items-center rounded-full bg-gradient-to-b from-white/20 to-white/5 text-[11px] font-medium text-fg"
               >
-                {me.data.user.login.slice(0, 2).toUpperCase()}
+                {user?.login.slice(0, 2).toUpperCase()}
               </span>
-              {me.data.user.login}
+              {user?.login}
             </span>
             <button type="button" onClick={logout} className="text-[13px] text-muted hover:text-fg">
               Sign out

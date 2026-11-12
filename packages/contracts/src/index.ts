@@ -188,6 +188,10 @@ export const Project = z.object({
   executor: z.enum(['sandbox', 'github_actions']),
   analysis: Analysis.nullable(),
   activeDeploymentId: Id.nullable(),
+  screenshotUrl: z
+    .string()
+    .nullable()
+    .describe('The live deployment as the browser check saw it, when there is one'),
   latestDeployment: z
     .object({
       id: Id,

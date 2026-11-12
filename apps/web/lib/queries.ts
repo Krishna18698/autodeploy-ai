@@ -56,10 +56,11 @@ export function useMe() {
 }
 
 /** The first page of projects (the overview, the command palette). */
-export const useProjects = () =>
+export const useProjects = (enabled = true) =>
   useQuery({
     queryKey: ['projects'],
     queryFn: ({ signal }) => api<Page<ProjectT>>('/api/v1/projects?limit=100', { signal }),
+    enabled,
   });
 /** Every project, a page at a time (the Projects screen). */
 export const useProjectPages = () =>

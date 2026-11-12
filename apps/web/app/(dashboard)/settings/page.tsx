@@ -983,10 +983,16 @@ function Audit() {
       <ul className="divide-y divide-line font-mono text-[12px]">
         {!audit.data && <SkeletonItems rows={6} className="h-4" />}
         {audit.data?.items.map((e) => (
-          <li key={e.id} className="grid grid-cols-[7rem_8rem_minmax(0,1fr)] gap-3 px-4 py-2">
+          <li
+            key={e.id}
+            // Phones: when and what on one line, who and on what under it.
+            className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 px-4 py-2 sm:grid-cols-[7rem_13rem_minmax(0,1fr)]"
+          >
             <span className="text-muted">{ago(e.createdAt)}</span>
-            <span className="text-fg">{e.action}</span>
-            <span className="truncate text-muted">
+            <span title={e.action} className="truncate text-fg">
+              {e.action}
+            </span>
+            <span className="col-start-2 truncate text-muted sm:col-start-auto">
               {e.actor} {e.targetType && `→ ${e.targetType} ${e.targetId?.slice(0, 8)}`}{' '}
               {e.ip && `· ${e.ip}`}
             </span>

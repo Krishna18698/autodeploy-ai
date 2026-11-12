@@ -1,6 +1,6 @@
 # Issues to fix
 
-What's left and what's done, kept current. Last updated 2026-11-04.
+What's left and what's done, kept current. Last updated 2026-11-12.
 
 ## Not done, needed before launch
 
@@ -28,7 +28,7 @@ last, each only on the owner's yes.
 - [ ] **Slow site loads in the smoke suite:** each miss is now logged with its cause (see Done, 2026-10-28).
 
 **Clean-up with a date**
-- [ ] **Remove the session move after 2026-11-10:** `apps/api/src/routes/session-move.ts`, the handoff rewrite in `apps/web/next.config.ts` and `moveSession` in `apps/web/lib/api.ts`. By then every old cookie on the dashboard's host has expired.
+- [ ] **Remove the session move (due since 2026-11-10):** `apps/api/src/routes/session-move.ts`, the handoff rewrite in `apps/web/next.config.ts` and `moveSession` in `apps/web/lib/api.ts`. By then every old cookie on the dashboard's host has expired.
 - [ ] **Drop `autodeploy.dpdns.org` from `legacy_domains`** once nothing links there (its free registration lapses June 2027).
 
 **Upkeep**
@@ -37,6 +37,14 @@ last, each only on the owner's yes.
 - [ ] **Renew the deploy's Access service token** before October 2027: `terraform apply -replace=cloudflare_zero_trust_access_service_token.deploy`, then update the two `CF_ACCESS_*` GitHub secrets.
 
 ## Done
+
+**2026-11-12** (audit)
+- [x] **Pages fetch their data with the account again:** making requests cancellable (2026-11-04) undid the 2026-10-30 gain: the page mounted out of sight was unmounted when the account arrived, which cancelled its requests in flight and sent them again. The dashboard now renders in place under the opening logo, so nothing is remounted; traced, every request starts in one round.
+- [x] **The command palette asks for projects when it opens**, not on every page load.
+- [x] **Live streams are capped:** 8 per person and 300 per API process (each holds a Valkey connection, and anyone can sign in); past that the stream answers 429.
+- [x] **Timeline details are readable:** durations, sizes, short hashes and lists instead of raw JSON, which ran 178 px off the page on desktop and was cut off on phones.
+- [x] **Project thumbnails:** Projects and the Overview show each project's live site as the browser check saw it (`Project.screenshotUrl`).
+- [x] **Phone fixes:** deployment numbers stay visible in Activity when a name is long; tabs fade at the edge that hides more and scroll the chosen one into view; links, checkboxes and the log search are at least 24 px tall on touch; the audit log no longer overlaps its columns; the Overview's projects and the admin requests say when they couldn't load.
 
 **2026-11-04** (from the project review of revision 680d4ba)
 - [x] **Long logs complete:** a finished deployment loads every page of its stored log (it stopped after about 2,000 lines, hiding the end, where failures usually are), and says so with a Retry if that fails. Lines are appended in order instead of re-sorting the whole log on every batch.

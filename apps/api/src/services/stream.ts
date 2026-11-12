@@ -44,12 +44,40 @@ export function caughtUp(res: Sink, limits = SLOW_READER): Promise<boolean> {
   });
 }
 
+/**
+ * How many live streams may be open at once: per person, and in all (per API
+ * process). Each holds a dedicated Valkey connection, and anyone can sign in,
+ * so without a limit one account could hold thousands open.
+ */
+export const STREAM_LIMITS = { perUser: 8, total: 300 };
+const openByUser = new Map<string, number>();
+let openTotal = 0;
+
+/** A place for one more stream: its release (call once, when it ends), or null when full. */
+export function admitStream(userId: string, limits = STREAM_LIMITS): (() => void) | null {
+  const mine = openByUser.get(userId) ?? 0;
+  if (mine >= limits.perUser || openTotal >= limits.total) return null;
+  openByUser.set(userId, mine + 1);
+  openTotal++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    openTotal--;
+    const left = (openByUser.get(userId) ?? 1) - 1;
+    if (left > 0) openByUser.set(userId, left);
+    else openByUser.delete(userId);
+  };
+}
+
 export async function streamDeployment(
   deps: Deps,
   req: FastifyRequest,
   reply: FastifyReply,
   snapshot: Deployment,
   lastEventId?: string,
+  /** Called once when the stream ends, however it ends. */
+  onEnd: () => void = () => {},
 ) {
   // Headers already set on the reply (the dashboard's cross-origin permission
   // among them) would be dropped by writing to the raw response: carry them over.
@@ -80,6 +108,7 @@ export async function streamDeployment(
     clearInterval(heartbeat);
     conn.disconnect();
     res.end();
+    onEnd();
   };
   req.raw.on('close', close);
   const heartbeat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS);

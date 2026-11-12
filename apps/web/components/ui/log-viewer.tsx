@@ -124,23 +124,23 @@ export function LogViewer({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search logs"
           aria-label="Search logs"
-          className="h-7 w-44 rounded border border-line bg-bg px-2 font-mono text-[12px] text-fg outline-none placeholder:text-muted/60 focus:border-run/60"
+          className="h-7 w-44 rounded border border-line bg-bg px-2 font-mono text-[12px] text-fg outline-none placeholder:text-muted/60 focus:border-run/60 pointer-coarse:h-9"
         />
-        <label className="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+        <label className="flex items-center gap-1.5 font-mono text-[11px] text-muted pointer-coarse:py-2">
           <input
             type="checkbox"
             checked={wrap}
             onChange={(e) => setWrap(e.target.checked)}
-            className="accent-[var(--color-run)]"
+            className="accent-[var(--color-run)] pointer-coarse:size-4"
           />{' '}
           wrap
         </label>
-        <label className="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+        <label className="flex items-center gap-1.5 font-mono text-[11px] text-muted pointer-coarse:py-2">
           <input
             type="checkbox"
             checked={follow}
             onChange={(e) => setFollow(e.target.checked)}
-            className="accent-[var(--color-run)]"
+            className="accent-[var(--color-run)] pointer-coarse:size-4"
           />{' '}
           follow
         </label>

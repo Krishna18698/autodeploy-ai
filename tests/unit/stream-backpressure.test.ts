@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { caughtUp } from '../../apps/api/src/services/stream';
+import { admitStream, caughtUp } from '../../apps/api/src/services/stream';
 
 /** A reader that takes each write at once, a moment later, or never. */
 const reader = (pace: 'now' | 'later' | 'never') =>
@@ -47,5 +47,25 @@ describe('the live stream and a slow reader', () => {
     const waiting = caughtUp(r, { ...limits, stallMs: 5_000 });
     r.destroy();
     expect(await waiting).toBe(false);
+  });
+});
+
+describe('how many live streams may be open', () => {
+  const limits = { perUser: 2, total: 3 };
+  it('caps one person, frees a place when a stream ends, and caps everyone together', () => {
+    const a1 = admitStream('a', limits);
+    const a2 = admitStream('a', limits);
+    expect(a1 && a2).toBeTruthy();
+    expect(admitStream('a', limits)).toBeNull(); // this person's limit
+    const b1 = admitStream('b', limits);
+    expect(b1).toBeTruthy();
+    expect(admitStream('c', limits)).toBeNull(); // everyone's limit
+    a1?.();
+    a1?.(); // ending twice frees one place, not two
+    const c1 = admitStream('c', limits);
+    expect(c1).toBeTruthy();
+    expect(admitStream('b', limits)).toBeNull();
+    for (const release of [a2, b1, c1]) release?.();
+    expect(admitStream('a', limits)).toBeTruthy();
   });
 });

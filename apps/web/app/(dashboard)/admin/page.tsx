@@ -7,6 +7,7 @@ import type { z } from 'zod';
 import { PageHeader } from '@/components/app/shell';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/ui/confirm';
+import { LoadError } from '@/components/ui/load-error';
 import { Empty, Panel, SkeletonRows } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, post } from '@/lib/api';
@@ -258,7 +259,9 @@ function AccessRequests() {
   };
   return (
     <Panel title="Asking to deploy" pad={false} className="mb-6">
-      {!requests.data ? (
+      {requests.isError && !requests.data ? (
+        <LoadError what="the requests" error={requests.error} onRetry={() => requests.refetch()} />
+      ) : !requests.data ? (
         <SkeletonRows rows={2} />
       ) : requests.data.length === 0 ? (
         <p className="px-4 py-3 text-[13px] text-muted">Nobody is waiting.</p>

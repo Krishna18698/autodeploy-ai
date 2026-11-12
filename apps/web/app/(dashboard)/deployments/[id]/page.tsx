@@ -33,6 +33,7 @@ import {
   useRepairs,
 } from '@/lib/queries';
 import { STATUS } from '@/lib/status';
+import { eventDetails } from '@/lib/timeline';
 
 export default function DeploymentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -123,7 +124,7 @@ export default function DeploymentPage({ params }: { params: Promise<{ id: strin
                 href={d.url}
                 target="_blank"
                 rel="noreferrer"
-                className="font-mono text-[12px] text-run hover:underline"
+                className="font-mono text-[12px] text-run hover:underline pointer-coarse:py-1.5"
               >
                 {d.url.replace('https://', '')} ↗
               </a>
@@ -586,9 +587,7 @@ function Timeline({ id }: { id: string }) {
               : e.type.startsWith('repair')
                 ? 'bg-ai'
                 : 'bg-run';
-        const details = Object.entries(e.payload).filter(
-          ([, v]) => v !== null && v !== '' && !(Array.isArray(v) && v.length === 0),
-        );
+        const details = eventDetails(e.payload);
         return (
           <motion.li
             key={e.id}
@@ -608,13 +607,14 @@ function Timeline({ id }: { id: string }) {
               <span className="text-[13px] text-fg">{title}</span>
             </div>
             {details.length > 0 && (
-              <p className="mt-0.5 font-mono text-[11px] text-muted">
-                {details
-                  .slice(0, 6)
-                  .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
-                  .join(' · ')
-                  .slice(0, 300)}
-              </p>
+              <dl className="mt-1 flex flex-col gap-0.5 font-mono text-[11px] leading-relaxed">
+                {details.map((d) => (
+                  <div key={d.key} className="flex gap-2">
+                    <dt className="shrink-0 text-muted/70">{d.key}</dt>
+                    <dd className="min-w-0 text-muted [overflow-wrap:anywhere]">{d.text}</dd>
+                  </div>
+                ))}
+              </dl>
             )}
           </motion.li>
         );

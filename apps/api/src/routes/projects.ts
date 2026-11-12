@@ -292,7 +292,8 @@ export const projectRoutes =
           deps.sql,
           authOf(req).orgId,
           (tx) => tx<ProjectRow[]>`
-          select p.*, l.id as latest_id, l.number as latest_number, l.status as latest_status, l.created_at as latest_created_at
+          select p.*, l.id as latest_id, l.number as latest_number, l.status as latest_status, l.created_at as latest_created_at,
+            (select a.screenshot_key is not null from deployments a where a.id = p.active_deployment_id) as live_screenshot
           from projects p
           left join lateral (select id, number, status, created_at from deployments d where d.project_id = p.id order by created_at desc limit 1) l on true
           where ${c ? tx`(p.created_at, p.id) < (${c.createdAt}, ${c.id})` : tx`true`}
@@ -303,7 +304,7 @@ export const projectRoutes =
         const page = rows.slice(0, req.query.limit);
         const last = page.at(-1);
         return {
-          items: page.map((r) => toProject(r, domain)),
+          items: page.map((r) => toProject(r, domain, deps.env.API_PUBLIC_URL)),
           nextCursor: more && last ? encodeCursor(last.created_at, last.id) : null,
         };
       },
@@ -324,13 +325,14 @@ export const projectRoutes =
           deps.sql,
           authOf(req).orgId,
           (tx) => tx<ProjectRow[]>`
-          select p.*, l.id as latest_id, l.number as latest_number, l.status as latest_status, l.created_at as latest_created_at from projects p
+          select p.*, l.id as latest_id, l.number as latest_number, l.status as latest_status, l.created_at as latest_created_at,
+            (select a.screenshot_key is not null from deployments a where a.id = p.active_deployment_id) as live_screenshot from projects p
           left join lateral (select id, number, status, created_at from deployments d where d.project_id = p.id order by created_at desc limit 1) l on true
           where p.id = ${req.params.id}`,
         );
         if (!row) throw notFound('Project');
         reply.header('ETag', `"v${row.version}"`);
-        return toProject(row, domain);
+        return toProject(row, domain, deps.env.API_PUBLIC_URL);
       },
     );
 
@@ -435,7 +437,7 @@ export const projectRoutes =
         if (!row) throw notFound('Project');
         req.auditTarget = { type: 'project', id: row.id, metadata: { fields: Object.keys(set) } };
         reply.header('ETag', `"v${row.version}"`);
-        return toProject(row, domain);
+        return toProject(row, domain, deps.env.API_PUBLIC_URL);
       },
     );
 

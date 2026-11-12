@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { ProjectThumb } from '@/components/app/project-thumb';
 import { PageHeader } from '@/components/app/shell';
 import { LinkButton } from '@/components/ui/button';
 import { LoadError, MorePages, StaleNotice } from '@/components/ui/load-error';
@@ -63,10 +64,13 @@ export default function ProjectsPage() {
                 ))}
               {items?.map((p) => (
                 <li key={p.id} className="px-4 py-3">
-                  <Link href={`/projects/${p.id}`} className="block min-w-0">
-                    <span className="block truncate font-medium">{p.slug}</span>
-                    <span className="block truncate font-mono text-[11px] text-muted">
-                      {p.repoFullName} · {p.framework}
+                  <Link href={`/projects/${p.id}`} className="flex min-w-0 items-center gap-3">
+                    <ProjectThumb url={p.screenshotUrl} name={p.slug} />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{p.slug}</span>
+                      <span className="block truncate font-mono text-[11px] text-muted">
+                        {p.repoFullName} · {p.framework}
+                      </span>
                     </span>
                   </Link>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -130,16 +134,21 @@ export default function ProjectsPage() {
                       <Link
                         href={`/projects/${p.id}`}
                         title={p.slug}
-                        className="block truncate font-medium hover:underline"
+                        className="group flex min-w-0 items-center gap-3"
                       >
-                        {p.slug}
+                        <ProjectThumb url={p.screenshotUrl} name={p.slug} className="h-10 w-16" />
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium group-hover:underline">
+                            {p.slug}
+                          </span>
+                          <span
+                            title={p.repoFullName}
+                            className="block truncate font-mono text-[11px] text-muted"
+                          >
+                            {p.repoFullName}
+                          </span>
+                        </span>
                       </Link>
-                      <div
-                        title={p.repoFullName}
-                        className="truncate font-mono text-[11px] text-muted"
-                      >
-                        {p.repoFullName}
-                      </div>
                     </td>
                     <td className="truncate px-4 py-3 font-mono text-[12px] text-muted">
                       {p.framework}
@@ -170,7 +179,10 @@ export default function ProjectsPage() {
 function Latest({ p }: { p: ProjectT }) {
   if (!p.latestDeployment) return <span className="text-muted">No deploys yet</span>;
   return (
-    <Link href={`/deployments/${p.latestDeployment.id}`} className="flex items-center gap-2">
+    <Link
+      href={`/deployments/${p.latestDeployment.id}`}
+      className="flex items-center gap-2 pointer-coarse:py-1"
+    >
       <StatusPill status={p.latestDeployment.status} />
       <span className="font-mono text-[11px] text-muted">
         #{p.latestDeployment.number} · {ago(p.latestDeployment.createdAt)}
@@ -188,7 +200,7 @@ function LiveLink({ p }: { p: ProjectT }) {
       target="_blank"
       rel="noreferrer"
       title={p.url}
-      className="block min-w-0 truncate font-mono text-[12px] text-run/90 hover:underline"
+      className="block min-w-0 truncate font-mono text-[12px] text-run/90 hover:underline pointer-coarse:py-1.5"
     >
       {p.url.replace('https://', '')} <span aria-hidden>↗</span>
       <span className="sr-only"> (opens the live site)</span>

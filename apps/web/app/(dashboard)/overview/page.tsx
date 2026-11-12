@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { ProjectThumb } from '@/components/app/project-thumb';
 import { PageHeader } from '@/components/app/shell';
 import { TiltCard } from '@/components/app/tilt-card';
 import { LinkButton } from '@/components/ui/button';
+import { LoadError } from '@/components/ui/load-error';
 import { Empty, Panel, Shim, Stat } from '@/components/ui/panel';
 import { Sparkline } from '@/components/ui/sparkline';
 import { StatusPill } from '@/components/ui/status';
@@ -117,6 +119,8 @@ export default function OverviewPage() {
                 ))}
               </ul>
             </div>
+          ) : projects.isError && !projects.data ? (
+            <LoadError what="projects" error={projects.error} onRetry={() => projects.refetch()} />
           ) : !projects.data?.items.length ? (
             <Empty
               title="No projects yet"
@@ -140,10 +144,13 @@ export default function OverviewPage() {
                       href={`/projects/${p.id}`}
                       className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-raised/50 sm:grid-cols-[minmax(0,1fr)_auto_auto]"
                     >
-                      <div className="min-w-0">
-                        <div className="truncate text-[14px] font-medium">{p.slug}</div>
-                        <div className="truncate font-mono text-[11px] text-muted">
-                          {p.framework} · {p.repoFullName}
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ProjectThumb url={p.screenshotUrl} name={p.slug} className="h-10 w-16" />
+                        <div className="min-w-0">
+                          <div className="truncate text-[14px] font-medium">{p.slug}</div>
+                          <div className="truncate font-mono text-[11px] text-muted">
+                            {p.framework} · {p.repoFullName}
+                          </div>
                         </div>
                       </div>
                       <span className="hidden sm:block">
@@ -228,11 +235,11 @@ export default function OverviewPage() {
                     <span className="w-14 shrink-0 font-mono text-[11px] text-muted">
                       {ago(d.updatedAt)}
                     </span>
-                    <span className="min-w-0 flex-1 truncate">
-                      <span className="text-fg">{d.projectSlug}</span>{' '}
-                      <span className="text-muted">#{d.number}</span>{' '}
+                    <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+                      <span className="truncate text-fg">{d.projectSlug}</span>
+                      <span className="shrink-0 text-muted">#{d.number}</span>
                       {d.recoveredBy && (
-                        <span className="font-mono text-[11px] text-ai">
+                        <span className="hidden shrink-0 font-mono text-[11px] text-ai sm:inline">
                           auto-fixed by {d.recoveredBy}
                         </span>
                       )}

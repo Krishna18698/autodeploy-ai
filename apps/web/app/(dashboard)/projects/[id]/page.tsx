@@ -69,7 +69,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                 href={p.url}
                 target="_blank"
                 rel="noreferrer"
-                className="whitespace-nowrap text-run hover:underline"
+                className="whitespace-nowrap text-run hover:underline pointer-coarse:inline-block pointer-coarse:py-1"
               >
                 {p.url.replace('https://', '')} ↗
               </a>
@@ -207,7 +207,7 @@ function History({ projectId, slug }: { projectId: string; slug: string }) {
                 {d.url && (
                   <a
                     href={d.url}
-                    className="max-w-full truncate text-run/80 hover:underline"
+                    className="max-w-full truncate text-run/80 hover:underline pointer-coarse:py-1"
                     target="_blank"
                     rel="noreferrer"
                   >
