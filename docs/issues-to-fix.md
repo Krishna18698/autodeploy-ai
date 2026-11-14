@@ -38,6 +38,10 @@ last, each only on the owner's yes.
 
 ## Done
 
+**2026-11-14**
+- [x] **Dependabot and pnpm audit clean where fixes exist:** the Nuxt and SvelteKit test apps upgraded within their majors (Nuxt: 2 high and 6 moderate gone; minimatch 11.0.1 pinned under readdir-glob), and Testcontainers' archiver-utils moved from glob 10 to 14.0.2. `pnpm audit` (dev included): none. Left: deepmerge ≤4.3.1 (low, prototype poisoning, build-time only in both test apps), for which no fixed version exists. Both apps built and served locally with their smoke markers.
+- [x] **KV usage:** no 50% warning since the 2026-10-31 fix (owner, 2026-11-14).
+
 **2026-11-12** (audit)
 - [x] **Pages fetch their data with the account again:** making requests cancellable (2026-11-04) undid the 2026-10-30 gain: the page mounted out of sight was unmounted when the account arrived, which cancelled its requests in flight and sent them again. The dashboard now renders in place under the opening logo, so nothing is remounted; traced, every request starts in one round.
 - [x] **The command palette asks for projects when it opens**, not on every page load.

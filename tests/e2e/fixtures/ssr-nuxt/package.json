@@ -7,5 +7,10 @@
   },
   "dependencies": {
     "nuxt": "^4.4.5"
+  },
+  "overrides": {
+    "readdir-glob": {
+      "minimatch": "11.0.1"
+    }
   }
 }
